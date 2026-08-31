@@ -1,0 +1,9 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Masuk | TraderTrack</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="pages.css"></head><body class="login-body"><main class="login-shell"><section class="login-side"><div class="login-brand"><span class="mark">T</span><span>TRADER<span>TRACK</span></span></div><h1>Order masuk.<br><em>Barang terbukti.</em></h1><p>Satu papan kerja untuk seluruh siklus order tim: input checkout, scan resi, bukti foto, dan rekap harian.</p><ul class="login-points"><li><i>▦</i>Papan Kanban realtime untuk seluruh admin</li><li><i>⌗</i>Scan barcode resi tanpa cocok manual</li><li><i>▣</i>Bukti foto wajib sebelum order selesai</li></ul></section><section class="login-panel"><form class="login-form" id="loginForm"><div class="workspace-label">SELAMAT DATANG KEMBALI</div><h2>Masuk ke workspace</h2><p class="login-note">Gunakan akun yang diberikan admin tim Anda. Tidak ada pendaftaran mandiri.</p><label>Username<input name="username" autocomplete="username" placeholder="username Anda" required></label><label>Kata sandi<input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required></label><button class="button primary login-submit" type="submit">Masuk <span>→</span></button><p class="login-error" id="loginError" hidden>Username atau kata sandi salah, atau akun sedang nonaktif.</p><small class="login-foot">Sesi dilindungi token JWT. Seluruh lalu lintas terenkripsi HTTPS.</small></form></section></main><script>
+const form=document.getElementById('loginForm'),err=document.getElementById('loginError');
+form.addEventListener('submit',e=>{e.preventDefault();
+  const u=form.username.value.trim().toLowerCase();
+  if(!u||!form.password.value){err.hidden=false;return}
+  err.hidden=true;
+  location.href=u==='admin'?'index.html':'orders.html';
+});
+</script></body></html>

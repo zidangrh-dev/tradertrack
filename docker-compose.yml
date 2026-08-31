@@ -1,0 +1,60 @@
+# TraderTrack — orkestrasi sesuai PRD bagian 5/8.
+# Nama project disarankan terpisah per environment (mis. gudang-prod / gudang-dev).
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tradertrack
+      POSTGRES_USER: tradertrack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tradertrack}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradertrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://tradertrack:${POSTGRES_PASSWORD:-tradertrack}@db:5432/tradertrack
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET di .env}
+      UPLOADS_DIR: /app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "127.0.0.1:4000:4000"
+
+  meili:
+    image: getmeili/meilisearch:v1.13
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY di .env}
+    volumes:
+      - meilidata:/meili_data
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/var/www/html:ro
+      - certs:/etc/letsencrypt
+    depends_on:
+      - api
+
+volumes:
+  dbdata:
+  uploads:
+  meilidata:
+  certs:
