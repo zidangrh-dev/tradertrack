@@ -59,12 +59,6 @@ Set `expo.extra.apiUrl` di `app.json` ke URL API server sebelum build.
 | `/accounts` | Master rekening (nonaktif, bukan hapus) | Admin |
 | `/settings` | Ambang tertunda & aturan foto bukti | Admin |
 
-## Prototipe HTML
-
-Folder root juga memuat prototipe statis HTML/CSS dari desain dashboard
-(`index.html`, `login.html`, dst.) sebagai referensi visual — bukan bagian
-dari bundle produksi Expo.
-
 ## Titik sambung backend
 
 - `POST /api/login`, JWT di header `Authorization: Bearer`
