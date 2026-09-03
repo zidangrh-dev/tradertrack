@@ -1,5 +1,7 @@
-# TraderTrack — orkestrasi sesuai PRD bagian 5/8.
-# Nama project disarankan terpisah per environment (mis. gudang-prod / gudang-dev).
+# ZProject — orkestrasi (disesuaikan utk VPS shared dgn PickHub).
+# - API di 127.0.0.1:4002 (bukan 4000, dipakai PickHub prod)
+# - Meili di 127.0.0.1:7702 (bukan 7700/7701)
+# - Nginx TIDAK di-compose (dipakai Nginx host + Certbot, pola PickHub)
 services:
   db:
     image: postgres:17-alpine
@@ -21,7 +23,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://tradertrack:${POSTGRES_PASSWORD:-tradertrack}@db:5432/tradertrack
+      DATABASE_URL: postgres://tradertrack:${POSTGRES_PASSWORD}@db:5432/tradertrack
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET di .env}
       UPLOADS_DIR: /app/uploads
     depends_on:
@@ -30,7 +32,7 @@ services:
     volumes:
       - uploads:/app/uploads
     ports:
-      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:4002:4000"
 
   meili:
     image: getmeili/meilisearch:v1.13
@@ -39,22 +41,10 @@ services:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY di .env}
     volumes:
       - meilidata:/meili_data
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./frontend/dist:/var/www/html:ro
-      - certs:/etc/letsencrypt
-    depends_on:
-      - api
+      - "127.0.0.1:7702:7700"
 
 volumes:
   dbdata:
   uploads:
   meilidata:
-  certs:
