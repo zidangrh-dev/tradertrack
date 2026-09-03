@@ -71,12 +71,26 @@ export function setupRoutes(app, io, uploadDir) {
   const repo = getRepo();
   const emit = () => io.emit('packages:changed');
 
-  const upload = multer({
+  // Ekstensi aman: simpan file SELALU dengan ekstensi gambar baku dari hasil
+// sniff magic bytes — nama asli client (termasuk .html/.svg) TIDAK dipakai
+// sebagai ekstensi tersimpan, mencegah stored XSS via upload.
+const EXT_BY_MIME = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/gif': '.gif',
+  'image/bmp': '.bmp',
+};
+
+const upload = multer({
     storage: multer.diskStorage({
       destination: uploadDir,
       filename: (_req, file, cb) => {
-        const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`);
+        // Simpan dengan ekstensi aman — TANPA nama asli client.
+        const ext = EXT_BY_MIME[file.mimetype] || '.jpg';
+        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
       },
     }),
     limits: { fileSize: MAX_MULTER_MB * 1024 * 1024, files: 1 },
@@ -213,8 +227,10 @@ export function setupRoutes(app, io, uploadDir) {
     if (order.status === 'selesai') {
       return res.status(400).json({ error: 'Order selesai terkunci. Buka kembali order terlebih dahulu.' });
     }
-    if (req.file) await validateImage(req.file, uploadDir);
-    const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file ?? null);
+    // Foto bukti wajib benar-benar diunggah — larang pemalsuan catatan (vuln-0002).
+    if (!req.file) return res.status(400).json({ error: 'Berkas gambar wajib diunggah.' });
+    await validateImage(req.file, uploadDir);
+    const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file);
     emit();
     ok(res, updated);
   }));

@@ -80,6 +80,19 @@ export default (pool) => {
     return rows[0] ?? null;
   };
 
+  // Owner foto bukti dari nama file di /uploads (untuk object-level authorization,
+  // vuln-0004): cari di order_photos maupun barcode_path orders.
+  const photoOwner = async (fileName) => {
+    const path = `/uploads/${fileName}`;
+    const { rows } = await pool.query(
+      `SELECT o.trader_id, o.id AS order_id FROM order_photos op
+       JOIN orders o ON o.id = op.order_id WHERE op.file_path = $1
+       UNION SELECT o.trader_id, o.id FROM orders o WHERE o.barcode_path = $1`,
+      [path],
+    );
+    return rows[0] ?? null;
+  };
+
   const setLastLogin = (id) => pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [id]);
 
   const activeAdminCount = async () => {
@@ -556,7 +569,7 @@ export default (pool) => {
   };
 
   return {
-    settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, setLastLogin,
+    settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
     activeAdminCount, createUser, updateUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
     orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,

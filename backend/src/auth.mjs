@@ -18,11 +18,17 @@ function bearer(req) {
   return m ? m[1] : null;
 }
 
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const token = bearer(req);
   if (!token) return res.status(401).json({ error: 'UNAUTHORIZED' });
   try {
-    req.user = verifyToken(token);
+    const payload = verifyToken(token);
+    // Cek status akun ke DB — token user nonaktif / password di-reset ditolak (vuln-0010).
+    const { getRepo } = await import('./repo.mjs');
+    const u = await getRepo().userById(payload.id);
+    if (!u || !u.is_active) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    // Tanda tangan ulang versi fresh: role/status dari DB, bukan klaim token basi.
+    req.user = { id: u.id, username: u.username, display_name: u.display_name, role: u.role };
     next();
   } catch {
     return res.status(401).json({ error: 'UNAUTHORIZED' });
