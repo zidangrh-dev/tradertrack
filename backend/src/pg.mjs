@@ -3,10 +3,9 @@
 
 const SELECT_VIEW = `
   SELECT o.*, u.display_name AS trader_name,
-         b.bank_name || ' · ' || b.account_number || ' · ' || b.account_holder_name AS bank_account_label
+         o.product_name || ' · ' || o.store_name AS product_label
   FROM orders o
-  JOIN users u ON u.id = o.trader_id
-  JOIN bank_accounts b ON b.id = o.bank_account_id`;
+  JOIN users u ON u.id = o.trader_id`;
 
 function toView(row, threshold) {
   const ageHours = (Date.now() - new Date(row.updated_at).getTime()) / 3600000;
@@ -117,26 +116,136 @@ export default (pool) => {
     if (rowCount === 0) throw new Error('Pengguna tidak ditemukan.');
   };
 
-  const accountRows = async () => {
-    const { rows } = await pool.query(
-      `SELECT a.*, COUNT(o.id)::int AS orders
-       FROM bank_accounts a LEFT JOIN orders o ON o.bank_account_id = a.id
-       GROUP BY a.id ORDER BY a.created_at`,
-    );
-    return rows.map((r) => ({ ...r, created_at: new Date(r.created_at).toISOString() }));
+  // ---------- Katalog: produk (tipe barang, kuota lintas toko) + toko marketplace ----------
+
+  const listMarketplaceStores = async () => {
+    const { rows } = await pool.query(`SELECT id, name, is_active, created_at, updated_at FROM marketplace_stores WHERE is_active = true ORDER BY lower(name)`);
+    return rows;
   };
 
-  const listAccounts = accountRows;
-  const createAccount = async (input) => {
-    await pool.query(
-      `INSERT INTO bank_accounts (account_number, bank_name, account_holder_name) VALUES ($1, $2, $3)`,
-      [input.account_number, input.bank_name, input.account_holder_name],
-    );
-    return accountRows();
+  const createMarketplaceStore = async (name) => {
+    const clean = String(name ?? '').trim();
+    if (!clean || clean.length > 100) throw new Error('Nama toko wajib diisi dan maksimal 100 karakter.');
+    try {
+      await pool.query(`INSERT INTO marketplace_stores (name) VALUES ($1)`, [clean]);
+    } catch (e) {
+      if (e.code === '23505') throw new Error('Nama toko sudah terdaftar.');
+      throw e;
+    }
+    return listMarketplaceStores();
   };
-  const setAccountActive = async (id, is_active) => {
-    await pool.query(`UPDATE bank_accounts SET is_active = $2 WHERE id = $1`, [id, is_active]);
-    return accountRows();
+
+  const deleteMarketplaceStore = async (id) => {
+    const { rows } = await pool.query(`SELECT name FROM marketplace_stores WHERE id = $1 AND is_active = true`, [id]);
+    if (!rows[0]) throw new Error('Toko marketplace tidak ditemukan.');
+    const used = await pool.query(`SELECT 1 FROM orders WHERE store_id = $1 LIMIT 1`, [id]);
+    if (used.rows[0]) throw new Error('Toko masih dipakai order. Nonaktifkan bila tidak digunakan.');
+    await pool.query(`UPDATE marketplace_stores SET is_active = false, updated_at = now() WHERE id = $1`, [id]);
+    return listMarketplaceStores();
+  };
+
+  const listProducts = async () => {
+    const { rows } = await pool.query(
+      `SELECT p.*, COUNT(o.id)::int AS used_quota
+       FROM products p LEFT JOIN orders o ON o.product_id = p.id
+       GROUP BY p.id ORDER BY p.created_at`,
+    );
+    return rows.map((r) => ({
+      ...r,
+      created_at: new Date(r.created_at).toISOString(),
+      updated_at: new Date(r.updated_at).toISOString(),
+      remaining_quota: Math.max(0, r.quota - r.used_quota),
+    }));
+  };
+
+  const createProduct = async (input) => {
+    const name = String(input.name ?? '').trim();
+    if (!name || name.length > 150) throw new Error('Nama produk wajib diisi dan maksimal 150 karakter.');
+    try {
+      await pool.query(
+        `INSERT INTO products (name, quota) VALUES ($1, $2)`,
+        [name, Math.max(0, Math.floor(Number(input.quota) || 0))],
+      );
+    } catch (e) {
+      if (e.code === '23505') throw new Error('Nama produk sudah terdaftar.');
+      throw e;
+    }
+    return listProducts();
+  };
+
+  const deleteProduct = async (id) => {
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1`, [id]);
+    if (!rows[0]) throw new Error('Produk tidak ditemukan.');
+    if (rows[0].used > 0) throw new Error('Produk yang sudah dipakai order tidak dapat dihapus. Nonaktifkan bila tidak digunakan.');
+    const result = await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
+    if (result.rowCount === 0) throw new Error('Produk tidak ditemukan.');
+    return listProducts();
+  };
+
+  // Atomic: kuota berubah lewat UPDATE tunggal di transaksi — bebas lost update
+  // ketika banyak admin menambah kuota bersamaan (80+ trader rebutan aman).
+  const addProductQuota = async (id, amount) => {
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) throw new Error('Tambahan kuota tidak valid.');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(`UPDATE products SET quota = quota + $1, updated_at = now() WHERE id = $2 RETURNING id`, [amount, id]);
+      if (!rows[0]) throw new Error('Produk tidak ditemukan.');
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    return listProducts();
+  };
+
+  // Reset = kuota disamakan dengan jumlah terpakai (sisa 0). Row lock agar
+  // tidak balapan dengan add-quota/create-order yang berlangsung bersamaan.
+  const resetProductQuota = async (id) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(`SELECT id FROM products WHERE id = $1 FOR UPDATE`, [id]);
+      if (!rows[0]) throw new Error('Produk tidak ditemukan.');
+      await client.query(
+        `UPDATE products p SET quota = used.used, updated_at = now()
+         FROM (SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1) used
+         WHERE p.id = $1`,
+        [id],
+      );
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    return listProducts();
+  };
+
+  const updateProduct = async (id, patch) => {
+    const { rows } = await pool.query(`SELECT * FROM products WHERE id = $1`, [id]);
+    const m = rows[0];
+    if (!m) throw new Error('Produk tidak ditemukan.');
+    if (patch.name) {
+      const dup = await pool.query(`SELECT id FROM products WHERE lower(name) = lower($1) AND id <> $2`, [patch.name, id]);
+      if (dup.rows[0]) throw new Error('Nama produk sudah terdaftar.');
+    }
+    if (patch.quota !== undefined) {
+      const q = Math.max(0, Math.floor(Number(patch.quota) || 0));
+      const { rows: usedRows } = await pool.query(`SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1`, [id]);
+      if (q < usedRows[0].used) throw new Error('Kuota tidak boleh lebih kecil dari jumlah order yang sudah ada.');
+    }
+    const sets = ['updated_at = now()'];
+    const vals = [];
+    for (const k of ['name', 'quota', 'is_active']) {
+      if (patch[k] !== undefined) { sets.push(`${k} = $${vals.length + 1}`); vals.push(patch[k]); }
+    }
+    vals.push(id);
+    await pool.query(`UPDATE products SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+    return listProducts();
   };
 
   const orderByNumber = async (num) => {
@@ -179,10 +288,24 @@ export default (pool) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Rebutan kuota per tipe barang (lintas toko): lock baris produk agar
+      // pengecekan sisa kuota atomik terhadap order konkuren.
+      const { rows: pRows } = await client.query(`SELECT * FROM products WHERE id = $1 FOR UPDATE`, [input.product_id]);
+      const p = pRows[0];
+      if (!p) throw new Error('Produk tidak ditemukan.');
+      if (!p.is_active) throw new Error(`Produk ${p.name} sedang nonaktif.`);
+      const { rows: storeRows } = await client.query(`SELECT * FROM marketplace_stores WHERE id = $1`, [input.store_id]);
+      const st = storeRows[0];
+      if (!st) throw new Error('Toko marketplace tidak ditemukan.');
+      if (!st.is_active) throw new Error(`Toko ${st.name} sedang nonaktif.`);
+      const { rows: usedRows } = await client.query(`SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1`, [p.id]);
+      if (usedRows[0].used >= p.quota) {
+        throw new Error(`Kuota produk ${p.name} sudah habis!`);
+      }
       const { rows } = await client.query(
-        `INSERT INTO orders (order_number, product_name, store_name, recipient_name, pickup_method, trader_id, bank_account_id, order_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-        [input.order_number, input.product_name, input.store_name, input.recipient_name, input.pickup_method, input.trader_id ?? actorId, input.bank_account_id, input.order_amount ?? null],
+        `INSERT INTO orders (order_number, product_name, store_name, recipient_name, pickup_method, trader_id, product_id, store_id, order_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [input.order_number, p.name, st.name, input.recipient_name, input.pickup_method, input.trader_id ?? actorId, p.id, st.id, input.order_amount ?? null],
       );
       id = rows[0].id;
       await client.query(
@@ -211,6 +334,10 @@ export default (pool) => {
     );
 
   const updateStatus = async (id, to, actorId) => {
+    if (to === 'proses_pick_up') {
+      // Jalur proses pick up mewajibkan foto barcode — pakai POST /orders/:id/pickup.
+      throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
+    }
     const s = await S();
     const { rows } = await pool.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     const o = rows[0];
@@ -220,7 +347,6 @@ export default (pool) => {
     }
     const from = o.status;
     const sets = ['status = $1', 'updated_at = now()'];
-    if (to === 'proses_pick_up') sets.push('picked_up_at = now()');
     if (to === 'selesai') sets.push('completed_at = now()');
     if (to === 'data_masuk') sets.push('picked_up_at = NULL', 'completed_at = NULL');
     await pool.query(`UPDATE orders SET ${sets.join(', ')} WHERE id = $2`, [to, id]);
@@ -228,18 +354,52 @@ export default (pool) => {
     return getOrder(id);
   };
 
-  const scan = async (code, actorId) => {
+  // Transisi data_masuk → proses_pick_up + simpan foto barcode pengambilan (atomik).
+  // Foto baru opsional bila order sudah punya barcode terpasang ATAU sudah ada minimal
+  // satu foto bukti (diupload lewat mana pun).
+  const applyPickup = async (orderId, actorId, file, note, hasEvidence = false) => {
+    if (!file && !hasEvidence) {
+      throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const sets = [`status = 'proses_pick_up'`, 'picked_up_at = now()', 'updated_at = now()'];
+      if (file) sets.push('photo_count = photo_count + 1');
+      await client.query(`UPDATE orders SET ${sets.join(', ')} WHERE id = $1`, [orderId]);
+      if (file) {
+        await client.query(
+          `INSERT INTO order_photos (order_id, file_path, file_name, mime_type, file_size, source, uploaded_by) VALUES ($1,$2,$3,$4,$5,'pickup',$6)`,
+          [orderId, `/uploads/${file.filename}`, file.originalname, file.mimetype, file.size, actorId],
+        );
+      }
+      await pushEvent(client, orderId, actorId, 'picked_up', 'data_masuk', 'proses_pick_up', note);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  };
+
+  const scan = async (code, actorId, file = null) => {
     const normalized = String(code).trim();
     const { rows } = await pool.query(`SELECT * FROM orders WHERE order_number = $1`, [normalized]);
     const o = rows[0];
     if (!o) return null;
     if (o.status !== 'data_masuk') return getOrder(o.id);
-    await pool.query(
-      `UPDATE orders SET status = 'proses_pick_up', picked_up_at = now(), updated_at = now() WHERE id = $1`,
-      [o.id],
-    );
-    await pushEvent(pool, o.id, actorId, 'picked_up', 'data_masuk', 'proses_pick_up', 'Scan nomor pesanan');
+    await applyPickup(o.id, actorId, file, 'Scan nomor pesanan', !!o.barcode_path || o.photo_count >= 1);
     return getOrder(o.id);
+  };
+
+  const pickupOrder = async (id, actorId, file = null) => {
+    const { rows } = await pool.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const o = rows[0];
+    if (!o) throw new Error('Order tidak ditemukan');
+    if (o.status !== 'data_masuk') throw new Error('Order ini sudah diproses sebelumnya.');
+    await applyPickup(id, actorId, file, 'Proses pick up', !!o.barcode_path || o.photo_count >= 1);
+    return getOrder(id);
   };
 
   const attachBarcode = async (id, path) => {
@@ -360,14 +520,15 @@ export default (pool) => {
     );
     const traderRows = perTrader.map((t) => ({ ...t, belum_selesai: t.total - t.selesai }));
 
-    const { rows: perRekening } = await pool.query(
-      `SELECT b.account_number, b.bank_name, b.account_holder_name AS holder,
-              COUNT(*)::int AS orders, COALESCE(SUM(o.order_amount), 0)::numeric AS amount
-       FROM orders o JOIN bank_accounts b ON b.id = o.bank_account_id${where}
-       GROUP BY b.account_number, b.bank_name, b.account_holder_name ORDER BY orders DESC`,
+    // Rekap per tipe barang (kuota lintas toko): gabungkan order dari semua toko.
+    const { rows: perProdukRaw } = await pool.query(
+      `SELECT p.name AS product_name, p.quota,
+              COUNT(o.id)::int AS used_quota, COALESCE(SUM(o.order_amount), 0)::numeric AS amount
+       FROM orders o JOIN products p ON p.id = o.product_id${where}
+       GROUP BY p.id ORDER BY used_quota DESC`,
       args,
     );
-    const bankRows = perRekening.map((r) => ({ ...r, amount: Number(r.amount) }));
+    const perProduk = perProdukRaw.map((r) => ({ ...r, amount: Number(r.amount), remaining_quota: Math.max(0, r.quota - r.used_quota) }));
 
     const threshold = (await S()).pending_threshold_hours;
     const { rows: delayed } = await pool.query(
@@ -385,13 +546,13 @@ export default (pool) => {
       return { order_number: o.order_number, product_name: o.product_name, trader: o.trader, duration: `${h}j ${m}m`, is_problem: o.is_problem };
     });
 
-    return { totals, perTrader: traderRows, perRekening: bankRows, delayed: delayedRows };
+    return { totals, perTrader: traderRows, perProduk, delayed: delayedRows };
   };
 
   return {
-    settings, settingsPatch, users, userByUsername, userById, setLastLogin,
-    activeAdminCount, createUser, updateUser, listAccounts, createAccount, setAccountActive,
-    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, attachBarcode,
+    settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, setLastLogin,
+    activeAdminCount, createUser, updateUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
+    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,
   };
 };

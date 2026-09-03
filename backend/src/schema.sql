@@ -1,4 +1,4 @@
--- TraderTrack — skema PostgreSQL sesuai PRD bagian 7.
+-- ZProject — skema PostgreSQL sesuai PRD bagian 7.
 -- Nama tabel dan kolom PERSIS seperti di PRD, jangan diganti.
 
 CREATE TABLE IF NOT EXISTS users (
@@ -13,15 +13,27 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS bank_accounts (
+CREATE TABLE IF NOT EXISTS marketplace_stores (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_number text NOT NULL,
-  bank_name text NOT NULL,
-  account_holder_name text NOT NULL,
-  owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  name text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_marketplace_stores_name_ci ON marketplace_stores (lower(name));
+
+-- Produk = tipe barang. Kuota menempel di produk (lintas toko).
+CREATE TABLE IF NOT EXISTS products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  quota integer NOT NULL DEFAULT 0 CHECK (quota >= 0),
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_products_name_ci ON products (lower(name));
 
 CREATE TABLE IF NOT EXISTS orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,7 +43,8 @@ CREATE TABLE IF NOT EXISTS orders (
   recipient_name text NOT NULL,
   pickup_method text NOT NULL CHECK (pickup_method IN ('zaydan_ambilan_gjm', 'self_pick_up')),
   trader_id uuid NOT NULL REFERENCES users(id),
-  bank_account_id uuid NOT NULL REFERENCES bank_accounts(id),
+  product_id uuid NOT NULL REFERENCES products(id),
+  store_id uuid NOT NULL REFERENCES marketplace_stores(id),
   status text NOT NULL DEFAULT 'data_masuk' CHECK (status IN ('data_masuk', 'proses_pick_up', 'selesai')),
   order_amount numeric,
   note text,
@@ -45,10 +58,14 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Bersihkan warisan tabel lama (skema sebelumnya).
+DROP TABLE IF EXISTS master_data CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_trader_id ON orders(trader_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);
 
 CREATE TABLE IF NOT EXISTS order_photos (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

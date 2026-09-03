@@ -16,7 +16,7 @@ Trader dan admin internal perusahaan. Trader mencatat checkout dan memantau stat
 
 ## Product Purpose
 
-TraderTrack menyatukan siklus order marketplace, pengambilan fisik, bukti foto, dan rekap keuangan dalam satu sumber data operasional.
+ZProject menyatukan siklus order marketplace, pengambilan fisik, bukti foto, dan rekap keuangan dalam satu sumber data operasional.
 
 ## Positioning
 
@@ -32,7 +32,7 @@ Role hanya trader dan admin. Order memiliki status Data Masuk, Proses Pick Up, d
 
 ## Brand Commitments
 
-Nama TraderTrack. Seluruh antarmuka menggunakan bahasa Indonesia, padat informasi, dan kontras tinggi. Halaman utama memakai gaya minimal dan formal.
+Nama ZProject. Seluruh antarmuka menggunakan bahasa Indonesia, padat informasi, dan kontras tinggi. Halaman utama memakai gaya minimal dan formal.
 
 ## Evidence on Hand
 

@@ -5,11 +5,12 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { io } from 'socket.io-client';
 import { mock, subscribeChanges as mockSubscribe } from './store';
-import type { AppSettings, BankAccount, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User } from './store';
+import type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User } from './store';
 
-export type { AppSettings, BankAccount, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User };
+export type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User };
 
 export interface SessionUser {
   id: string;
@@ -20,7 +21,7 @@ export interface SessionUser {
 
 export interface OrderView extends Order {
   trader_name: string;
-  bank_account_label: string;
+  product_label: string;
   is_pending: boolean;
 }
 
@@ -32,12 +33,13 @@ export interface OrderDetail extends OrderView {
 export interface Reports {
   totals: { total: number; data_masuk: number; proses_pick_up: number; selesai: number; bermasalah: number };
   perTrader: { trader: string; total: number; selesai: number; belum_selesai: number }[];
-  perRekening: { account_number: string; bank_name: string; holder: string; orders: number; amount: number }[];
+  perProduk: { product_name: string; quota: number; used_quota: number; remaining_quota: number; amount: number }[];
   delayed: { order_number: string; product_name: string; trader: string; duration: string; is_problem: boolean }[];
 }
 
-export interface AccountRow extends BankAccount {
-  orders: number;
+export interface ProductRow extends Product {
+  used_quota: number;
+  remaining_quota: number;
 }
 
 export interface UserRow extends Omit<User, 'password'> {
@@ -52,7 +54,7 @@ const API_URL: string =
 // Dev-only: true bila aplikasi harus tetap jalan walau server mati (fallback mock).
 const USE_MOCK_FALLBACK = true;
 
-const TOKEN_KEY = 'tradertrack.jwt';
+const TOKEN_KEY = 'zproject.jwt';
 
 async function getToken(): Promise<string | null> {
   try {
@@ -70,7 +72,28 @@ async function setToken(token: string | null) {
   }
 }
 
+/** URL publik untuk berkas upload (dilindungi JWT — disisipkan via query token). */
+export async function uploadsUrl(filePath: string): Promise<string> {
+  const token = await getToken();
+  return `${API_URL}${filePath}?token=${encodeURIComponent(token ?? '')}`;
+}
+
 /* ---------- HTTP ---------- */
+
+// FormData lintas platform: web butuh Blob asli (fetch dari blob-uri hasil picker),
+// native React Native pakai format {uri, name, type}.
+async function photoForm(file: { uri: string; name: string; type: string }, extra?: Record<string, string>): Promise<FormData> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(extra ?? {})) form.append(k, v);
+  if (Platform.OS === 'web') {
+    const res = await fetch(file.uri);
+    const blob = await res.blob();
+    form.append('photo', blob, file.name);
+  } else {
+    form.append('photo', { uri: file.uri, name: file.name, type: file.type } as unknown as Blob);
+  }
+  return form;
+}
 
 async function http<T>(path: string, options: { method?: string; body?: unknown; form?: FormData } = {}): Promise<T> {
   const token = await getToken();
@@ -165,14 +188,22 @@ const remote = {
   },
   createOrder: (body: Parameters<typeof mock.createOrder>[0]) => http<OrderView>('/api/orders', { method: 'POST', body }),
   updateStatus: (id: string, to: Status) => http<OrderView>(`/api/orders/${id}/status`, { method: 'PATCH', body: { to_status: to } }),
-  scan: (code: string) => http<OrderView | null>('/api/orders/scan', { method: 'POST', body: { code } }),
-  attachBarcode: (id: string, file: { uri: string; name: string; type: string }) => {
-    const form = new FormData();
-    form.append('photo', { uri: file.uri, name: file.name, type: file.type } as unknown as Blob);
-    return http<OrderView>(`/api/orders/${id}/barcode`, { method: 'POST', form });
+  scan: async (code: string, file?: { uri: string; name: string; type: string }) => {
+    if (!file) return http<OrderView | null>('/api/orders/scan', { method: 'POST', body: { code } });
+    return http<OrderView | null>('/api/orders/scan', { method: 'POST', form: await photoForm(file, { code }) });
+  },
+  pickup: async (id: string, file?: { uri: string; name: string; type: string }) => {
+    if (!file) return http<OrderView>(`/api/orders/${id}/pickup`, { method: 'POST' });
+    return http<OrderView>(`/api/orders/${id}/pickup`, { method: 'POST', form: await photoForm(file) });
+  },
+  attachBarcode: async (id: string, file: { uri: string; name: string; type: string }) => {
+    return http<OrderView>(`/api/orders/${id}/barcode`, { method: 'POST', form: await photoForm(file) });
   },
   detail: (id: string) => http<OrderDetail>(`/api/orders/${id}/detail`),
-  uploadPhoto: (id: string) => http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST' }),
+  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }) => {
+    if (!file) return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST' });
+    return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST', form: await photoForm(file) });
+  },
   deletePhoto: (orderId: string, photoId: string) => http<OrderView>(`/api/orders/${orderId}/photos/${photoId}`, { method: 'DELETE' }),
   completeOrder: (id: string, note: string) => http<OrderView>(`/api/orders/${id}/complete`, { method: 'PATCH', body: { note } }),
   markProblem: (id: string, reason: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'PATCH', body: { reason } }),
@@ -181,9 +212,15 @@ const remote = {
   editOwnOrder: (id: string, patch: Partial<Order>) => http<OrderView>(`/api/orders/${id}`, { method: 'PATCH', body: patch }),
 
   reports: (range: string) => http<Reports>(`/api/reports?range=${range}`),
-  listAccounts: () => http<AccountRow[]>('/api/bank-accounts'),
-  createAccount: (input: { account_number: string; bank_name: string; account_holder_name: string }) => http<AccountRow[]>('/api/bank-accounts', { method: 'POST', body: input }),
-  setAccountActive: (id: string, active: boolean) => http<AccountRow[]>(`/api/bank-accounts/${id}`, { method: 'PATCH', body: { is_active: active } }),
+  listMarketplaceStores: () => http<MarketplaceStore[]>('/api/marketplace-stores'),
+  createMarketplaceStore: (name: string) => http<MarketplaceStore[]>('/api/marketplace-stores', { method: 'POST', body: { name } }),
+  deleteMarketplaceStore: (id: string) => http<MarketplaceStore[]>(`/api/marketplace-stores/${id}`, { method: 'DELETE' }),
+  listProducts: () => http<ProductRow[]>('/api/products'),
+  createProduct: (input: { name: string; quota: number }) => http<ProductRow[]>('/api/products', { method: 'POST', body: input }),
+  updateProduct: (id: string, patch: Partial<ProductRow>) => http<ProductRow[]>(`/api/products/${id}`, { method: 'PATCH', body: patch }),
+  addProductQuota: (id: string, amount: number) => http<ProductRow[]>(`/api/products/${id}/quota`, { method: 'POST', body: { amount } }),
+  resetProductQuota: (id: string) => http<ProductRow[]>(`/api/products/${id}/reset-quota`, { method: 'POST' }),
+  deleteProduct: (id: string) => http<ProductRow[]>(`/api/products/${id}`, { method: 'DELETE' }),
 
   getSettings: () => http<AppSettings>('/api/settings'),
   saveSettings: (patch: Partial<AppSettings>) => http<AppSettings>('/api/settings', { method: 'PATCH', body: patch }),

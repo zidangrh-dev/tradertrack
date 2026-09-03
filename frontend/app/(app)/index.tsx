@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
+import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
@@ -67,7 +68,7 @@ function DraggableCard({
         ]}
       >
         <View style={styles.cardTop}>
-          <Text style={styles.cardNumber}>#{order.order_number}</Text>
+          <Text style={styles.cardNumber}>{order.order_number}</Text>
           {order.is_problem ? (
             <Text style={styles.badgeRed}>Bermasalah</Text>
           ) : order.is_pending ? (
@@ -93,6 +94,9 @@ function DraggableCard({
         {order.status === 'data_masuk' && (
           <Button label="Proses pick up" icon="→" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'proses_pick_up')} />
         )}
+        {order.status === 'proses_pick_up' && (
+          <Button label="Selesaikan order" icon="✓" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'selesai')} />
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -115,6 +119,7 @@ export default function Kanban() {
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const byStatus = useMemo(() => {
     const m: Record<Status, OrderView[]> = { data_masuk: [], proses_pick_up: [], selesai: [] };
@@ -134,8 +139,31 @@ export default function Kanban() {
   const searching = search.trim().length > 0;
 
   const move = async (o: OrderView, to: Status) => {
-    // Perpindahan ke Selesai membuka modal detail untuk melengkapi note & foto bukti.
+    // Perpindahan ke Selesai — foto bukti cukup → selesaikan langsung; kurang → buka modal.
     if (to === 'selesai') {
+      if (o.photo_count >= 1) {
+        try {
+          await api.completeOrder(o.id, '');
+          refresh();
+        } catch (e) {
+          notify('Gagal', (e as Error).message);
+        }
+        return;
+      }
+      setSelected(o);
+      return;
+    }
+    if (to === 'proses_pick_up') {
+      // Sudah ada foto/barcode → proses langsung; belum → buka modal detail untuk tambah foto.
+      if (o.barcode_path || o.photo_count > 0) {
+        try {
+          await api.pickup(o.id);
+          refresh();
+        } catch (e) {
+          notify('Gagal', (e as Error).message);
+        }
+        return;
+      }
       setSelected(o);
       return;
     }
@@ -143,7 +171,7 @@ export default function Kanban() {
       await api.updateStatus(o.id, to);
       refresh();
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 
@@ -160,14 +188,16 @@ export default function Kanban() {
       />
 
       <View style={styles.searchWrap}>
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>⌕</Text>
+        <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
+          <Text style={[styles.searchIcon, isSearchFocused && styles.searchIconFocused]}>⌕</Text>
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, webNoOutline]}
             placeholder="Cari nomor pesanan, produk, penerima, atau trader..."
             placeholderTextColor={colors.faint}
             value={search}
             onChangeText={setSearch}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {!!search && (
             <Pressable onPress={() => setSearch('')} hitSlop={6}>
@@ -220,6 +250,8 @@ export default function Kanban() {
   );
 }
 
+const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
+
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   searchWrap: { paddingHorizontal: 16, paddingBottom: 12 },
@@ -228,7 +260,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     paddingHorizontal: 12, height: 44,
   },
+  searchBoxFocused: { borderColor: colors.text, shadowColor: '#0F172A', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 },
   searchIcon: { color: colors.faint, fontSize: 16 },
+  searchIconFocused: { color: colors.text },
   searchInput: { flex: 1, height: 44, fontSize: 14, color: colors.text, padding: 0 },
   searchClear: { fontSize: 15, color: colors.faint, paddingHorizontal: 4 },
   viewport: { flex: 1 },

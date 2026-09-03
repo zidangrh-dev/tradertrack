@@ -11,7 +11,7 @@ export async function initRepo() {
     await migrate(pool);
     repo = pgFactory(pool);
   } else {
-    console.log('[trader-track] DATABASE_URL tidak di-set — memakai repo memori (dev).');
+    console.log('[zproject] DATABASE_URL tidak di-set — memakai repo memori (dev).');
     repo = mem;
   }
   return repo;

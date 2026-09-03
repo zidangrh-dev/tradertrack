@@ -1,31 +1,31 @@
-// Token tema TraderTrack — palet terang untuk mode Operate.
+// Token tema ZProject — palet terang untuk mode Operate.
 // Satu sumber kebenaran warna, radius, dan spacing.
 
 export const colors = {
   // Brand
-  primary: '#4F5DF5',
-  primarySoft: '#ECEFFE',
-  primaryMuted: '#7E89F8',
+  primary: '#1F4B7A',
+  primarySoft: '#EAF1F8',
+  primaryMuted: '#52749A',
   onPrimary: '#FFFFFF',
-  brand: '#C7F544',
-  onBrand: '#1B2233',
+  brand: '#1F4B7A',
+  onBrand: '#FFFFFF',
 
   // Surfaces
-  canvas: '#F6F7FB',
+  canvas: '#F4F6F8',
   surface: '#FFFFFF',
-  surfaceAlt: '#EEF1F8',
-  line: '#E4E8F1',
+  surfaceAlt: '#E9EDF2',
+  line: '#D8DEE6',
 
   // Text
-  text: '#1B2233',
-  muted: '#677084',
-  faint: '#9AA3B2',
+  text: '#17202B',
+  muted: '#596675',
+  faint: '#8995A3',
 
   // Status
-  amber: '#E8A33D',
-  blue: '#4C8DE8',
-  green: '#2FA36B',
-  red: '#E2604D',
+  amber: '#7A6540',
+  blue: '#1F4B7A',
+  green: '#3E6654',
+  red: '#A34848',
 };
 
 export const radius = { sm: 8, md: 12, lg: 16, full: 999 };

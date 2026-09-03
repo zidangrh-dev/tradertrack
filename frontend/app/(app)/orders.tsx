@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ViewStyle,
 } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
+import { notify, confirmAsk } from '../../src/lib/notify';
+import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, statusLabel, pickupMethodLabel } from '../../src/theme';
@@ -19,11 +21,28 @@ const TRADERS: SelectOption[] = [
   { value: 'u-admin', label: 'Dimas Arya', sub: '@admin' },
 ];
 const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
-const PER_PAGE = 10;
+const PER_PAGE = 50;
+const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima', 'Trader'];
+
+function orderCopyRow(o: OrderView) {
+  return [
+    o.order_number,
+    `${o.product_name} · ${o.store_name}`,
+    o.recipient_name,
+    o.trader_name,
+  ];
+}
+
+async function copyText(text: string) {
+  if (typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('Clipboard tidak tersedia di browser ini.');
+  await navigator.clipboard.writeText(text);
+}
 
 export default function Orders() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [search, setSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
@@ -92,13 +111,22 @@ export default function Orders() {
   };
 
   const activeFilters = [status, method, trader, period].filter(Boolean).length;
+  const copyFiltered = async () => {
+    try {
+      const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
+      await copyText(text);
+      notify('Berhasil', `${sorted.length} order berhasil disalin.`);
+    } catch (e) {
+      notify('Gagal menyalin', (e as Error).message);
+    }
+  };
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
   const rangeEnd = Math.min(visiblePage * PER_PAGE, sorted.length);
 
   const columns: DataTableColumn<OrderView>[] = [
     {
       key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 175,
-      render: (o) => <Text style={dtStyles.orderCode}>#{o.order_number}</Text>,
+      render: (o) => <Text style={dtStyles.orderCode}>{o.order_number}</Text>,
     },
     {
       key: 'product', label: 'Produk & toko', sortKey: 'product' as keyof OrderView,
@@ -148,12 +176,32 @@ export default function Orders() {
       render: (o) => <Text style={dtStyles.timeText}>{durationLabel(o.updated_at)}</Text>,
     },
     {
-      key: 'actions', label: '', width: 75,
+      key: 'actions', label: '', width: 110,
       render: (o) => {
         const isOwner = o.trader_id === user?.id;
         const editable = isOwner && o.status === 'data_masuk';
-        return editable ? (
+        if (!editable) {
+          return (
+            <Pressable onPress={() => setSelected(o)} hitSlop={8}>
+              <Text style={dtStyles.actionBtn}>›</Text>
+            </Pressable>
+          );
+        }
+        return (
           <View style={dtStyles.rowActions}>
+            <Pressable onPress={async () => {
+              try {
+                await copyText(orderCopyRow(o).join('\t'));
+                notify('Berhasil', 'Data order disalin.');
+              } catch (e) {
+                notify('Gagal menyalin', (e as Error).message);
+              }
+            }} hitSlop={8}>
+              <Text style={dtStyles.actionBtn}>⧉</Text>
+            </Pressable>
+            <Pressable onPress={() => processPickup(o, refresh)} hitSlop={8}>
+              <Text style={[dtStyles.actionBtn, { color: colors.primary }]}>→</Text>
+            </Pressable>
             <Pressable onPress={() => setEditing(o)} hitSlop={8}>
               <Text style={dtStyles.actionBtn}>✎</Text>
             </Pressable>
@@ -161,10 +209,6 @@ export default function Orders() {
               <Text style={[dtStyles.actionBtn, { color: colors.red }]}>✕</Text>
             </Pressable>
           </View>
-        ) : (
-          <Pressable onPress={() => setSelected(o)} hitSlop={8}>
-            <Text style={dtStyles.actionBtn}>›</Text>
-          </Pressable>
         );
       },
     },
@@ -181,14 +225,16 @@ export default function Orders() {
       </View>
 
       <View style={styles.filterBar}>
-        <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>⌕</Text>
+        <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
+          <Text style={[styles.searchIcon, isSearchFocused && styles.searchIconFocused]}>⌕</Text>
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, webNoOutline]}
             placeholder="Cari nomor order, produk, atau penerima..."
             placeholderTextColor={colors.faint}
             value={search}
             onChangeText={(t) => { setSearch(t); setPage(1); }}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {!!search && (
             <Pressable onPress={() => setSearch('')} hitSlop={6}>
@@ -213,14 +259,16 @@ export default function Orders() {
           placeholder="Semua"
           clearLabel="Semua"
         />
-        <Select
-          label="Trader"
-          value={trader}
-          options={TRADERS}
-          onChange={(v) => { setTrader(v); setPage(1); }}
-          placeholder="Semua"
-          clearLabel="Semua"
-        />
+        {isAdmin && (
+          <Select
+            label="Trader"
+            value={trader}
+            options={TRADERS}
+            onChange={(v) => { setTrader(v); setPage(1); }}
+            placeholder="Semua"
+            clearLabel="Semua"
+          />
+        )}
         <Select
           label="Periode"
           value={period}
@@ -241,16 +289,23 @@ export default function Orders() {
       <View style={styles.tableSection}>
         <View style={styles.tableIntro}>
           <View>
-            <Text style={styles.tableTitle}>Semua order</Text>
+            <Text style={styles.tableTitle}>{isAdmin ? 'Semua order' : 'Order saya'}</Text>
             <Text style={styles.tableHint}>Klik judul kolom untuk mengurutkan data.</Text>
           </View>
-          <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {sorted.length}</Text>
+          <View style={styles.tableTools}>
+            <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {sorted.length}</Text>
+            <Button label="Copy hasil filter" icon="⧉" variant="secondary" size="sm" onPress={copyFiltered} disabled={sorted.length === 0} />
+          </View>
         </View>
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
         ) : error ? (
-          <Text style={styles.error}>{error}</Text>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Gagal memuat order</Text>
+            <Text style={styles.errorText}>Terjadi kendala saat mengambil data. Periksa koneksi ke server, lalu coba muat ulang.</Text>
+            <Button label="Muat ulang" variant="secondary" size="sm" onPress={refresh} />
+          </View>
         ) : (
           <DataTable
             columns={columns}
@@ -282,16 +337,26 @@ export default function Orders() {
 
 /* ---------- Aksi order ---------- */
 
+async function processPickup(o: OrderView, refresh: () => void) {
+  // Order sudah punya bukti (barcode/foto) → proses langsung; belum → wajib lampirkan foto dulu.
+  let photo: { uri: string; name: string; type: string } | undefined;
+  if (!o.barcode_path && o.photo_count < 1) {
+    photo = (await pickPhoto('Foto barcode pengambilan')) ?? undefined;
+    if (!photo) return notify('Foto wajib', 'Lampirkan minimal 1 foto barcode pengambilan sebelum memproses pick up.');
+  }
+  try {
+    await api.pickup(o.id, photo);
+    notify('Berhasil', `${o.order_number} → Proses pick up`);
+    refresh();
+  } catch (e) {
+    notify('Gagal', (e as Error).message);
+  }
+}
+
 async function removeOrder(o: OrderView, refresh: () => void) {
-  Alert.alert('Hapus order', `Hapus #${o.order_number}?`, [
-    { text: 'Batal', style: 'cancel' },
-    {
-      text: 'Hapus', style: 'destructive',
-      onPress: async () => {
-        try { await api.deleteOwnOrder(o.id); refresh(); } catch (e) { Alert.alert('Gagal', (e as Error).message); }
-      },
-    },
-  ]);
+  confirmAsk('Hapus order', `Hapus #${o.order_number}?`, async () => {
+    try { await api.deleteOwnOrder(o.id); refresh(); } catch (e) { notify('Gagal', (e as Error).message); }
+  });
 }
 
 function EditOrderModal({ order, onClose, onSaved }: { order: OrderView | null; onClose: () => void; onSaved: () => void }) {
@@ -310,7 +375,7 @@ function EditOrderModal({ order, onClose, onSaved }: { order: OrderView | null; 
       });
       onSaved();
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 
@@ -342,6 +407,8 @@ const dtStyles = StyleSheet.create({
   actionBtn: { fontSize: 17, color: colors.faint, paddingHorizontal: 2 },
 });
 
+const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
+
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   wrapContent: { paddingBottom: 32 },
@@ -351,17 +418,19 @@ const styles = StyleSheet.create({
 
   // Filter bar ala ERP: satu baris kardus, dropdown anchored.
   filterBar: {
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
     marginHorizontal: 20, marginBottom: 18,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line,
-    borderRadius: radius.lg, padding: 12,
+    backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#D8DEE6',
+    borderRadius: radius.md, padding: 10,
   },
   searchBox: {
-    flex: 1, minWidth: 260, flexDirection: 'row', alignItems: 'center', gap: 9,
-    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
-    paddingHorizontal: 12, height: 44,
+    flex: 1, minWidth: 280, flexDirection: 'row', alignItems: 'center', gap: 9,
+    borderWidth: 1, borderColor: '#CBD5E1', borderRadius: radius.sm, backgroundColor: colors.surface,
+    paddingHorizontal: 12, height: 42,
   },
+  searchBoxFocused: { borderColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, shadowRadius: 5 },
   searchIcon: { color: colors.faint, fontSize: 16 },
+  searchIconFocused: { color: colors.text },
   searchInput: { flex: 1, height: 44, fontSize: 14, color: colors.text, padding: 0 },
   clearBtn: { fontSize: 15, color: colors.faint, paddingHorizontal: 4 },
 
@@ -373,10 +442,13 @@ const styles = StyleSheet.create({
   resetText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 
   tableSection: { marginHorizontal: 20 },
-  tableIntro: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 11 },
+  tableIntro: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 10, paddingHorizontal: 2 },
   tableTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
-  tableHint: { fontSize: 12, color: colors.faint, marginTop: 2 },
-  tableCount: { fontSize: 12, color: colors.muted, fontWeight: '700' },
-  error: { color: colors.red, marginTop: 24, textAlign: 'center' },
+  tableHint: { fontSize: 11, color: colors.faint, marginTop: 3 },
+  tableTools: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tableCount: { fontSize: 11, color: colors.muted, fontWeight: '700' },
+  errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginTop: 24, alignItems: 'center', gap: 8 },
+  errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },
   ownerNote: { fontSize: 9, color: colors.faint, marginVertical: 8 },
 });

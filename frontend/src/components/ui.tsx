@@ -99,12 +99,14 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
 
 /* ---------- Form ---------- */
 
-export function Field({ label, hint, ...rest }: TextInputProps & { label: string; hint?: string }) {
+const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
+
+export function Field({ label, hint, style, ...rest }: TextInputProps & { label: string; hint?: string }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
-      <TextInput style={styles.input} placeholderTextColor={colors.faint} {...rest} />
+      <TextInput style={[styles.input, webNoOutline, style]} placeholderTextColor={colors.faint} {...rest} />
     </View>
   );
 }
@@ -148,6 +150,8 @@ export interface SelectOption {
   value: string;
   label: string;
   sub?: string;
+  disabled?: boolean;
+  onDelete?: () => void;
 }
 
 // react-native-web mendukung transisi CSS; tipe RN belum memuatnya.
@@ -166,7 +170,7 @@ function useHover() {
 }
 
 export function Select({
-  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel,
+  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel, block = false,
 }: {
   label: string;
   value: string;
@@ -176,6 +180,7 @@ export function Select({
   clearLabel?: string;
   onAdd?: () => void;
   addLabel?: string;
+  block?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0 });
@@ -212,6 +217,7 @@ export function Select({
         {...triggerHover.handlers}
         style={({ pressed }) => [
           selStyles.trigger,
+          block && selStyles.triggerBlock,
           webTransition('background-color, border-color, opacity'),
           triggerHover.hovered && !open && selStyles.triggerHover,
           open && selStyles.triggerOpen,
@@ -219,13 +225,20 @@ export function Select({
           pressed && { opacity: 0.9 },
         ]}
       >
-        <Text style={[selStyles.caption, !!value && selStyles.captionActive]}>{label}</Text>
-        <Text style={[selStyles.value, !!value && selStyles.valueActive]} numberOfLines={1}>{selected ? selected.label : placeholder}</Text>
+        {!!value ? (
+          <>
+            <Text style={[selStyles.caption, !!value && selStyles.captionActive]}>{label}</Text>
+            <Text style={[selStyles.value, !!value && selStyles.valueActive]} numberOfLines={1}>{selected ? selected.label : placeholder}</Text>
+          </>
+        ) : (
+          <Text style={selStyles.placeholder} numberOfLines={1}>{placeholder}</Text>
+        )}
         <Text style={selStyles.caret}>▾</Text>
       </Pressable>
 
       <Modal transparent visible={open} onRequestClose={() => setOpen(false)} animationType="fade">
-        <Pressable style={selStyles.backdrop} onPress={() => setOpen(false)}>
+        <View style={selStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
           <View style={[selStyles.menu, { left, top, width: menuW }]}>
             {!!clearLabel && (
               <HoverItem onPress={() => pick('')} style={[selStyles.item, !value && selStyles.itemActive]} hoverStyle={selStyles.itemHover}>
@@ -235,14 +248,28 @@ export function Select({
             )}
             {options.map((opt) => {
               const sel = opt.value === value;
+              const labelBlock = (
+                <View style={{ flex: 1 }}>
+                  <Text style={[selStyles.itemLabel, sel && selStyles.itemLabelActive]} numberOfLines={1}>{opt.label}</Text>
+                  {!!opt.sub && <Text style={selStyles.itemSub} numberOfLines={1}>{opt.sub}</Text>}
+                </View>
+              );
               return (
-                <HoverItem key={opt.value} onPress={() => pick(opt.value)} style={[selStyles.item, sel && selStyles.itemActive]} hoverStyle={sel ? undefined : selStyles.itemHover}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[selStyles.itemLabel, sel && selStyles.itemLabelActive]} numberOfLines={1}>{opt.label}</Text>
-                    {!!opt.sub && <Text style={selStyles.itemSub} numberOfLines={1}>{opt.sub}</Text>}
-                  </View>
-                  {sel && <Text style={selStyles.check}>✓</Text>}
-                </HoverItem>
+                <View key={opt.value} style={selStyles.optionRow}>
+                  <HoverItem
+                    onPress={opt.disabled ? undefined : () => pick(opt.value)}
+                    style={[selStyles.item, selStyles.itemPick, sel && selStyles.itemActive, opt.disabled && { opacity: 0.5 }]}
+                    hoverStyle={sel || opt.disabled ? undefined : selStyles.itemHover}
+                  >
+                    {labelBlock}
+                    {sel && <Text style={selStyles.check}>✓</Text>}
+                  </HoverItem>
+                  {!!opt.onDelete && (
+                    <HoverItem onPress={() => { setOpen(false); opt.onDelete?.(); }} style={selStyles.deleteCell} hoverStyle={selStyles.deleteHover}>
+                      <Text style={selStyles.deleteText}>Hapus</Text>
+                    </HoverItem>
+                  )}
+                </View>
               );
             })}
             {!!onAdd && (
@@ -255,7 +282,7 @@ export function Select({
               </>
             )}
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </View>
   );
@@ -325,7 +352,7 @@ export function OrderCard({
   return (
     <Pressable style={({ pressed }) => [styles.orderCard, order.is_problem && styles.orderCardProblem, pressed && { opacity: 0.92 }]} onPress={onPress}>
       <View style={styles.orderTop}>
-        <Text style={styles.orderNumber}>#{order.order_number}</Text>
+        <Text style={styles.orderNumber}>{order.order_number}</Text>
         {order.is_problem ? (
           <Badge label="Bermasalah" color="#C1433A" bg="#FCE9E6" />
         ) : order.is_pending ? (
@@ -507,15 +534,18 @@ const selStyles = StyleSheet.create({
     height: 46, paddingHorizontal: 12, alignSelf: 'flex-start', minWidth: 180, maxWidth: '100%',
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
   },
-  triggerHover: { backgroundColor: '#F5F6FA', borderColor: '#D4D9E4' },
+  triggerBlock: { alignSelf: 'stretch', width: '100%' },
+  triggerHover: { backgroundColor: '#F8FAFC', borderColor: '#94A3B8' },
   triggerOpen: { borderColor: colors.primary },
-  triggerActive: { borderColor: '#C7CFFB', backgroundColor: colors.primarySoft },
+  triggerActive: { borderColor: '#A8BACD', backgroundColor: colors.primarySoft },
   caption: { fontSize: 9, fontWeight: '800', letterSpacing: 0.8, color: colors.faint, textTransform: 'uppercase' },
   captionActive: { color: colors.primaryMuted },
-  value: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.muted, textAlign: 'right' },
+  value: { flex: 1, fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'right' },
   valueActive: { color: colors.primary },
+  placeholder: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.faint },
+  
   caret: { fontSize: 10, color: colors.faint },
-  backdrop: { flex: 1, backgroundColor: 'rgba(15,22,42,0.04)' },
+  overlay: { flex: 1 },
   menu: {
     position: 'absolute',
     backgroundColor: colors.surface, borderRadius: radius.md,
@@ -536,24 +566,33 @@ const selStyles = StyleSheet.create({
   addPressed: { backgroundColor: '#D9DFFB' },
   addIcon: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   addText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  optionRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 0 },
+  itemPick: { flex: 1, minWidth: 0 },
+  deleteCell: {
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    backgroundColor: '#FBECEC', borderRadius: radius.sm, paddingHorizontal: 10, height: 26,
+  },
+  deleteHover: { backgroundColor: '#F6DADA' },
+  deleteText: { color: colors.red, fontSize: 10, fontWeight: '800' },
 });
 
-const dtStyles = StyleSheet.create({  container: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+const dtStyles = StyleSheet.create({
+  container: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: '#D8DEE6', overflow: 'hidden' },
   scrollContent: { flexGrow: 1 },
   table: { width: '100%', minWidth: 1100 },
-  headerRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: '#F8F9FC' },
-  headerCell: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 48 },
-  headerText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', color: colors.faint },
+  headerRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#CBD5E1', backgroundColor: '#F1F5F9' },
+  headerCell: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44 },
+  headerText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.55, textTransform: 'uppercase', color: '#475569' },
   headerTextActive: { color: colors.primary },
   sortArrow: { fontSize: 9, marginLeft: 2 },
   sortArrowActive: { color: colors.primary },
-  sortArrowInactive: { color: colors.faint },
-  dataRow: { flexDirection: 'row', minHeight: 80, borderBottomWidth: 1, borderBottomColor: colors.line },
-  dataRowAlt: { backgroundColor: '#FCFCFE' },
-  dataCell: { paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center' },
+  sortArrowInactive: { color: '#94A3B8' },
+  dataRow: { flexDirection: 'row', minHeight: 70, borderBottomWidth: 1, borderBottomColor: '#E9EDF2' },
+  dataRowAlt: { backgroundColor: '#FAFBFC' },
+  dataCell: { paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
   emptyWrap: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, paddingVertical: 56, alignItems: 'center' },
   emptyText: { fontSize: 14, color: colors.muted },
-  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#FCFCFE', borderTopWidth: 1, borderTopColor: colors.line },
+  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   pageInfo: { fontSize: 12, color: colors.muted },
   pageButtons: { flexDirection: 'row', gap: 5 },
   pageBtn: { width: 34, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },

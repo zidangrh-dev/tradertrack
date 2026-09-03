@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "TraderTrack",
-    "slug": "tradertrack",
+    "name": "ZProject",
+    "slug": "zproject",
     "version": "0.1.0",
-    "scheme": "tradertrack",
+    "scheme": "zproject",
     "orientation": "default",
     "userInterfaceStyle": "light",
     "platforms": [
@@ -16,19 +16,19 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Izinkan TraderTrack mengakses kamera untuk memindai barcode resi dan mengambil foto bukti."
+          "cameraPermission": "Izinkan ZProject mengakses kamera untuk memindai barcode resi dan mengambil foto bukti."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Izinkan TraderTrack mengambil foto bukti penyelesaian order."
+          "photosPermission": "Izinkan ZProject mengambil foto bukti penyelesaian order."
         }
       ],
       "expo-status-bar"
     ],
     "android": {
-      "package": "id.tradertrack.app"
+      "package": "id.zproject.app"
     },
     "extra": {
       "apiUrl": "http://localhost:4000"

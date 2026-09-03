@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -7,6 +7,7 @@ import { colors, radius } from '../src/theme';
 
 export default function Login() {
   const { signIn } = useAuth();
+  const passwordRef = useRef<TextInput>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,22 +30,18 @@ export default function Login() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.brandRow}>
-            <View style={styles.brandMark}><Text style={styles.brandMarkText}>T</Text></View>
-            <Text style={styles.brand}>TRADER<Text style={styles.brandLight}>TRACK</Text></Text>
+            <View style={styles.brandMark}><Text style={styles.brandMarkText}>Z</Text></View>
+            <Text style={styles.brand}>Z<Text style={styles.brandLight}>PROJECT</Text></Text>
           </View>
 
           <Text style={styles.kicker}>SELAMAT DATANG KEMBALI</Text>
           <Text style={styles.title}>Masuk ke workspace</Text>
-          <Text style={styles.note}>
-            Gunakan akun yang diberikan admin tim Anda. Tidak ada pendaftaran mandiri.{'\n'}
-            Prototype: admin / admin (Administrator) · nabila / trader (Trader).
-          </Text>
 
           <Text style={styles.label}>Username</Text>
-          <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} placeholder="username Anda" placeholderTextColor={colors.faint} />
+          <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} placeholder="username Anda" placeholderTextColor={colors.faint} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
 
           <Text style={styles.label}>Kata sandi</Text>
-          <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={colors.faint} />
+          <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={colors.faint} returnKeyType="go" onSubmitEditing={submit} />
 
           {!!error && <Text style={styles.error}>{error}</Text>}
 
@@ -56,7 +53,7 @@ export default function Login() {
             <Text style={styles.submitText}>{busy ? 'Memproses…' : 'Masuk'}</Text>
           </Pressable>
 
-          <Text style={styles.foot}>Sesi dilindungi token JWT. Seluruh lalu lintas terenkripsi HTTPS.</Text>
+          <Text style={styles.foot}>© {new Date().getFullYear()} ZProject. Hak cipta dilindungi.</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -78,7 +75,6 @@ const styles = StyleSheet.create({
   brandLight: { color: colors.faint, fontWeight: '600' },
   kicker: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
   title: { fontSize: 26, fontWeight: '800', color: colors.text, marginTop: 8, letterSpacing: -0.5 },
-  note: { fontSize: 12, color: colors.muted, marginTop: 8, lineHeight: 19, marginBottom: 20 },
   label: { fontSize: 11, fontWeight: '700', color: colors.muted, marginTop: 14 },
   input: {
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, height: 44,

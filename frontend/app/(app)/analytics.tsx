@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { api, type Reports } from '../../src/lib/api';
+import { notify } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { colors, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
@@ -137,14 +138,25 @@ export default function Analytics() {
   useAdminOnly();
   const [range, setRange] = useState<string>('bulan_ini');
   const [data, setData] = useState<Reports | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [load, setLoad] = useState(0);
 
   useEffect(() => {
     setData(null);
-    api.reports(range).then(setData).catch((e) => setError((e as Error).message));
-  }, [range]);
+    setError(false);
+    api.reports(range).then(setData).catch(() => setError(true));
+  }, [range, load]);
 
-  if (error) return <Text style={styles.error}>{error}</Text>;
+  if (error) return (
+    <View style={styles.wrap}>
+      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={<ExportBtn disabled />} />
+      <View style={styles.errorBox}>
+        <Text style={styles.errorTitle}>Gagal memuat laporan</Text>
+        <Text style={styles.errorText}>Terjadi kendala saat mengambil data. Periksa koneksi ke server, lalu coba muat ulang.</Text>
+        <Button label="Muat ulang" variant="secondary" size="sm" onPress={() => setLoad((n) => n + 1)} />
+      </View>
+    </View>
+  );
   if (!data) return (
     <View style={styles.wrap}>
       <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={<ExportBtn disabled />} />
@@ -156,7 +168,7 @@ export default function Analytics() {
   const statusTotal = t.data_masuk + t.proses_pick_up + t.selesai;
   const pct = (n: number) => (statusTotal ? Math.round((n / statusTotal) * 100) : 0);
   const maxTrader = Math.max(1, ...data.perTrader.map((r) => r.total));
-  const maxAmount = Math.max(1, ...data.perRekening.map((r) => r.amount));
+  const maxAmount = Math.max(1, ...data.perProduk.map((r) => r.amount));
 
   const exportCsv = () => {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
@@ -165,14 +177,14 @@ export default function Analytics() {
     rows.push(['Trader', 'Total order', 'Selesai', 'Belum selesai'].join(','));
     data.perTrader.forEach((r) => rows.push([r.trader, r.total, r.selesai, r.belum_selesai].map(esc).join(',')));
     rows.push('');
-    rows.push('Rekap pembayaran per rekening');
-    rows.push(['Bank', 'Nomor rekening', 'Pemilik', 'Jumlah order', 'Total nominal'].join(','));
-    data.perRekening.forEach((r) => rows.push([r.bank_name, r.account_number, r.holder, r.orders, r.amount].map(esc).join(',')));
+    rows.push('Rekap performa produk');
+    rows.push(['Produk', 'Order terpakai', 'Sisa kuota', 'Total nominal'].join(','));
+    data.perProduk.forEach((r) => rows.push([r.product_name, r.used_quota, r.remaining_quota, r.amount].map(esc).join(',')));
     rows.push('');
     rows.push('Order tertunda atau bermasalah');
     rows.push(['Nomor order', 'Produk', 'Trader', 'Durasi', 'Status'].join(','));
     data.delayed.forEach((d) => rows.push([d.order_number, d.product_name, d.trader, d.duration, d.is_problem ? 'Bermasalah' : 'Tertunda'].map(esc).join(',')));
-    downloadCsv(rows.join('\n'), `tradertrack-laporan-${range}.csv`);
+    downloadCsv(rows.join('\n'), `zproject-laporan-${range}.csv`);
   };
 
   return (
@@ -226,15 +238,15 @@ export default function Analytics() {
         ))}
       </Panel>
 
-      <Panel title="Rekap pembayaran per rekening" subtitle="Nominal hanya bila kolom nominal diisi · batang = proporsi nominal terbesar">
-        {data.perRekening.length === 0 ? (
-          <EmptyState icon="▤" text="Belum ada data rekening pada rentang ini." />
+      <Panel title="Rekap performa produk" subtitle="Rekap order per tipe barang (kuota lintas toko) · batang = proporsi nominal terbesar">
+        {data.perProduk.length === 0 ? (
+          <EmptyState icon="▤" text="Belum ada data produk pada rentang ini." />
         ) : (
-          data.perRekening.map((r) => (
-            <Hover key={r.account_number} style={styles.rekapRow} hoverStyle={styles.traderRowHover}>
+          data.perProduk.map((r) => (
+            <Hover key={r.product_name} style={styles.rekapRow} hoverStyle={styles.traderRowHover}>
               <View style={styles.rekapMain}>
-                <Text style={styles.rekapName} numberOfLines={1}>{r.bank_name} · {r.account_number}</Text>
-                <Text style={styles.rekapSub}>{r.holder} · {r.orders} order</Text>
+                <Text style={styles.rekapName} numberOfLines={1}>{r.product_name}</Text>
+                <Text style={styles.rekapSub}>{r.used_quota} order · Sisa kuota {r.remaining_quota}/{r.quota}</Text>
               </View>
               <View style={styles.rekapRight}>
                 <Text style={styles.rekapAmount}>{money(r.amount)}</Text>
@@ -253,7 +265,7 @@ export default function Analytics() {
         ) : (
           data.delayed.map((d, i) => (
             <Hover key={i} style={styles.delayedRow} hoverStyle={styles.traderRowHover}>
-              <Text style={styles.delayedOrder}>#{d.order_number}</Text>
+              <Text style={styles.delayedOrder}>{d.order_number}</Text>
               <Text style={styles.delayedProduct} numberOfLines={1}>{d.product_name}</Text>
               <Text style={styles.delayedTrader} numberOfLines={1}>{d.trader}</Text>
               <Text style={styles.delayedDuration}>{d.duration}</Text>
@@ -282,14 +294,16 @@ function downloadCsv(content: string, filename: string) {
     a.click();
     URL.revokeObjectURL(url);
   } else {
-    Alert.alert('Export CSV', content);
+    notify('Export CSV', content);
   }
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   wrapContent: { paddingBottom: 32 },
-  error: { color: colors.red, margin: 24 },
+  errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginHorizontal: 16, marginTop: 24, alignItems: 'center', gap: 8 },
+  errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },
 
   rangeRow: { paddingHorizontal: 20, marginBottom: space.lg },
   segScroll: { paddingRight: 20 },

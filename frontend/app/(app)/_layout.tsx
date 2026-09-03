@@ -44,8 +44,8 @@ export default function AppLayout() {
             options={{ title: 'Analytics', tabBarIcon: icon('◒'), href: isAdmin ? undefined : null }}
           />
           <Tabs.Screen
-            name="accounts"
-            options={{ title: 'Master Rekening', tabBarIcon: icon('▤'), href: isAdmin ? undefined : null }}
+            name="master-data"
+            options={{ title: 'Master Data', tabBarIcon: icon('▤'), href: isAdmin ? undefined : null }}
           />
           <Tabs.Screen
             name="settings"

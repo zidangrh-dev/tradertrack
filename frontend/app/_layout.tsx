@@ -3,6 +3,7 @@ import { Stack, Redirect, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/hooks/useAuth';
 import { colors } from '../src/theme';
+import { NotifyHost } from '../src/components/NotifyHost';
 
 function Gate() {
   const { user, loading } = useAuth();
@@ -39,6 +40,7 @@ export default function RootLayout() {
     <AuthProvider>
       <StatusBar style="light" />
       <Gate />
+      <NotifyHost />
     </AuthProvider>
   );
 }

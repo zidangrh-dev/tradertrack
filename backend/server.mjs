@@ -1,4 +1,4 @@
-// Bootstrap server TraderTrack — Express + Socket.IO + uploads + migrasi DB.
+// Bootstrap server ZProject — Express + Socket.IO + uploads + migrasi DB.
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -51,6 +51,6 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 const PORT = Number(process.env.PORT || 4000);
 server.listen(PORT, () => {
-  console.log(`[trader-track] API berjalan di http://localhost:${PORT}`);
-  console.log(`[trader-track] Repo: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'memori (dev)'} · Uploads: ${uploadsDir}`);
+  console.log(`[zproject] API berjalan di http://localhost:${PORT}`);
+  console.log(`[zproject] Repo: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'memori (dev)'} · Uploads: ${uploadsDir}`);
 });

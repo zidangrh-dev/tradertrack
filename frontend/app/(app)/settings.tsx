@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, type AppSettings, type UserRow } from '../../src/lib/api';
+import { notify } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space } from '../../src/theme';
@@ -29,7 +30,7 @@ export default function Settings() {
       setSaved('Pengaturan disimpan.');
       setTimeout(() => setSaved(null), 2500);
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 
@@ -110,7 +111,7 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
       setEditing(false); setPassword('');
       onChanged();
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 
@@ -119,7 +120,7 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
       await api.updateUser(user.id, { is_active: !user.is_active });
       onChanged();
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 
@@ -157,7 +158,7 @@ function CreateUserSheet({ open, onClose, onCreated }: { open: boolean; onClose:
 
   const create = async () => {
     if (!username.trim() || !password.trim() || !name.trim()) {
-      Alert.alert('Lengkapi data', 'Username, kata sandi, dan nama lengkap wajib diisi.');
+      notify('Lengkapi data', 'Username, kata sandi, dan nama lengkap wajib diisi.');
       return;
     }
     try {
@@ -165,7 +166,7 @@ function CreateUserSheet({ open, onClose, onCreated }: { open: boolean; onClose:
       onCreated();
       setUsername(''); setPassword(''); setName(''); setRole('trader');
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     }
   };
 

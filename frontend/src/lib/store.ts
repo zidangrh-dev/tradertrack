@@ -1,6 +1,6 @@
 // Mock store lokal — Fase 1 prototype.
-// Meniru seluruh skema DB dari PRD (users, orders, order_photos, order_events,
-// bank_accounts, app_settings) dengan logika bisnis sesuai PRD. Tanpa jaringan.
+// Meniru seluruh skema DB (users, products, marketplace_stores, orders,
+// order_photos, order_events, app_settings) dengan logika bisnis sesuai PRD. Tanpa jaringan.
 // Fase 3 akan mengganti file ini dengan pemanggilan API sungguhan.
 
 export type Role = 'admin' | 'trader';
@@ -18,14 +18,21 @@ export interface User {
   created_at: string;
 }
 
-export interface BankAccount {
+export interface MarketplaceStore {
   id: string;
-  account_number: string;
-  bank_name: string;
-  account_holder_name: string;
-  owner_user_id: string | null;
+  name: string;
   is_active: boolean;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  quota: number;
+  is_active: boolean;
+  used_quota: number;
+  remaining_quota: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Order {
@@ -36,7 +43,8 @@ export interface Order {
   recipient_name: string;
   pickup_method: PickupMethod;
   trader_id: string;
-  bank_account_id: string;
+  product_id: string;
+  store_id: string;
   status: Status;
   order_amount: number | null;
   note: string | null;
@@ -85,27 +93,44 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const hoursAgo = (h: number) => now(-h * 3600 * 1000);
 const minutesAgo = (m: number) => now(-m * 60 * 1000);
 
-function seed(): { users: User[]; orders: Order[]; photos: OrderPhoto[]; events: OrderEvent[]; accounts: BankAccount[]; settings: AppSettings } {
+function seed(): { users: User[]; orders: Order[]; photos: OrderPhoto[]; events: OrderEvent[]; products: Product[]; marketplaceStores: MarketplaceStore[]; settings: AppSettings } {
   const users: User[] = [
     { id: 'u-admin', username: 'admin', password: 'admin', display_name: 'Dimas Arya', role: 'admin', is_active: true, last_login_at: null, created_at: hoursAgo(200) },
     { id: 'u-nabila', username: 'nabila', password: 'trader', display_name: 'Nabila Putri', role: 'trader', is_active: true, last_login_at: null, created_at: hoursAgo(190) },
     { id: 'u-fajar', username: 'fajar', password: 'trader', display_name: 'Fajar Rahman', role: 'trader', is_active: true, last_login_at: null, created_at: hoursAgo(180) },
   ];
 
-  const accounts: BankAccount[] = [
-    { id: 'bca-dimas', account_number: '1280098812', bank_name: 'BCA', account_holder_name: 'Dimas Arya', owner_user_id: 'u-admin', is_active: true, created_at: hoursAgo(200) },
-    { id: 'mandiri-nabila', account_number: '1400000921', bank_name: 'Bank Mandiri', account_holder_name: 'Nabila Putri', owner_user_id: 'u-nabila', is_active: true, created_at: hoursAgo(190) },
-    { id: 'bri-fajar', account_number: '30217710', bank_name: 'BRI', account_holder_name: 'Fajar Rahman', owner_user_id: 'u-fajar', is_active: true, created_at: hoursAgo(180) },
-    { id: 'bni-rani', account_number: '90182271', bank_name: 'BNI', account_holder_name: 'Rani Salsabila', owner_user_id: null, is_active: false, created_at: hoursAgo(50) },
+  const marketplaceStores: MarketplaceStore[] = [
+    { id: 'st-tokopedia', name: 'Tokopedia', is_active: true },
+    { id: 'st-shopee', name: 'Shopee', is_active: true },
+    { id: 'st-lazada', name: 'Lazada', is_active: true },
+    { id: 'st-blibli', name: 'Blibli', is_active: true },
   ];
+  const storeOf = (store: string) => marketplaceStores.find((s) => s.name === store)!.id;
 
-  const mk = (
+  const products: Product[] = [
+    { id: 'p-keyboard', name: 'Wireless Keyboard K2', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-rak', name: 'Rak Serbaguna 4 Susun', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-mousepad', name: 'Mouse Pad XL', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-hdmi', name: 'HDMI Cable 2.1 3M', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-monitor', name: 'Monitor LG 24 inch', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-mekanik', name: 'Mechanical Keyboard V1', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-usbc', name: 'USB-C Hub 7 in 1', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-meja', name: 'Standing Desk Mat', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-webcam', name: 'Webcam Full HD', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-kursi', name: 'Kursi Kerja Ergonomis', quota: 50, is_active: true, used_quota: 0, remaining_quota: 50, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'p-limit', name: 'Produk Kuota Penuh', quota: 1, is_active: true, used_quota: 0, remaining_quota: 1, created_at: hoursAgo(120), updated_at: hoursAgo(120) },
+  ];
+  const productOf = (product: string) => products.find((p) => p.name === product)!.id;
+
+  const mkOrder = (
     num: string, product: string, store: string, recipient: string,
-    method: PickupMethod, trader: string, bank: string, status: Status,
+    method: PickupMethod, trader: string, status: Status,
     extra: Partial<Order> & { minutes?: number },
   ): Order => ({
     id: uid(), order_number: `TRK-${num}`, product_name: product, store_name: store,
-    recipient_name: recipient, pickup_method: method, trader_id: trader, bank_account_id: bank,
+    recipient_name: recipient, pickup_method: method, trader_id: trader,
+    product_id: productOf(product), store_id: storeOf(store),
     status, order_amount: null, note: null, is_problem: false,
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: minutesAgo(extra.minutes ?? 10),
     picked_up_at: null, completed_at: null, updated_at: minutesAgo(extra.minutes ?? 10),
@@ -113,16 +138,16 @@ function seed(): { users: User[]; orders: Order[]; photos: OrderPhoto[]; events:
   });
 
   const orders: Order[] = [
-    mk('240626-018', 'Wireless Keyboard K2', 'Tokopedia', 'Nadia Putri', 'zaydan_ambilan_gjm', 'u-nabila', 'mandiri-nabila', 'data_masuk', { minutes: 14 }),
-    mk('240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', 'u-fajar', 'bri-fajar', 'data_masuk', { minutes: 32 }),
-    mk('240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-admin', 'bca-dimas', 'data_masuk', { minutes: 48 }),
-    mk('240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', 'u-admin', 'bca-dimas', 'data_masuk', { minutes: 68 }),
-    mk('240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', 'u-admin', 'bca-dimas', 'proses_pick_up', { minutes: 102, picked_up_at: minutesAgo(58) }),
-    mk('240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', 'u-nabila', 'mandiri-nabila', 'proses_pick_up', { minutes: 198, picked_up_at: minutesAgo(160), is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }),
-    mk('240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-nabila', 'mandiri-nabila', 'selesai', { minutes: 320, photo_count: 2, picked_up_at: minutesAgo(300), completed_at: minutesAgo(280), note: 'Barang dalam kondisi baik.' }),
-    mk('240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', 'u-fajar', 'bri-fajar', 'selesai', { minutes: 500, photo_count: 1, picked_up_at: minutesAgo(480), completed_at: minutesAgo(450), note: 'Sudah diambil.' }),
-    mk('240626-004', 'Webcam Full HD', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', 'u-admin', 'bca-dimas', 'selesai', { minutes: 600, photo_count: 1, picked_up_at: minutesAgo(570), completed_at: minutesAgo(540) }),
-    mk('240625-189', 'Kursi Kerja Ergonomis', 'Shopee', 'Fajar Rahman', 'self_pick_up', 'u-fajar', 'bri-fajar', 'proses_pick_up', { minutes: 1180, picked_up_at: minutesAgo(1140), is_problem: true, problem_reason: 'Paket hilang di titik ambil.' }),
+    mkOrder('240626-018', 'Wireless Keyboard K2', 'Tokopedia', 'Nadia Putri', 'zaydan_ambilan_gjm', 'u-nabila', 'data_masuk', { minutes: 14 }),
+    mkOrder('240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', 'u-fajar', 'data_masuk', { minutes: 32 }),
+    mkOrder('240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-admin', 'data_masuk', { minutes: 48 }),
+    mkOrder('240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', 'u-admin', 'data_masuk', { minutes: 68 }),
+    mkOrder('240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', 'u-admin', 'proses_pick_up', { minutes: 102, picked_up_at: minutesAgo(58) }),
+    mkOrder('240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', 'u-nabila', 'proses_pick_up', { minutes: 198, picked_up_at: minutesAgo(160), is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }),
+    mkOrder('240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-nabila', 'selesai', { minutes: 320, photo_count: 2, picked_up_at: minutesAgo(300), completed_at: minutesAgo(280), note: 'Barang dalam kondisi baik.' }),
+    mkOrder('240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', 'u-fajar', 'selesai', { minutes: 500, photo_count: 1, picked_up_at: minutesAgo(480), completed_at: minutesAgo(450), note: 'Sudah diambil.' }),
+    mkOrder('240626-004', 'Webcam Full HD', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', 'u-admin', 'selesai', { minutes: 600, photo_count: 1, picked_up_at: minutesAgo(570), completed_at: minutesAgo(540) }),
+    mkOrder('240625-189', 'Kursi Kerja Ergonomis', 'Shopee', 'Fajar Rahman', 'self_pick_up', 'u-fajar', 'proses_pick_up', { minutes: 1180, picked_up_at: minutesAgo(1140), is_problem: true, problem_reason: 'Paket hilang di titik ambil.' }),
   ];
 
   const photos: OrderPhoto[] = [
@@ -147,7 +172,7 @@ function seed(): { users: User[]; orders: Order[]; photos: OrderPhoto[]; events:
 
   const settings: AppSettings = { pending_threshold_hours: 3, min_photos: 1, max_photos: 3, max_file_mb: 20 };
 
-  return { users, orders, photos, events, accounts, settings };
+  return { users, orders, photos, events, products, marketplaceStores, settings };
 }
 
 const db = seed();
@@ -174,14 +199,9 @@ function findOrder(id: string) {
 function userName(id: string) {
   return db.users.find((u) => u.id === id)?.display_name ?? '—';
 }
-function bankLabel(id: string) {
-  const b = db.accounts.find((a) => a.id === id);
-  return b ? `${b.bank_name} · ${b.account_number} · ${b.account_holder_name}` : '—';
-}
-
 export interface OrderView extends Order {
   trader_name: string;
-  bank_account_label: string;
+  product_label: string;
   is_pending: boolean;
 }
 
@@ -189,7 +209,18 @@ function withMeta(o: Order): OrderView {
   const pendingHours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;
   const pending = (o.status === 'data_masuk' || o.status === 'proses_pick_up') &&
     pendingHours >= db.settings.pending_threshold_hours;
-  return { ...o, trader_name: userName(o.trader_id), bank_account_label: bankLabel(o.bank_account_id), is_pending: pending };
+  return { ...o, trader_name: userName(o.trader_id), product_label: `${o.product_name} · ${o.store_name}`, is_pending: pending };
+}
+
+function mockPickup(o: Order, hasFile?: boolean) {
+  o.status = 'proses_pick_up';
+  o.picked_up_at = now();
+  o.updated_at = now();
+  if (hasFile) {
+    o.photo_count += 1;
+    db.photos.push({ id: uid(), order_id: o.id, file_path: `/uploads/pickup-${Date.now()}.jpg`, file_name: 'barcode-pengambilan.jpg', mime_type: 'image/jpeg', file_size: 1024, source: 'pickup', uploaded_by: currentUserId!, created_at: now() });
+  }
+  db.events.push({ id: uid(), order_id: o.id, actor_id: currentUserId!, event_type: 'picked_up', from_status: 'data_masuk', to_status: 'proses_pick_up', note: 'Proses pick up', created_at: now() });
 }
 
 function applyQuery(list: Order[], query: Record<string, string>) {
@@ -239,10 +270,19 @@ export const mock = {
       const dup = db.orders.find((o) => o.order_number === input.order_number)!;
       throw new Error(`Nomor pesanan ${input.order_number} sudah pernah diinput. Order #${dup.order_number} dari ${userName(dup.trader_id)}.`);
     }
+    // Rebutan kuota per tipe barang (lintas toko): hitung order vs kuota produk.
+    const p = db.products.find((m) => m.id === input.product_id);
+    if (!p) throw new Error('Produk tidak ditemukan.');
+    if (!p.is_active) throw new Error(`Produk ${p.name} sedang nonaktif.`);
+    const st = db.marketplaceStores.find((s) => s.id === input.store_id);
+    if (!st) throw new Error('Toko marketplace tidak ditemukan.');
+    if (!st.is_active) throw new Error(`Toko ${st.name} sedang nonaktif.`);
+    const used = db.orders.filter((o) => o.product_id === p.id).length;
+    if (used >= p.quota) throw new Error(`Kuota produk ${p.name} sudah habis!`);
     const o: Order = {
-      id: uid(), order_number: input.order_number!, product_name: input.product_name!,
-      store_name: input.store_name!, recipient_name: input.recipient_name!,
-      pickup_method: input.pickup_method!, trader_id: trader, bank_account_id: input.bank_account_id!,
+      id: uid(), order_number: input.order_number!, product_name: p.name,
+      store_name: st.name, recipient_name: input.recipient_name!,
+      pickup_method: input.pickup_method!, trader_id: trader, product_id: p.id, store_id: st.id,
       status: 'data_masuk', order_amount: input.order_amount ?? null,
       note: null, is_problem: false, problem_reason: null, barcode_path: null, photo_count: 0,
       created_at: now(), picked_up_at: null, completed_at: null, updated_at: now(),
@@ -257,13 +297,13 @@ export const mock = {
     await delay();
     if (currentUserId !== 'u-admin') authFail();
     const o = findOrder(id);
+    if (to_status === 'proses_pick_up') throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
     if (to_status === 'selesai' && o.photo_count < db.settings.min_photos) {
       throw new Error(`Minimal ${db.settings.min_photos} foto bukti sebelum order selesai.`);
     }
     const from = o.status;
     o.status = to_status;
     o.updated_at = now();
-    if (to_status === 'proses_pick_up') o.picked_up_at = now();
     if (to_status === 'selesai') o.completed_at = now();
     if (to_status === 'data_masuk') { o.picked_up_at = null; o.completed_at = null; }
     db.events.push({ id: uid(), order_id: id, actor_id: currentUserId!, event_type: to_status === 'selesai' ? 'completed' : 'status', from_status: from, to_status, note: null, created_at: now() });
@@ -271,17 +311,27 @@ export const mock = {
     return withMeta(o);
   },
 
-  scan: async (code: string) => {
+  scan: async (code: string, _file?: unknown) => {
     await delay();
     if (currentUserId !== 'u-admin') authFail();
     const normalized = code.trim();
     const o = db.orders.find((x) => x.order_number === normalized);
     if (!o) return null;
     if (o.status !== 'data_masuk') return withMeta(o);
-    o.status = 'proses_pick_up';
-    o.picked_up_at = now();
-    o.updated_at = now();
-    db.events.push({ id: uid(), order_id: o.id, actor_id: currentUserId!, event_type: 'picked_up', from_status: 'data_masuk', to_status: 'proses_pick_up', note: 'Scan nomor pesanan', created_at: now() });
+    if (!_file && !o.barcode_path && o.photo_count < 1) throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
+    mockPickup(o, !!_file);
+    emitChange();
+    return withMeta(o);
+  },
+
+  pickup: async (id: string, _file?: unknown) => {
+    await delay();
+    const o = findOrder(id);
+    // Pemilik order (trader) atau admin boleh memproses; bukti wajib bila belum ada.
+    if (o.trader_id !== currentUserId && currentUserId !== 'u-admin') authFail();
+    if (o.status !== 'data_masuk') throw new Error('Order ini sudah diproses sebelumnya.');
+    if (!_file && !o.barcode_path && o.photo_count < 1) throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
+    mockPickup(o, !!_file);
     emitChange();
     return withMeta(o);
   },
@@ -308,8 +358,10 @@ export const mock = {
 
   uploadPhoto: async (orderId: string) => {
     await delay();
-    if (currentUserId !== 'u-admin') authFail();
     const o = findOrder(orderId);
+    // Pemilik order (trader) atau admin boleh mengunggah bukti.
+    if (o.trader_id !== currentUserId && currentUserId !== 'u-admin') authFail();
+    if (o.status === 'selesai') throw new Error('Order selesai terkunci. Buka kembali order terlebih dahulu.');
     if (o.photo_count >= db.settings.max_photos) throw new Error(`Maksimal ${db.settings.max_photos} foto per order.`);
     o.photo_count += 1;
     o.updated_at = now();
@@ -320,8 +372,10 @@ export const mock = {
 
   deletePhoto: async (orderId: string, photoId: string) => {
     await delay();
-    if (currentUserId !== 'u-admin') authFail();
     const o = findOrder(orderId);
+    // Pemilik order (trader) atau admin boleh menghapus bukti.
+    if (o.trader_id !== currentUserId && currentUserId !== 'u-admin') authFail();
+    if (o.status === 'selesai') throw new Error('Foto bukti order selesai tidak dapat dihapus. Buka kembali order terlebih dahulu.');
     const idx = db.photos.findIndex((p) => p.id === photoId && p.order_id === orderId);
     if (idx >= 0) db.photos.splice(idx, 1);
     if (o.photo_count > 0) o.photo_count -= 1;
@@ -420,15 +474,16 @@ export const mock = {
     });
     const perTrader = [...byTrader.values()].sort((a, b) => b.total - a.total).map((t) => ({ ...t, belum_selesai: t.total - t.selesai }));
 
-    const byBank = new Map<string, { account_number: string; bank_name: string; holder: string; orders: number; amount: number }>();
+    const byProduk = new Map<string, { product_name: string; quota: number; used_quota: number; amount: number }>();
     list.forEach((o) => {
-      const b = db.accounts.find((a) => a.id === o.bank_account_id);
-      if (!b) return;
-      const r = byBank.get(b.id) ?? { account_number: b.account_number, bank_name: b.bank_name, holder: b.account_holder_name, orders: 0, amount: 0 };
-      r.orders += 1;
+      const p = db.products.find((x) => x.id === o.product_id);
+      if (!p) return;
+      const r = byProduk.get(p.id) ?? { product_name: p.name, quota: p.quota, used_quota: 0, amount: 0 };
+      r.used_quota += 1;
       r.amount += o.order_amount ?? 0;
-      byBank.set(b.id, r);
+      byProduk.set(p.id, r);
     });
+    const perProduk = [...byProduk.values()].map((r) => ({ ...r, remaining_quota: Math.max(0, r.quota - r.used_quota) }));
 
     const delayed = db.orders
       .filter((o) => o.is_problem || withMeta(o).is_pending)
@@ -440,28 +495,123 @@ export const mock = {
         return { order_number: o.order_number, product_name: o.product_name, trader: userName(o.trader_id), duration: `${h}j ${m}m`, is_problem: o.is_problem };
       });
 
-    return { totals, perTrader, perRekening: [...byBank.values()], delayed };
+    return { totals, perTrader, perProduk, delayed };
   },
 
-  listAccounts: async () => {
+  listProducts: async () => {
     await delay();
-    // Dibaca oleh trader dan admin; manajemen (tambah/nonaktifkan) hanya admin.
-    return db.accounts.map((a) => ({ ...a, orders: db.orders.filter((o) => o.bank_account_id === a.id).length }));
+    // Dibaca oleh trader dan admin; manajemen (tambah/ubah kuota/nonaktifkan) hanya admin.
+    const withQuota = () => db.products.map((p) => {
+      const used_quota = db.orders.filter((o) => o.product_id === p.id).length;
+      return { ...p, used_quota, remaining_quota: Math.max(0, p.quota - used_quota) };
+    });
+    return withQuota();
   },
-  createAccount: async (input: { account_number: string; bank_name: string; account_holder_name: string }) => {
+  createProduct: async (input: { name: string; quota: number }) => {
     await delay();
     if (currentUserId !== 'u-admin') authFail();
-    db.accounts.push({ id: uid(), account_number: input.account_number, bank_name: input.bank_name, account_holder_name: input.account_holder_name, owner_user_id: null, is_active: true, created_at: now() });
+    const name = input.name.trim();
+    if (!name) throw new Error('Nama produk wajib diisi.');
+    if (db.products.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error('Nama produk sudah terdaftar.');
+    }
+    db.products.push({
+      id: uid(), name, quota: Math.max(0, Math.floor(input.quota)), is_active: true,
+      used_quota: 0, remaining_quota: Math.max(0, Math.floor(input.quota)),
+      created_at: now(), updated_at: now(),
+    });
     emitChange();
-    return db.accounts.map((a) => ({ ...a, orders: db.orders.filter((o) => o.bank_account_id === a.id).length }));
+    return db.products.map((p) => {
+      const used_quota = db.orders.filter((o) => o.product_id === p.id).length;
+      return { ...p, used_quota, remaining_quota: Math.max(0, p.quota - used_quota) };
+    });
   },
-  setAccountActive: async (id: string, is_active: boolean) => {
+  deleteProduct: async (id: string) => {
     await delay();
     if (currentUserId !== 'u-admin') authFail();
-    const a = db.accounts.find((x) => x.id === id);
-    if (a) a.is_active = is_active;
+    const used = db.orders.filter((o) => o.product_id === id).length;
+    if (used > 0) throw new Error('Produk yang sudah dipakai order tidak dapat dihapus. Nonaktifkan bila tidak digunakan.');
+    const index = db.products.findIndex((p) => p.id === id);
+    if (index < 0) throw new Error('Produk tidak ditemukan.');
+    db.products.splice(index, 1);
     emitChange();
-    return db.accounts.map((x) => ({ ...x, orders: db.orders.filter((o) => o.bank_account_id === x.id).length }));
+    return db.products.map((p) => {
+      const used_quota = db.orders.filter((o) => o.product_id === p.id).length;
+      return { ...p, used_quota, remaining_quota: Math.max(0, p.quota - used_quota) };
+    });
+  },
+  addProductQuota: async (id: string, amount: number) => {
+    await delay();
+    if (currentUserId !== 'u-admin') authFail();
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) throw new Error('Tambahan kuota tidak valid.');
+    const p = db.products.find((x) => x.id === id);
+    if (!p) throw new Error('Produk tidak ditemukan.');
+    p.quota += amount;
+    p.updated_at = now();
+    emitChange();
+    return db.products.map((x) => {
+      const used_quota = db.orders.filter((o) => o.product_id === x.id).length;
+      return { ...x, used_quota, remaining_quota: Math.max(0, x.quota - used_quota) };
+    });
+  },
+  resetProductQuota: async (id: string) => {
+    await delay();
+    if (currentUserId !== 'u-admin') authFail();
+    const p = db.products.find((x) => x.id === id);
+    if (!p) throw new Error('Produk tidak ditemukan.');
+    p.quota = db.orders.filter((o) => o.product_id === id).length;
+    p.updated_at = now();
+    emitChange();
+    return db.products.map((x) => {
+      const used_quota = db.orders.filter((o) => o.product_id === x.id).length;
+      return { ...x, used_quota, remaining_quota: Math.max(0, x.quota - used_quota) };
+    });
+  },
+  updateProduct: async (id: string, patch: Partial<Product>) => {
+    await delay();
+    if (currentUserId !== 'u-admin') authFail();
+    const p = db.products.find((x) => x.id === id);
+    if (!p) throw new Error('Produk tidak ditemukan.');
+    if (patch.quota !== undefined) {
+      const used = db.orders.filter((o) => o.product_id === id).length;
+      if (patch.quota < used) throw new Error('Kuota tidak boleh lebih kecil dari jumlah order yang sudah ada.');
+      p.quota = patch.quota;
+    }
+    if (patch.name) p.name = patch.name;
+    if (patch.is_active !== undefined) p.is_active = patch.is_active;
+    p.updated_at = now();
+    emitChange();
+    return db.products.map((x) => {
+      const used_quota = db.orders.filter((o) => o.product_id === x.id).length;
+      return { ...x, used_quota, remaining_quota: Math.max(0, x.quota - used_quota) };
+    });
+  },
+
+  listMarketplaceStores: async () => {
+    await delay();
+    return db.marketplaceStores.filter((s) => s.is_active);
+  },
+  createMarketplaceStore: async (name: string) => {
+    await delay();
+    if (currentUserId !== 'u-admin') authFail();
+    const clean = name.trim();
+    if (!clean) throw new Error('Nama toko wajib diisi.');
+    if (db.marketplaceStores.some((s) => s.name.toLowerCase() === clean.toLowerCase())) {
+      throw new Error('Nama toko sudah terdaftar.');
+    }
+    db.marketplaceStores.push({ id: uid(), name: clean, is_active: true });
+    emitChange();
+    return db.marketplaceStores.filter((s) => s.is_active);
+  },
+  deleteMarketplaceStore: async (id: string) => {
+    await delay();
+    if (currentUserId !== 'u-admin') authFail();
+    const s = db.marketplaceStores.find((x) => x.id === id && x.is_active);
+    if (!s) throw new Error('Toko marketplace tidak ditemukan.');
+    if (db.orders.some((o) => o.store_id === id)) throw new Error('Toko masih dipakai order. Nonaktifkan bila tidak digunakan.');
+    s.is_active = false;
+    emitChange();
+    return db.marketplaceStores.filter((x) => x.is_active);
   },
 
   getSettings: async () => {

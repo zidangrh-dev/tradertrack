@@ -20,32 +20,45 @@ export async function seedDemoData(pool) {
   );
   const byName = Object.fromEntries(admins.map((u) => [u.username, u.id]));
 
-  const { rows: accounts } = await pool.query(
-    `INSERT INTO bank_accounts (account_number, bank_name, account_holder_name, owner_user_id) VALUES
-     ('1280098812', 'BCA', 'Dimas Arya', $1),
-     ('1400000921', 'Bank Mandiri', 'Nabila Putri', $2),
-     ('30217710', 'BRI', 'Fajar Rahman', $3)
-     RETURNING id`,
-    [byName.admin, byName.nabila, byName.fajar],
+  const { rows: storeRows } = await pool.query(
+    `INSERT INTO marketplace_stores (name) VALUES
+     ('Tokopedia'), ('Shopee'), ('Lazada'), ('Blibli')
+     RETURNING name, id`,
   );
-  const [bca, mandiri, bri] = accounts.map((a) => a.id);
+  const byStore = Object.fromEntries(storeRows.map((s) => [s.name, s.id]));
+
+  const { rows: productRows } = await pool.query(
+    `INSERT INTO products (name, quota) VALUES
+     ('Wireless Keyboard K2', 50),
+     ('Rak Serbaguna 4 Susun', 50),
+     ('Mouse Pad XL', 50),
+     ('HDMI Cable 2.1 3M', 50),
+     ('Monitor LG 24 inch', 50),
+     ('Mechanical Keyboard V1', 50),
+     ('USB-C Hub 7 in 1', 50),
+     ('Standing Desk Mat', 50),
+     ('Webcam Full HD', 50),
+     ('Kursi Kerja Ergonomis', 5)
+     RETURNING name, id`,
+  );
+  const byProduct = Object.fromEntries(productRows.map((p) => [p.name, p.id]));
 
   const orderSpecs = [
-    ['240626-018', 'Wireless Keyboard K2', 'Tokopedia', 'Nadia Putri', 'zaydan_ambilan_gjm', byName.nabila, mandiri, 'data_masuk', {}],
-    ['240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', byName.fajar, bri, 'data_masuk', {}],
-    ['240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', byName.admin, bca, 'data_masuk', {}],
-    ['240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', byName.admin, bca, 'data_masuk', {}],
-    ['240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', byName.admin, bca, 'proses_pick_up', { picked_up_at: new Date() }],
-    ['240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', byName.nabila, mandiri, 'proses_pick_up', { is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }],
-    ['240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', byName.nabila, mandiri, 'selesai', { photo_count: 2, picked_up_at: new Date(), completed_at: new Date(), note: 'Barang dalam kondisi baik.' }],
-    ['240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', byName.fajar, bri, 'selesai', { photo_count: 1, picked_up_at: new Date(), completed_at: new Date(), note: 'Sudah diambil.' }],
-    ['240626-004', 'Webcam Full HD', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', byName.admin, bca, 'selesai', { photo_count: 1, picked_up_at: new Date(), completed_at: new Date() }],
-    ['240625-189', 'Kursi Kerja Ergonomis', 'Shopee', 'Fajar Rahman', 'self_pick_up', byName.fajar, bri, 'proses_pick_up', { is_problem: true, problem_reason: 'Paket hilang di titik ambil.' }],
+    ['240626-018', 'Wireless Keyboard K2', 'Tokopedia', 'Nadia Putri', 'zaydan_ambilan_gjm', byName.nabila, 'data_masuk', {}],
+    ['240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', byName.fajar, 'data_masuk', {}],
+    ['240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', byName.admin, 'data_masuk', {}],
+    ['240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', byName.admin, 'data_masuk', {}],
+    ['240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', byName.admin, 'proses_pick_up', { picked_up_at: new Date() }],
+    ['240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', byName.nabila, 'proses_pick_up', { is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }],
+    ['240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', byName.nabila, 'selesai', { photo_count: 2, picked_up_at: new Date(), completed_at: new Date(), note: 'Barang dalam kondisi baik.' }],
+    ['240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', byName.fajar, 'selesai', { photo_count: 1, picked_up_at: new Date(), completed_at: new Date(), note: 'Sudah diambil.' }],
+    ['240626-004', 'Webcam Full HD', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', byName.admin, 'selesai', { photo_count: 1, picked_up_at: new Date(), completed_at: new Date() }],
+    ['240625-189', 'Kursi Kerja Ergonomis', 'Shopee', 'Fajar Rahman', 'self_pick_up', byName.fajar, 'proses_pick_up', { is_problem: true, problem_reason: 'Paket hilang di titik ambil.' }],
   ];
 
-  for (const [num, product, store, recipient, method, trader, bank, status, extra] of orderSpecs) {
-    const cols = ['order_number', 'product_name', 'store_name', 'recipient_name', 'pickup_method', 'trader_id', 'bank_account_id', 'status'];
-    const vals = [`TRK-${num}`, product, store, recipient, method, trader, bank, status];
+  for (const [num, product, store, recipient, method, trader, status, extra] of orderSpecs) {
+    const cols = ['order_number', 'product_name', 'store_name', 'recipient_name', 'pickup_method', 'trader_id', 'product_id', 'store_id', 'status'];
+    const vals = [`TRK-${num}`, product, store, recipient, method, trader, byProduct[product], byStore[store], status];
     for (const [k, v] of Object.entries(extra)) {
       cols.push(k);
       vals.push(v);

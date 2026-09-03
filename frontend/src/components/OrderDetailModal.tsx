@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, type OrderDetail, type OrderView } from '../lib/api';
+import { notify, confirmAsk } from '../lib/notify';
+import { pickPhoto } from '../lib/photo';
+import { useFileUrl } from '../hooks/useFileUrl';
 import { colors, pickupMethodLabel } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { Avatar, Button, Sheet, StatusTag } from './ui';
@@ -36,7 +39,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
       setDetail(fresh);
       onChanged?.();
     } catch (e) {
-      Alert.alert('Gagal', (e as Error).message);
+      notify('Gagal', (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -45,6 +48,9 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const minPhotos = 1;
 
   if (!order) return null;
+  // Status tampilan diambil dari detail terbaru (di-refresh setelah setiap mutasi)
+  // agar modal otomatis berubah ke step selanjutnya tanpa tutup-buka.
+  const status = detail?.status ?? order.status;
   const canComplete = !!detail && detail.photo_count >= minPhotos && isAdmin;
 
   const finish = () => mutate(() => api.completeOrder(order.id, note.trim()), 'diselesaikan');
@@ -52,10 +58,10 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const reopen = () => mutate(() => api.reopen(order.id), 'dibuka kembali');
 
   return (
-    <Sheet open={!!order} onClose={onClose} title={`#${order.order_number}`} wide>
+    <Sheet open={!!order} onClose={onClose} title={order.order_number} wide>
       <ScrollView contentContainerStyle={{ paddingBottom: 8 }}>
         <View style={styles.topRow}>
-          <StatusTag status={order.status} />
+          <StatusTag status={status} />
           {detail?.is_problem && <Text style={styles.problemTag}>Bermasalah</Text>}
           <Text style={styles.metaRight}>Input {new Date(order.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</Text>
         </View>
@@ -66,49 +72,48 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           <DetailItem label="Penerima" value={order.recipient_name} />
           <DetailItem label="Trader (checkout)" value={order.trader_name} />
           <DetailItem label="Metode" value={pickupMethodLabel[order.pickup_method]} />
-          <DetailItem label="Rekening" value={order.bank_account_label} />
+          <DetailItem label="Produk" value={`${order.product_name} · ${order.store_name}`} />
         </View>
 
         {typeof order.barcode_path === 'string' && order.barcode_path.length > 0 && (
           <>
             <Text style={styles.section}>Barcode pengambilan</Text>
             <View style={styles.photoRow}>
-              <Pressable style={styles.thumb} onPress={() => setPreview(order.barcode_path!)}>
-                <View style={styles.thumbInner}>
-                  <Text style={styles.thumbGlyph}>▣</Text>
-                  <Text style={styles.thumbCaption}>Barcode</Text>
-                </View>
-              </Pressable>
+              <PhotoThumb filePath={order.barcode_path} caption="Barcode" onPress={() => setPreview(order.barcode_path!)} />
             </View>
           </>
         )}
 
         {isAdmin && (
           <>
-            <Text style={styles.section}>Catatan penyelesaian</Text>            <TextInput style={styles.textarea} multiline placeholder="Tulis catatan kondisi barang atau kendala..." value={note} onChangeText={setNote} />
+            <Text style={styles.section}>Catatan penyelesaian</Text>
+            <TextInput style={styles.textarea} multiline placeholder="Tulis catatan kondisi barang atau kendala..." value={note} onChangeText={setNote} />
+          </>
+        )}
 
+        {(isAdmin || isOwner) && detail && (
+          <>
             <Text style={styles.section}>
-              Foto bukti (minimal 1) · {detail?.photo_count ?? 0} terunggah
+              Foto bukti (minimal 1) · {detail.photo_count} terunggah{status === 'selesai' ? ' — order terkunci' : ''}
             </Text>
             <View style={styles.photoRow}>
-              {detail?.photos.map((p) => (
-                <Pressable key={p.id} style={styles.thumb} onPress={() => setPreview(p.file_path)}>
-                  <View style={styles.thumbInner}>
-                    <Text style={styles.thumbGlyph}>▣</Text>
-                    <Text style={styles.thumbCaption}>{p.source === 'kamera' ? 'Kamera' : 'Berkas'}</Text>
-                  </View>
-                  <Pressable
-                    style={styles.thumbDelete}
-                    onPress={() => mutate(() => api.deletePhoto(order.id, p.id), 'dihapus')}
-                  >
-                    <Text style={styles.thumbDeleteText}>×</Text>
-                  </Pressable>
-                </Pressable>
+              {detail.photos.map((p) => (
+                <PhotoThumb
+                  key={p.id}
+                  filePath={p.file_path}
+                  caption={p.source === 'pickup' ? 'Barcode' : p.source === 'kamera' ? 'Kamera' : 'Berkas'}
+                  onPress={() => setPreview(p.file_path)}
+                  onDelete={status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, p.id), 'dihapus') : undefined}
+                />
               ))}
-              {!detail || detail.photo_count < 3 ? (
+              {status !== 'selesai' && detail.photo_count < 3 ? (
                 <Pressable
                   style={styles.photoAdd}
-                  onPress={() => mutate(() => api.uploadPhoto(order.id), 'foto diunggah')}
+                  onPress={async () => {
+                    const photo = await pickPhoto('Ambil foto bukti');
+                    if (!photo) return;
+                    mutate(() => api.uploadPhoto(order.id, photo), 'foto diunggah');
+                  }}
                   disabled={busy}
                 >
                   <Text style={styles.photoAddPlus}>+</Text>
@@ -116,7 +121,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                 </Pressable>
               ) : null}
             </View>
-            <Text style={styles.hint}>Foto dikompresi otomatis sebelum diunggah. Maksimal 3 foto, 20 MB per berkas.</Text>
+            {status !== 'selesai' && <Text style={styles.hint}>Foto dikompresi otomatis sebelum diunggah. Maksimal 3 foto, 20 MB per berkas.</Text>}
           </>
         )}
 
@@ -135,22 +140,6 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           </View>
         )}
 
-        {!isAdmin && detail && detail.photos.length > 0 && order.status === 'selesai' && (
-          <>
-            <Text style={styles.section}>Foto bukti (pratinjau)</Text>
-            <View style={styles.photoRow}>
-              {detail.photos.map((p) => (
-                <Pressable key={p.id} style={styles.thumb} onPress={() => setPreview(p.file_path)}>
-                  <View style={styles.thumbInner}>
-                    <Text style={styles.thumbGlyph}>▣</Text>
-                    <Text style={styles.thumbCaption}>{p.source === 'kamera' ? 'Kamera' : 'Berkas'}</Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </>
-        )}
-
         <Text style={styles.section}>Riwayat status</Text>
         {detail?.events.map((e) => (
           <View key={e.id} style={styles.eventRow}>
@@ -165,22 +154,32 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           </View>
         ))}
 
-        {isAdmin && (
+        {(isAdmin || (isOwner && status === 'data_masuk')) && (
           <View style={styles.actions}>
-            {order.status === 'selesai' ? (
+            {status === 'selesai' && isAdmin ? (
               <Button label="Buka kembali order" variant="secondary" onPress={reopen} />
+            ) : status === 'data_masuk' ? (
+              <>
+                <Button label="Proses pick up" variant="soft" style={{ flex: 1 }} onPress={async () => {
+                  if (order.barcode_path || (detail?.photo_count ?? 0) > 0) {
+                    mutate(() => api.pickup(order.id), 'diproses');
+                    return;
+                  }
+                  const photo = await pickPhoto('Foto barcode pengambilan');
+                  if (!photo) return notify('Foto wajib', 'Foto barcode pengambilan wajib dilampirkan sebelum memproses pick up.');
+                  mutate(() => api.pickup(order.id, photo), 'diproses');
+                }} />
+                <Button label="Tutup" variant="secondary" onPress={onClose} />
+              </>
             ) : (
               <>
-                {order.status === 'data_masuk' && (
-                  <Button label="Proses pick up" variant="soft" onPress={() => mutate(() => api.updateStatus(order.id, 'proses_pick_up'), 'diproses')} />
-                )}
-                <Button label="Tutup" variant="secondary" onPress={onClose} />
                 <Button
                   label={canComplete ? 'Selesaikan order' : `Unggah minimal 1 foto untuk selesai`}
                   onPress={finish}
                   disabled={!canComplete || busy}
                   style={{ flex: 1 }}
                 />
+                <Button label="Tutup" variant="secondary" onPress={onClose} />
               </>
             )}
           </View>
@@ -188,22 +187,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
         {!isAdmin && canEdit && (
           <View style={styles.actions}>
-            <Button label="Hapus order" variant="danger" onPress={() => Alert.alert('Hapus', 'Hapus order ini?', [
-              { text: 'Batal', style: 'cancel' },
-              { text: 'Hapus', style: 'destructive', onPress: async () => { try { await api.deleteOwnOrder(order.id); onChanged?.(); onClose(); } catch (e) { Alert.alert('Gagal', (e as Error).message); } } },
-            ])} />
+            <Button label="Hapus order" variant="danger" onPress={() => confirmAsk('Hapus', 'Hapus order ini?', async () => { try { await api.deleteOwnOrder(order.id); onChanged?.(); onClose(); } catch (e) { notify('Gagal', (e as Error).message); } })} />
           </View>
-        )}
-
-        {!isAdmin && order.status === 'selesai' && detail && detail.photos.length > 0 && (
-          <Text style={styles.hint}>Anda hanya dapat melihat pratinjau foto bukti pada order selesai.</Text>
         )}
 
         <Sheet open={!!preview} onClose={() => setPreview(null)} title="Pratinjau foto">
-          <View style={styles.previewBox}>
-            <Text style={styles.previewPlaceholder}>▣</Text>
-            <Text style={styles.previewCaption}>{preview}</Text>
-          </View>
+          <PhotoPreview filePath={preview} />
         </Sheet>
       </ScrollView>
     </Sheet>
@@ -230,6 +219,42 @@ function eventLabel(type: string) {
   }
 }
 
+function PhotoThumb({ filePath, caption, onPress, onDelete }: { filePath: string; caption: string; onPress?: () => void; onDelete?: () => void }) {
+  const uri = useFileUrl(filePath);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  return (
+    <Pressable style={styles.thumb} onPress={onPress}>
+      {uri && !failed ? <Image source={{ uri }} style={styles.thumbImg} resizeMode="cover" onError={() => setFailed(true)} /> : (
+        <View style={styles.thumbInner}>
+          <Text style={styles.thumbGlyph}>▣</Text>
+          <Text style={styles.thumbCaption}>{caption}</Text>
+        </View>
+      )}
+      {onDelete && (
+        <Pressable style={styles.thumbDelete} onPress={onDelete}>
+          <Text style={styles.thumbDeleteText}>×</Text>
+        </Pressable>
+      )}
+    </Pressable>
+  );
+}
+
+function PhotoPreview({ filePath }: { filePath: string | null }) {
+  const uri = useFileUrl(filePath);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  if (!filePath) return null;
+  return (
+    <View style={styles.previewBox}>
+      {uri && !failed ? <Image source={{ uri }} style={styles.previewImg} resizeMode="contain" onError={() => setFailed(true)} /> : (
+        <Text style={styles.previewPlaceholder}>▣</Text>
+      )}
+      <Text style={styles.previewCaption}>{filePath.split('/').pop()}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   problemTag: { fontSize: 9, fontWeight: '800', color: '#C1433A', backgroundColor: '#FCE9E6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
@@ -243,6 +268,7 @@ const styles = StyleSheet.create({
   textarea: { borderWidth: 1, borderColor: colors.line, borderRadius: 9, minHeight: 68, padding: 11, fontSize: 12, color: colors.text, textAlignVertical: 'top', backgroundColor: '#fff' },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   thumb: { width: 88, height: 88, borderRadius: 10, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', position: 'relative', backgroundColor: '#F4F8FD' },
+  thumbImg: { width: 86, height: 86 },
   thumbInner: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   thumbGlyph: { fontSize: 26, color: colors.primaryMuted },
   thumbCaption: { fontSize: 8, color: colors.muted },
@@ -264,7 +290,8 @@ const styles = StyleSheet.create({
   eventTime: { fontSize: 9, color: colors.faint },
   actions: { flexDirection: 'row', gap: 9, marginTop: 18 },
   actionsChild: { flex: 1 },
-  previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 30, backgroundColor: '#F4F6F7', borderRadius: 10, gap: 8 },
+  previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20, backgroundColor: '#F4F6F7', borderRadius: 10, gap: 8 },
+  previewImg: { width: '100%', height: 320, borderRadius: 8 },
   previewPlaceholder: { fontSize: 60, color: colors.primaryMuted },
   previewCaption: { fontSize: 11, color: colors.muted },
 });

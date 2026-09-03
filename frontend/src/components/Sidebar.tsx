@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useOrders } from '../hooks/useOrders';
+import { confirmAsk } from '../lib/notify';
 import { colors, radius, space } from '../theme';
 
 interface Item {
@@ -31,7 +32,7 @@ export function Sidebar() {
   ];
 
   const MANAGE_ITEMS: Item[] = [
-    { href: '/(app)/accounts', icon: '▤', label: 'Master rekening', adminOnly: true },
+    { href: '/(app)/master-data', icon: '▤', label: 'Master data', adminOnly: true },
     { href: '/(app)/settings', icon: '⚙', label: 'Pengaturan', adminOnly: true },
   ];
 
@@ -59,10 +60,10 @@ export function Sidebar() {
     <View style={styles.sidebar}>
       <View style={styles.brandRow}>
         <View style={styles.brandMark}>
-          <Text style={styles.brandMarkText}>T</Text>
+          <Text style={styles.brandMarkText}>Z</Text>
         </View>
         <Text style={styles.brand}>
-          TRADER<Text style={styles.brandLight}>TRACK</Text>
+          Z<Text style={styles.brandLight}>PROJECT</Text>
         </Text>
       </View>
 
@@ -84,13 +85,18 @@ export function Sidebar() {
             <Text style={styles.statusSub}>Sinkron realtime aktif</Text>
           </View>
         </View>
-        <Pressable style={({ pressed }) => [styles.profile, pressed && { opacity: 0.8 }]} onPress={signOut}>
+        <Pressable style={({ pressed }) => [styles.profile, pressed && { opacity: 0.8 }]} onPress={() => confirmAsk(
+          'Keluar dari akun?',
+          `Sesi Anda sebagai ${user?.display_name ?? 'pengguna'} akan diakhiri dan kembali ke halaman masuk.`,
+          () => signOut(),
+          { okLabel: 'Keluar', danger: true },
+        )}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{(user?.display_name ?? 'TT').slice(0, 2).toUpperCase()}</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.profileName}>{user?.display_name}</Text>
-            <Text style={styles.profileRole}>{user?.role === 'admin' ? 'Administrator' : 'Trader'} · Keluar</Text>
+            <Text style={styles.profileRole}>{user?.role === 'admin' ? 'Administrator' : 'Trader'} · Ketuk untuk keluar</Text>
           </View>
         </Pressable>
       </View>
