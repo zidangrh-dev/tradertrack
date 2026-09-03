@@ -424,7 +424,7 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
   test('POST /orders/:id/pickup tanpa foto saat ada foto bukti sudah diupload → izinkan', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
     // upload foto bukti (via /photos) dulu
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     // pickup tanpa foto baru — sudah ada 1 foto bukti
     const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 200);
@@ -525,16 +525,16 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('upload foto + batas maksimal', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
-    const { data: r } = await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+    const { data: r } = await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti-2.jpg' });
     assert.equal(r.photo_count, o.photo_count + 2);
-    await client(admin).post(`/api/orders/${o.id}/photos`);
-    const { status } = await client(admin).post(`/api/orders/${o.id}/photos`); // melebihi max 3
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+    const { status } = await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti-4.jpg' }); // melebihi max 3
     assert.equal(status, 400);
   });
   test('trader (pemilik) unggah foto bukti order miliknya → 200', async () => {
     const { data: o } = await client(trader).post('/api/orders', order());
-    const { status, data: r } = await client(trader).post(`/api/orders/${o.id}/photos`);
+    const { status, data: r } = await postMultipart(trader, `/api/orders/${o.id}/photos`, { file: 'bukti-trader.jpg' });
     assert.equal(status, 200);
     assert.equal(r.photo_count, 1);
     const { data: d } = await client(trader).get(`/api/orders/${o.id}/detail`);
@@ -547,7 +547,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('trader (pemilik) hapus foto bukti order miliknya → 200', async () => {
     const { data: o } = await client(trader).post('/api/orders', order());
-    await client(trader).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(trader, `/api/orders/${o.id}/photos`, { file: 'bukti-trader.jpg' });
     const { data: d } = await client(trader).get(`/api/orders/${o.id}/detail`);
     const { status, data: r } = await client(trader).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
     assert.equal(status, 200);
@@ -555,7 +555,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('trader hapus foto order milik orang lain → 403', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     const { status } = await client(trader).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
     assert.equal(status, 403);
@@ -568,7 +568,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('complete dengan foto → selesai + note + event', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     const { status, data: r } = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'Barang bagus' });
     assert.equal(status, 200);
     assert.equal(r.status, 'selesai');
@@ -578,7 +578,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('hapus foto → photo_count turun', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     const { data: r } = await client(admin).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
     assert.equal(r.photo_count, 0);
@@ -593,7 +593,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('buka kembali order selesai', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     const { data: r } = await client(admin).patch(`/api/orders/${o.id}/reopen`);
     assert.equal(r.status, 'proses_pick_up');
@@ -613,7 +613,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   // ---- Order selesai terkunci: tidak bisa diedit/dihapus/fotonya diubah ----
   test('edit order selesai (oleh admin sekalipun) → tolak', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     const { status } = await client(admin).patch(`/api/orders/${o.id}`, { recipient_name: 'Revisi' });
     assert.equal(status, 400);
@@ -621,7 +621,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('hapus order selesai (oleh admin sekalipun) → tolak', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     const { status } = await client(admin).del(`/api/orders/${o.id}`);
     assert.equal(status, 400);
@@ -630,15 +630,15 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('upload foto pada order selesai → tolak', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
-    const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/photos`);
+    const { status, data: r } = await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti-lagi.jpg' });
     assert.equal(status, 400);
     assert.match(r.error, /terkunci|Buka kembali/);
   });
   test('hapus foto pada order selesai → tolak', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     const { status, data: r } = await client(admin).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
@@ -649,7 +649,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
   });
   test('buka kembali lalu edit/hapus foto → boleh lagi', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    await client(admin).post(`/api/orders/${o.id}/photos`);
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
     await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     await client(admin).patch(`/api/orders/${o.id}/reopen`);
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
