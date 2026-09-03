@@ -3,9 +3,11 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { api, type OrderDetail, type OrderView } from '../lib/api';
 import { notify, confirmAsk } from '../lib/notify';
 import { pickPhoto } from '../lib/photo';
+import { dateTime } from '../lib/format';
 import { useFileUrl } from '../hooks/useFileUrl';
 import { colors, pickupMethodLabel } from '../theme';
 import { useAuth } from '../hooks/useAuth';
+import { useSettings } from '../hooks/useSettings';
 import { Avatar, Button, Sheet, StatusTag } from './ui';
 
 export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderView | null; onClose: () => void; onChanged?: () => void }) {
@@ -31,7 +33,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     setNote(detail?.note ?? '');
   }, [detail]);
 
-  const mutate = useCallback(async (fn: () => Promise<unknown>, message: string) => {
+  const mutate = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
       await fn();
@@ -45,17 +47,17 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     }
   }, [order, onChanged]);
 
-  const minPhotos = 1;
+  const settings = useSettings();
 
   if (!order) return null;
   // Status tampilan diambil dari detail terbaru (di-refresh setelah setiap mutasi)
   // agar modal otomatis berubah ke step selanjutnya tanpa tutup-buka.
   const status = detail?.status ?? order.status;
-  const canComplete = !!detail && detail.photo_count >= minPhotos && isAdmin;
+  const canComplete = !!detail && detail.photo_count >= settings.min_photos && isAdmin;
 
-  const finish = () => mutate(() => api.completeOrder(order.id, note.trim()), 'diselesaikan');
-  const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()), 'ditandai bermasalah');
-  const reopen = () => mutate(() => api.reopen(order.id), 'dibuka kembali');
+  const finish = () => mutate(() => api.completeOrder(order.id, note.trim()));
+  const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()));
+  const reopen = () => mutate(() => api.reopen(order.id));
 
   return (
     <Sheet open={!!order} onClose={onClose} title={order.order_number} wide>
@@ -63,7 +65,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
         <View style={styles.topRow}>
           <StatusTag status={status} />
           {detail?.is_problem && <Text style={styles.problemTag}>Bermasalah</Text>}
-          <Text style={styles.metaRight}>Input {new Date(order.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</Text>
+          <Text style={styles.metaRight}>Input {dateTime(order.created_at)}</Text>
         </View>
 
         <Text style={styles.product}>{order.product_name}</Text>
@@ -103,16 +105,16 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                   filePath={p.file_path}
                   caption={p.source === 'pickup' ? 'Barcode' : p.source === 'kamera' ? 'Kamera' : 'Berkas'}
                   onPress={() => setPreview(p.file_path)}
-                  onDelete={status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, p.id), 'dihapus') : undefined}
+                  onDelete={status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, p.id)) : undefined}
                 />
               ))}
-              {status !== 'selesai' && detail.photo_count < 3 ? (
+              {status !== 'selesai' && detail.photo_count < settings.max_photos ? (
                 <Pressable
                   style={styles.photoAdd}
                   onPress={async () => {
                     const photo = await pickPhoto('Ambil foto bukti');
                     if (!photo) return;
-                    mutate(() => api.uploadPhoto(order.id, photo), 'foto diunggah');
+                    mutate(() => api.uploadPhoto(order.id, photo));
                   }}
                   disabled={busy}
                 >
@@ -121,7 +123,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                 </Pressable>
               ) : null}
             </View>
-            {status !== 'selesai' && <Text style={styles.hint}>Foto dikompresi otomatis sebelum diunggah. Maksimal 3 foto, 20 MB per berkas.</Text>}
+            {status !== 'selesai' && <Text style={styles.hint}>Foto dikompresi otomatis sebelum diunggah. Maksimal {settings.max_photos} foto, {settings.max_file_mb} MB per berkas.</Text>}
           </>
         )}
 
@@ -150,7 +152,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               </Text>
               {!!e.note && <Text style={styles.eventNote}>{e.note}</Text>}
             </View>
-            <Text style={styles.eventTime}>{new Date(e.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</Text>
+            <Text style={styles.eventTime}>{dateTime(e.created_at)}</Text>
           </View>
         ))}
 
@@ -162,12 +164,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               <>
                 <Button label="Proses pick up" variant="soft" style={{ flex: 1 }} onPress={async () => {
                   if (order.barcode_path || (detail?.photo_count ?? 0) > 0) {
-                    mutate(() => api.pickup(order.id), 'diproses');
+                    mutate(() => api.pickup(order.id));
                     return;
                   }
                   const photo = await pickPhoto('Foto barcode pengambilan');
                   if (!photo) return notify('Foto wajib', 'Foto barcode pengambilan wajib dilampirkan sebelum memproses pick up.');
-                  mutate(() => api.pickup(order.id, photo), 'diproses');
+                  mutate(() => api.pickup(order.id, photo));
                 }} />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
               </>

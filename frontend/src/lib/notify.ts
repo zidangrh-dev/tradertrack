@@ -22,21 +22,9 @@ export interface ConfirmRequest {
   onCancel?: () => void;
 }
 
-export interface PromptRequest {
-  id: number;
-  title: string;
-  label?: string;
-  placeholder?: string;
-  defaultValue?: string;
-  okLabel?: string;
-  onSubmit: (value: string) => void;
-  onCancel?: () => void;
-}
-
 let seq = 0;
 let toasts: Toast[] = [];
 let confirm: ConfirmRequest | null = null;
-let prompt: PromptRequest | null = null;
 const listeners = new Set<() => void>();
 
 function emit() { listeners.forEach((fn) => fn()); }
@@ -47,7 +35,6 @@ export function subscribe(fn: () => void) {
 }
 export function getToasts() { return toasts; }
 export function getConfirm() { return confirm; }
-export function getPrompt() { return prompt; }
 
 export function dismissToast(id: number) {
   toasts = toasts.filter((t) => t.id !== id);
@@ -60,14 +47,6 @@ export function resolveConfirm(ok: boolean) {
   emit();
   if (ok && c) c.onOk();
   if (!ok && c) c.onCancel?.();
-}
-
-export function resolvePrompt(ok: boolean, value?: string) {
-  const p = prompt;
-  prompt = null;
-  emit();
-  if (ok && p && value !== undefined) p.onSubmit(value);
-  if (!ok && p) p.onCancel?.();
 }
 
 function inferKind(title: string): NotifyKind {
@@ -97,11 +76,5 @@ export function confirmAsk(title: string, message: string, onOk: () => void, opt
     return;
   }
   confirm = { id: ++seq, title, message, okLabel: opts?.okLabel, danger: opts?.danger, onOk };
-  emit();
-}
-
-export function promptAsk(title: string, label: string, onSubmit: (value: string) => void, opts?: { placeholder?: string; defaultValue?: string; okLabel?: string }) {
-  if (Platform.OS !== 'web') return; // tanpa UI prompt native: batalkan (parity window.prompt null).
-  prompt = { id: ++seq, title, label, placeholder: opts?.placeholder, defaultValue: opts?.defaultValue, okLabel: opts?.okLabel, onSubmit };
   emit();
 }

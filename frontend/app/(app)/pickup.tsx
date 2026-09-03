@@ -4,6 +4,7 @@ import { api, type OrderView } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
+import { useSettings } from '../../src/hooks/useSettings';
 import { colors, radius, space } from '../../src/theme';
 import { dateTime } from '../../src/lib/format';
 import { Button, EmptyState, Field, OrderCard, PageHeader, Sheet } from '../../src/components/ui';
@@ -13,18 +14,21 @@ export default function Pickup() {
   useAdminOnly();
   const { orders, refresh } = useOrders();
   const pending = useMemo(() => orders.filter((o) => o.status === 'proses_pick_up'), [orders]);
-  const pickedToday = pending.length;
-  const totalOrders = pending.length;
+  const scannedToday = useMemo(
+    () => pending.filter((o) => o.picked_up_at && new Date(o.picked_up_at).toDateString() === new Date().toDateString()).length,
+    [pending],
+  );
 
   const [scanOpen, setScanOpen] = useState(false);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const settings = useSettings();
 
   const completePickup = async (o: OrderView) => {
     // Foto bukti cukup → selesaikan langsung; kurang → buka modal untuk tambah foto.
-    if (o.photo_count < 1) {
+    if (o.photo_count < settings.min_photos) {
       setSelected(o);
       return;
     }
@@ -78,8 +82,7 @@ export default function Pickup() {
           </View>
           <View style={styles.metrics}>
             <View style={styles.metric}><Text style={styles.metricValue}>{pending.length}</Text><Text style={styles.metricLabel}>Order pickup</Text></View>
-            <View style={styles.metric}><Text style={styles.metricValue}>{pickedToday}</Text><Text style={styles.metricLabel}>Diproses</Text></View>
-            <View style={styles.metric}><Text style={styles.metricValue}>{totalOrders}</Text><Text style={styles.metricLabel}>Total aktif</Text></View>
+            <View style={styles.metric}><Text style={styles.metricValue}>{scannedToday}</Text><Text style={styles.metricLabel}>Diskan hari ini</Text></View>
           </View>
         </View>
 
@@ -150,15 +153,4 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
   listWrap: { gap: 10, paddingHorizontal: 16 },
   note: { fontSize: 11, color: colors.muted, lineHeight: 17, marginBottom: space.lg },
-  scanAdd: {
-    borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#B9C8DA', backgroundColor: '#F4F8FD',
-    borderRadius: radius.md, paddingVertical: 18, alignItems: 'center', gap: 3, marginBottom: 14,
-  },
-  scanAttached: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14,
-    backgroundColor: '#F4F8FD', borderWidth: 1, borderColor: '#DCE7F5', borderRadius: radius.md, padding: 12,
-  },
-  scanAddIcon: { fontSize: 22, color: colors.primaryMuted, lineHeight: 24 },
-  scanAddLabel: { fontSize: 11, fontWeight: '700', color: '#557EAE' },
-  scanAddHint: { fontSize: 9, color: '#7E94AC', marginTop: 2 },
 });

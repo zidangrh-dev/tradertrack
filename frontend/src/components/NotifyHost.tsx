@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
-import { colors, radius } from '../theme';
-import { dismissToast, getConfirm, getPrompt, getToasts, resolveConfirm, resolvePrompt, subscribe, type ConfirmRequest, type PromptRequest, type Toast } from '../lib/notify';
+import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { backdropColor, colors, radius } from '../theme';
+import { dismissToast, getConfirm, getToasts, resolveConfirm, subscribe, type ConfirmRequest, type Toast } from '../lib/notify';
 
 const kindPalette: Record<string, { bg: string; accent: string }> = {
   success: { bg: '#E7F4ED', accent: '#1F7A4D' },
@@ -23,12 +23,10 @@ function WebPortal({ children }: { children: ReactNode }) {
 export function NotifyHost() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
-  const [prompt, setPrompt] = useState<PromptRequest | null>(null);
 
   useEffect(() => subscribe(() => {
     setToasts(getToasts());
     setConfirm(getConfirm());
-    setPrompt(getPrompt());
   }), []);
 
   if (Platform.OS !== 'web') return null;
@@ -76,47 +74,14 @@ export function NotifyHost() {
           </View>
         </View>
       )}
-
-      {!!prompt && <PromptDialog prompt={prompt} onCancel={() => resolvePrompt(false)} onSubmit={(v) => resolvePrompt(true, v)} />}
     </WebPortal>
-  );
-}
-
-function PromptDialog({ prompt, onCancel, onSubmit }: { prompt: PromptRequest; onCancel: () => void; onSubmit: (value: string) => void }) {
-  const [value, setValue] = useState(prompt.defaultValue ?? '');
-  useEffect(() => setValue(prompt.defaultValue ?? ''), [prompt]);
-  return (
-    <View style={styles.overlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-      <View style={styles.dialog}>
-        <Text style={styles.dialogTitle}>{prompt.title}</Text>
-        <Text style={styles.dialogLabel}>{prompt.label}</Text>
-        <TextInput
-          style={styles.dialogInput}
-          value={value}
-          onChangeText={setValue}
-          placeholder={prompt.placeholder}
-          placeholderTextColor={colors.faint}
-          autoFocus
-          onSubmitEditing={() => onSubmit(value.trim())}
-        />
-        <View style={styles.dialogActions}>
-          <Pressable style={styles.dialogCancel} onPress={onCancel}>
-            <Text style={styles.dialogCancelText}>Batal</Text>
-          </Pressable>
-          <Pressable style={styles.dialogOk} onPress={() => onSubmit(value.trim())}>
-            <Text style={styles.dialogOkText}>{prompt.okLabel ?? 'OK'}</Text>
-          </Pressable>
-        </View>
-      </View>
-    </View>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(15,22,42,.45)',
+    backgroundColor: backdropColor,
     alignItems: 'center', justifyContent: 'center', padding: 16,
     zIndex: 20000, elevation: 20000,
   } as unknown as ViewStyle,

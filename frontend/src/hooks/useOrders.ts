@@ -7,10 +7,14 @@ export function useOrders(query: Record<string, string> = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Layar workspace (Kanban/pickup/sidebar) memfilter di client → minta halaman
+  // besar secara bawaan. Daftar order mengirim page/per_page sendiri.
+  const effectiveQuery = query.per_page ? query : { per_page: '200', ...query };
+
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const data = await api.listOrders(query);
+      const data = await api.listOrders(effectiveQuery);
       setOrders(data.items);
       setTotal(data.total);
     } catch (e) {
@@ -19,7 +23,7 @@ export function useOrders(query: Record<string, string> = {}) {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(query)]);
+  }, [JSON.stringify(effectiveQuery)]);
 
   useEffect(() => {
     refresh();

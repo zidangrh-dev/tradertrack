@@ -1,5 +1,6 @@
 // Repo PostgreSQL (produksi). Factory menerima pg.Pool dan mengembalikan
 // interface yang identik dengan memdb.mjs — routes memanggil keduanya sama.
+import { rangeToFrom } from './ranges.mjs';
 
 const SELECT_VIEW = `
   SELECT o.*, u.display_name AS trader_name,
@@ -273,9 +274,18 @@ export default (pool) => {
     if (query.from) { conds.push(`o.created_at >= $${vals.length + 1}`); vals.push(query.from); }
     if (query.to) { conds.push(`o.created_at <= $${vals.length + 1}`); vals.push(query.to); }
     const where = conds.length ? ` WHERE ${conds.join(' AND ')}` : '';
-    const { rows } = await pool.query(`${SELECT_VIEW}${where} ORDER BY o.created_at DESC`, vals);
     const threshold = (await S()).pending_threshold_hours;
-    return { items: rows.map((r) => toView(r, threshold)), total: rows.length, page: Number(query.page ?? 1) };
+
+    // Server-side pagination: total dihitung via COUNT, item dibatasi LIMIT/OFFSET.
+    const perPage = Math.max(1, Math.min(200, Number(query.per_page ?? 50)));
+    const page = Math.max(1, Number(query.page ?? 1));
+    const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS total FROM (${SELECT_VIEW}${where}) c`, vals);
+    const total = countRows[0].total;
+    const { rows } = await pool.query(
+      `${SELECT_VIEW}${where} ORDER BY o.created_at DESC LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`,
+      [...vals, perPage, (page - 1) * perPage],
+    );
+    return { items: rows.map((r) => toView(r, threshold)), total, page, per_page: perPage };
   };
 
   const createOrder = async (input, actorId) => {
@@ -493,11 +503,7 @@ export default (pool) => {
   };
 
   const reports = async (range) => {
-    let from = '';
-    const d = new Date();
-    if (range === 'hari_ini') from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
-    if (range === '7_hari') from = new Date(Date.now() - 7 * 864e5).toISOString();
-    if (range === 'bulan_ini') from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    const from = rangeToFrom(range);
     const where = from ? ` WHERE o.created_at >= $1` : '';
     const args = from ? [from] : [];
 

@@ -1,25 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ViewStyle,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle,
 } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, statusLabel, pickupMethodLabel } from '../../src/theme';
-import { durationLabel, statusPalette } from '../../src/lib/format';
-import { Avatar, Button, DataTable, Field, Select, Sheet, type DataTableColumn, type SelectOption } from '../../src/components/ui';
+import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
+import { durationLabel } from '../../src/lib/format';
+import { Avatar, Button, DataTable, Field, FlagBadge, IconAction, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 
-const STATUS_OPTIONS: Record<string, string> = { data_masuk: 'Data masuk', proses_pick_up: 'Proses pick up', selesai: 'Selesai' };
-const METHOD_OPTIONS: Record<string, string> = { zaydan_ambilan_gjm: 'Zaydan Ambilan GJM', self_pick_up: 'Self Pick Up' };
-const TRADERS: SelectOption[] = [
-  { value: 'u-nabila', label: 'Nabila Putri', sub: '@nabila' },
-  { value: 'u-fajar', label: 'Fajar Rahman', sub: '@fajar' },
-  { value: 'u-admin', label: 'Dimas Arya', sub: '@admin' },
-];
 const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
 const PER_PAGE = 50;
 const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima', 'Trader'];
@@ -42,7 +35,6 @@ export default function Orders() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [search, setSearch] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
@@ -53,6 +45,14 @@ export default function Orders() {
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [editing, setEditing] = useState<OrderView | null>(null);
+  const [traders, setTraders] = useState<SelectOption[]>([]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.listUsers().then((users) =>
+      setTraders(users.filter((u) => u.is_active).map((u) => ({ value: u.id, label: u.display_name, sub: `@${u.username}` }))),
+    ).catch(() => setTraders([]));
+  }, [isAdmin]);
 
   const query = useMemo(() => {
     const q: Record<string, string> = {};
@@ -60,12 +60,14 @@ export default function Orders() {
     if (status) q.status = status;
     if (method) q.pickup_method = method;
     if (trader) q.trader = trader;
+    q.page = String(page);
+    q.per_page = String(PER_PAGE);
     const d = new Date();
     if (period === 'hari_ini') q.from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
     if (period === '7_hari') q.from = new Date(Date.now() - 7 * 864e5).toISOString();
     if (period === 'bulan_ini') q.from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
     return q;
-  }, [search, status, method, trader, period]);
+  }, [search, status, method, trader, period, page]);
 
   const { orders, total, loading, error, refresh } = useOrders(query);
 
@@ -89,12 +91,9 @@ export default function Orders() {
     return list;
   }, [orders, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PER_PAGE));
+  // Pagination dilakukan server (LIMIT/OFFSET). Total dari COUNT server.
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const visiblePage = Math.min(page, totalPages);
-  const paged = useMemo(() => {
-    const start = (visiblePage - 1) * PER_PAGE;
-    return sorted.slice(start, start + PER_PAGE);
-  }, [sorted, visiblePage]);
 
   const handleSort = (key: string) => {
     if (key === sortKey) {
@@ -115,13 +114,13 @@ export default function Orders() {
     try {
       const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
       await copyText(text);
-      notify('Berhasil', `${sorted.length} order berhasil disalin.`);
+      notify('Berhasil', `${sorted.length} order pada halaman ini berhasil disalin.`);
     } catch (e) {
       notify('Gagal menyalin', (e as Error).message);
     }
   };
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
-  const rangeEnd = Math.min(visiblePage * PER_PAGE, sorted.length);
+  const rangeEnd = Math.min(visiblePage * PER_PAGE, total);
 
   const columns: DataTableColumn<OrderView>[] = [
     {
@@ -157,10 +156,9 @@ export default function Orders() {
     {
       key: 'status', label: 'Status', sortKey: 'status' as keyof OrderView, width: 140,
       render: (o) => {
-        if (o.is_problem) return <Text style={[dtStyles.tag, { color: '#C1433A', backgroundColor: '#FCE9E6' }]}>Bermasalah</Text>;
-        if (o.is_pending) return <Text style={[dtStyles.tag, { color: '#A8610F', backgroundColor: '#FCF1DE' }]}>Tertunda</Text>;
-        const pal = statusPalette(o.status);
-        return <Text style={[dtStyles.tag, { color: pal.color, backgroundColor: pal.bg }]}>{statusLabel[o.status]}</Text>;
+        if (o.is_problem) return <FlagBadge kind="problem" />;
+        if (o.is_pending) return <FlagBadge kind="pending" />;
+        return <StatusTag status={o.status} />;
       },
     },
     {
@@ -176,38 +174,28 @@ export default function Orders() {
       render: (o) => <Text style={dtStyles.timeText}>{durationLabel(o.updated_at)}</Text>,
     },
     {
-      key: 'actions', label: '', width: 110,
+      key: 'actions', label: '', width: 158,
       render: (o) => {
         const isOwner = o.trader_id === user?.id;
         const editable = isOwner && o.status === 'data_masuk';
         if (!editable) {
           return (
-            <Pressable onPress={() => setSelected(o)} hitSlop={8}>
-              <Text style={dtStyles.actionBtn}>›</Text>
-            </Pressable>
+            <IconAction icon="›" label={`Buka detail ${o.order_number}`} onPress={() => setSelected(o)} />
           );
         }
         return (
           <View style={dtStyles.rowActions}>
-            <Pressable onPress={async () => {
+            <IconAction icon="⧉" label="Salin data order" onPress={async () => {
               try {
                 await copyText(orderCopyRow(o).join('\t'));
                 notify('Berhasil', 'Data order disalin.');
               } catch (e) {
                 notify('Gagal menyalin', (e as Error).message);
               }
-            }} hitSlop={8}>
-              <Text style={dtStyles.actionBtn}>⧉</Text>
-            </Pressable>
-            <Pressable onPress={() => processPickup(o, refresh)} hitSlop={8}>
-              <Text style={[dtStyles.actionBtn, { color: colors.primary }]}>→</Text>
-            </Pressable>
-            <Pressable onPress={() => setEditing(o)} hitSlop={8}>
-              <Text style={dtStyles.actionBtn}>✎</Text>
-            </Pressable>
-            <Pressable onPress={() => removeOrder(o, refresh)} hitSlop={8}>
-              <Text style={[dtStyles.actionBtn, { color: colors.red }]}>✕</Text>
-            </Pressable>
+            }} />
+            <IconAction icon="→" variant="primary" label={`Proses pick up ${o.order_number}`} onPress={() => processPickup(o, refresh)} />
+            <IconAction icon="✎" label={`Edit ${o.order_number}`} onPress={() => setEditing(o)} />
+            <IconAction icon="✕" variant="danger" label={`Hapus ${o.order_number}`} onPress={() => removeOrder(o, refresh)} />
           </View>
         );
       },
@@ -216,37 +204,19 @@ export default function Orders() {
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={styles.wrapContent}>
-      <View style={styles.pageHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.pageTitle}>Daftar order</Text>
-          <Text style={styles.pageSubtitle}>{total} order · diperbarui realtime</Text>
-        </View>
-        <Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />
-      </View>
+      <PageHeader
+        title="Daftar order"
+        subtitle={`${total} order · diperbarui realtime`}
+        action={<Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />}
+      />
 
       <View style={styles.filterBar}>
-        <View style={[styles.searchBox, isSearchFocused && styles.searchBoxFocused]}>
-          <Text style={[styles.searchIcon, isSearchFocused && styles.searchIconFocused]}>⌕</Text>
-          <TextInput
-            style={[styles.searchInput, webNoOutline]}
-            placeholder="Cari nomor order, produk, atau penerima..."
-            placeholderTextColor={colors.faint}
-            value={search}
-            onChangeText={(t) => { setSearch(t); setPage(1); }}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-          />
-          {!!search && (
-            <Pressable onPress={() => setSearch('')} hitSlop={6}>
-              <Text style={styles.clearBtn}>✕</Text>
-            </Pressable>
-          )}
-        </View>
+        <SearchInput value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
 
         <Select
           label="Status"
           value={status}
-          options={Object.entries(STATUS_OPTIONS).map(([value, label]) => ({ value, label }))}
+          options={statusOptions}
           onChange={(v) => { setStatus(v); setPage(1); }}
           placeholder="Semua"
           clearLabel="Semua"
@@ -254,7 +224,7 @@ export default function Orders() {
         <Select
           label="Metode"
           value={method}
-          options={Object.entries(METHOD_OPTIONS).map(([value, label]) => ({ value, label }))}
+          options={pickupMethodOptions}
           onChange={(v) => { setMethod(v); setPage(1); }}
           placeholder="Semua"
           clearLabel="Semua"
@@ -263,7 +233,7 @@ export default function Orders() {
           <Select
             label="Trader"
             value={trader}
-            options={TRADERS}
+            options={traders}
             onChange={(v) => { setTrader(v); setPage(1); }}
             placeholder="Semua"
             clearLabel="Semua"
@@ -293,7 +263,7 @@ export default function Orders() {
             <Text style={styles.tableHint}>Klik judul kolom untuk mengurutkan data.</Text>
           </View>
           <View style={styles.tableTools}>
-            <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {sorted.length}</Text>
+            <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {total}</Text>
             <Button label="Copy hasil filter" icon="⧉" variant="secondary" size="sm" onPress={copyFiltered} disabled={sorted.length === 0} />
           </View>
         </View>
@@ -309,7 +279,7 @@ export default function Orders() {
         ) : (
           <DataTable
             columns={columns}
-            data={paged}
+            data={sorted}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={handleSort}
@@ -317,7 +287,7 @@ export default function Orders() {
             emptyText="Tidak ada order yang cocok dengan filter."
             page={visiblePage}
             totalPages={totalPages}
-            totalItems={sorted.length}
+            totalItems={total}
             onPageChange={setPage}
           />
         )}
@@ -399,22 +369,16 @@ const dtStyles = StyleSheet.create({
   person: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   personName: { fontSize: 13, color: colors.muted, flexShrink: 1 },
   method: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.2 },
-  tag: { fontSize: 12, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm, overflow: 'hidden', alignSelf: 'flex-start' },
   photoOk: { fontSize: 13, fontWeight: '700', color: '#1F7A4D' },
   photoEmpty: { fontSize: 13, color: colors.faint },
   timeText: { fontSize: 13, color: colors.faint },
-  rowActions: { flexDirection: 'row', gap: 10 },
-  actionBtn: { fontSize: 17, color: colors.faint, paddingHorizontal: 2 },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });
 
-const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   wrapContent: { paddingBottom: 32 },
-  pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 14 },
-  pageTitle: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  pageSubtitle: { fontSize: 13, color: colors.muted, marginTop: 4 },
 
   // Filter bar ala ERP: satu baris kardus, dropdown anchored.
   filterBar: {
@@ -423,16 +387,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#D8DEE6',
     borderRadius: radius.md, padding: 10,
   },
-  searchBox: {
-    flex: 1, minWidth: 280, flexDirection: 'row', alignItems: 'center', gap: 9,
-    borderWidth: 1, borderColor: '#CBD5E1', borderRadius: radius.sm, backgroundColor: colors.surface,
-    paddingHorizontal: 12, height: 42,
-  },
-  searchBoxFocused: { borderColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, shadowRadius: 5 },
-  searchIcon: { color: colors.faint, fontSize: 16 },
-  searchIconFocused: { color: colors.text },
-  searchInput: { flex: 1, height: 44, fontSize: 14, color: colors.text, padding: 0 },
-  clearBtn: { fontSize: 15, color: colors.faint, paddingHorizontal: 4 },
+  searchBox: { flex: 1, minWidth: 280 },
 
   resetBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

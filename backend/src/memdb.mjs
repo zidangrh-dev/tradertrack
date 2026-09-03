@@ -5,6 +5,7 @@
 
 import { randomUUID as uid } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { rangeToFrom } from './ranges.mjs';
 
 const hash = (pw) => bcrypt.hashSync(pw, 8);
 
@@ -196,7 +197,11 @@ export function listOrders(query = {}) {
   if (query.from) out = out.filter((o) => o.created_at >= query.from);
   if (query.to) out = out.filter((o) => o.created_at <= query.to);
   out.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return { items: out.map(withMeta), total: out.length, page: Number(query.page ?? 1) };
+  const total = out.length;
+  const perPage = Math.max(1, Math.min(200, Number(query.per_page ?? 50)));
+  const page = Math.max(1, Number(query.page ?? 1));
+  const start = (page - 1) * perPage;
+  return { items: out.slice(start, start + perPage).map(withMeta), total, page, per_page: perPage };
 }
 
 export function createOrder(input, actorId) {
@@ -378,11 +383,7 @@ export function editOrder(id, patch, actorId) {
 }
 
 export function reports(range) {
-  let from = '';
-  const d = new Date();
-  if (range === 'hari_ini') from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
-  if (range === '7_hari') from = new Date(Date.now() - 7 * 864e5).toISOString();
-  if (range === 'bulan_ini') from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+  const from = rangeToFrom(range);
   const inRange = (o) => !from || o.created_at >= from;
 
   const list = db.orders.filter(inRange);

@@ -91,6 +91,18 @@ export function setupRoutes(app, io, uploadDir) {
 
   const r = Router();
 
+  // Otorisasi order: fetch order + cek kepemilikan. adminBypass=true berarti
+  // admin boleh ke semua order; false = ketat milik sendiri (hapus/edit sendiri).
+  // Melempar HttpError 403 bila bukan pemilik — respon JSON seragam via asyncH.
+  const orderFor = async (req, id, { adminBypass = true } = {}) => {
+    const order = await repo.getOrder(id);
+    const isOwner = order.trader_id === req.user.id;
+    if (!isOwner && !(adminBypass && req.user.role === 'admin')) {
+      throw Object.assign(new Error('Hanya order milik Anda yang dapat diakses.'), { status: 403 });
+    }
+    return order;
+  };
+
   // ---------- Auth ----------
   r.post('/login', asyncH(async (req, res) => {
     const { username, password } = req.body ?? {};
@@ -124,9 +136,9 @@ export function setupRoutes(app, io, uploadDir) {
   // ---------- Orders ----------
   // Trader hanya melihat order miliknya sendiri; admin melihat semua (filter trader opsional).
   r.get('/orders', requireAuth, asyncH(async (req, res) => {
-    const { q, status, pickup_method, page, from, to } = req.query;
+    const { q, status, pickup_method, page, per_page, from, to } = req.query;
     const trader = req.user.role === 'admin' ? req.query.trader : req.user.id;
-    ok(res, await repo.listOrders({ q, status, pickup_method, trader, page, from, to }));
+    ok(res, await repo.listOrders({ q, status, pickup_method, trader, page, per_page, from, to }));
   }));
 
   r.post('/orders', requireAuth, asyncH(async (req, res) => {
@@ -161,12 +173,7 @@ export function setupRoutes(app, io, uploadDir) {
   // Proses pick up — trader memproses order miliknya sendiri (wajib ada bukti:
   // foto di request ATAU barcode/foto sudah terpasang), admin bebas seperti sebelumnya.
   r.post('/orders/:id/pickup', requireAuth, upload.single('photo'), asyncH(async (req, res) => {
-    if (req.user.role !== 'admin') {
-      const own = await repo.getOrder(req.params.id);
-      if (own.trader_id !== req.user.id) {
-        return res.status(403).json({ error: 'Hanya order milik Anda yang dapat diproses.' });
-      }
-    }
+    await orderFor(req, req.params.id);
     if (req.file) await validateImage(req.file, uploadDir);
     const order = await repo.pickupOrder(req.params.id, req.user.id, req.file ?? null);
     emit();
@@ -174,10 +181,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.get('/orders/:id/detail', requireAuth, asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    if (req.user.role !== 'admin' && order.trader_id !== req.user.id) {
-      return res.status(403).json({ error: 'Hanya order milik Anda yang dapat dilihat.' });
-    }
+    await orderFor(req, req.params.id);
     ok(res, await repo.detail(req.params.id));
   }));
 
@@ -193,10 +197,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.post('/orders/:id/barcode', requireAuth, upload.single('photo'), asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    if (order.trader_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Hanya pembuat order atau admin yang dapat melampirkan barcode.' });
-    }
+    const order = await orderFor(req, req.params.id);
     if (order.status !== 'data_masuk') {
       return res.status(400).json({ error: 'Barcode hanya bisa dilampirkan saat status Data masuk.' });
     }
@@ -208,11 +209,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.post('/orders/:id/photos', requireAuth, upload.single('photo'), asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    // Pemilik order (trader) atau admin boleh mengelola foto bukti.
-    if (order.trader_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Hanya order milik Anda yang dapat dilengkapi bukti.' });
-    }
+    const order = await orderFor(req, req.params.id);
     if (order.status === 'selesai') {
       return res.status(400).json({ error: 'Order selesai terkunci. Buka kembali order terlebih dahulu.' });
     }
@@ -223,10 +220,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.delete('/orders/:id/photos/:photoId', requireAuth, asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    if (order.trader_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Hanya order milik Anda yang dapat diubah buktinya.' });
-    }
+    const order = await orderFor(req, req.params.id);
     if (order.status === 'selesai') {
       return res.status(400).json({ error: 'Foto bukti order selesai tidak dapat dihapus. Buka kembali order terlebih dahulu.' });
     }
@@ -256,8 +250,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.delete('/orders/:id', requireAuth, asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    if (order.trader_id !== req.user.id) return res.status(403).json({ error: 'Hanya order milik Anda yang dapat dihapus.' });
+    const order = await orderFor(req, req.params.id, { adminBypass: false });
     if (order.status !== 'data_masuk') return res.status(400).json({ error: 'Order hanya bisa dihapus saat status Data masuk.' });
     await repo.deleteOrder(req.params.id);
     emit();
@@ -265,8 +258,7 @@ export function setupRoutes(app, io, uploadDir) {
   }));
 
   r.patch('/orders/:id', requireAuth, asyncH(async (req, res) => {
-    const order = await repo.getOrder(req.params.id);
-    if (order.trader_id !== req.user.id) return res.status(403).json({ error: 'Hanya order milik Anda yang dapat diubah.' });
+    const order = await orderFor(req, req.params.id, { adminBypass: false });
     if (order.status !== 'data_masuk') return res.status(400).json({ error: 'Order hanya bisa diubah saat status Data masuk.' });
     const patch = {
       product_name: req.body?.product_name ?? undefined,

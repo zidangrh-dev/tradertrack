@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, pickupMethodLabel, radius, space, statusLabel, type Status } from '../theme';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
+import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, radius, space, statusLabel, webNoOutline, type Status } from '../theme';
 import { durationLabel, statusPalette } from '../lib/format';
 import type { OrderView } from '../lib/api';
 
@@ -76,10 +76,10 @@ export function Chip({ label, selected, onPress, compact }: { label: string; sel
 
 /* ---------- Status & avatar ---------- */
 
-export function StatusTag({ status, compact }: { status: Status; compact?: boolean }) {
+export function StatusTag({ status }: { status: Status }) {
   const palette = statusPalette(status);
   return (
-    <Text style={[styles.tag, { color: palette.color, backgroundColor: palette.bg }, compact && { paddingHorizontal: 6, paddingVertical: 3 }]}>
+    <Text style={[styles.tag, { color: palette.color, backgroundColor: palette.bg }]}>
       {statusLabel[status]}
     </Text>
   );
@@ -99,8 +99,6 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
 
 /* ---------- Form ---------- */
 
-const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
-
 export function Field({ label, hint, style, ...rest }: TextInputProps & { label: string; hint?: string }) {
   return (
     <View style={styles.field}>
@@ -108,6 +106,61 @@ export function Field({ label, hint, style, ...rest }: TextInputProps & { label:
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
       <TextInput style={[styles.input, webNoOutline, style]} placeholderTextColor={colors.faint} {...rest} />
     </View>
+  );
+}
+
+/** Kotak pencarian dengan ikon ⌕ dan tombol bersih — dipakai semua layar. */
+export function SearchInput({ value, onChangeText, placeholder = 'Cari...' }: {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={[styles.searchBox, focused && styles.searchBoxFocused]}>
+      <Text style={[styles.searchIcon, focused && styles.searchIconFocused]}>⌕</Text>
+      <TextInput
+        style={[styles.searchInput, webNoOutline]}
+        placeholder={placeholder}
+        placeholderTextColor={colors.faint}
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      />
+      {!!value && (
+        <Pressable onPress={() => onChangeText('')} hitSlop={8}>
+          <Text style={styles.searchClear}>✕</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** Badge status khusus di luar alur utama: Bermasalah / Tertunda. */
+export function FlagBadge({ kind }: { kind: 'problem' | 'pending' }) {
+  const pal = kind === 'problem' ? problemPalette : pendingPalette;
+  const label = kind === 'problem' ? 'Bermasalah' : 'Tertunda';
+  return <Text style={[styles.flagBadge, { color: pal.fg, backgroundColor: pal.bg }]}>{label}</Text>;
+}
+
+/** Tombol aksi ikon berbentuk kotak — dipakai semua tabel agar seragam. */
+export function IconAction({ icon, onPress, variant = 'default', label }: {
+  icon: string;
+  onPress: (event?: GestureResponderEvent) => void;
+  variant?: 'default' | 'primary' | 'danger';
+  label: string;
+}) {
+  const color = variant === 'primary' ? colors.primary : variant === 'danger' ? colors.red : colors.muted;
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.iconAction, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      <Text style={[styles.iconActionGlyph, { color }]}>{icon}</Text>
+    </Pressable>
   );
 }
 
@@ -354,9 +407,9 @@ export function OrderCard({
       <View style={styles.orderTop}>
         <Text style={styles.orderNumber}>{order.order_number}</Text>
         {order.is_problem ? (
-          <Badge label="Bermasalah" color="#C1433A" bg="#FCE9E6" />
+          <FlagBadge kind="problem" />
         ) : order.is_pending ? (
-          <Badge label="Tertunda" color="#A8610F" bg="#FCF1DE" />
+          <FlagBadge kind="pending" />
         ) : (
           <Text style={[styles.tag, { color: pal.color, backgroundColor: pal.bg }]}>{statusLabel[order.status]}</Text>
         )}
@@ -405,6 +458,7 @@ export function DataTable<T extends { id: string }>({
   page,
   totalPages,
   totalItems,
+  itemsUnit = 'order',
   onPageChange,
 }: {
   columns: DataTableColumn<T>[];
@@ -417,6 +471,7 @@ export function DataTable<T extends { id: string }>({
   page?: number;
   totalPages?: number;
   totalItems?: number;
+  itemsUnit?: string;
   onPageChange?: (page: number) => void;
 }) {
   if (data.length === 0 && emptyText) {
@@ -482,7 +537,7 @@ export function DataTable<T extends { id: string }>({
       {totalPages != null && totalPages > 0 && (
         <View style={dtStyles.pagination}>
           <Text style={dtStyles.pageInfo}>
-            {totalItems != null ? `${totalItems} order` : ''}
+            {totalItems != null ? `${totalItems} ${itemsUnit}` : ''}
           </Text>
           <View style={dtStyles.pageButtons}>
             <Pressable
@@ -619,21 +674,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md, alignSelf: 'flex-start',
   },
   chipText: { fontSize: 12, fontWeight: '600' },
-  // Tag & avatar
-  tag: { fontSize: 9, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden' },
+  // Tag & avatar — ukuran chip tunggal untuk semua badge (status/bermasalah/tertunda)
+  tag: { fontSize: 11, lineHeight: 16, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden', alignSelf: 'flex-start' },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800' },
   // Field
   field: { marginBottom: 13 },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
   fieldHint: { fontSize: 9, color: colors.faint, marginTop: 2 },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    backgroundColor: colors.surface, height: 42, paddingHorizontal: 12,
+    shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
+  },
+  searchBoxFocused: { borderColor: colors.primary, shadowOpacity: 0.08 },
+  searchIcon: { fontSize: 15, color: colors.faint },
+  searchIconFocused: { color: colors.primary },
+  searchInput: { flex: 1, fontSize: 13, color: colors.text, paddingVertical: 0 },
+  searchClear: { color: colors.faint, fontSize: 14, paddingHorizontal: 2 },
+  flagBadge: { fontSize: 11, lineHeight: 16, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden', alignSelf: 'flex-start' },
+  iconAction: {
+    width: 30, height: 30, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconActionGlyph: { fontSize: 14, lineHeight: 16, fontWeight: '700', textAlign: 'center' },
   input: {
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
   },
   selectRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   // Sheet
-  backdrop: { flex: 1, backgroundColor: 'rgba(15,22,42,.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  backdrop: { flex: 1, backgroundColor: backdropColor, alignItems: 'center', justifyContent: 'center', padding: 16 },
   sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 460, maxHeight: '88%', padding: 20, shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 12 },
   sheetWide: { maxWidth: 560 },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },

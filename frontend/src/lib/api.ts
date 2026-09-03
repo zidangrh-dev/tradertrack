@@ -1,14 +1,12 @@
-// Lapisan API. Fase 3: panggilan sungguhan ke server Express + PostgreSQL
-// via REST + Socket.IO. Mock lokal (store.ts) hanya dipakai sebagai fallback
-// dev bila server tidak terjangkau (network error), bukan jalur utama.
-// Kontrak endpoint sama persis dengan mock agar kedua mode seragam.
+// Lapisan API — panggilan sungguhan ke server Express + PostgreSQL via REST +
+// Socket.IO. Tidak ada fallback mock: bila server tidak terjangkau, error
+// dilempar ke pemanggil (layar punya UI error sendiri).
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { io } from 'socket.io-client';
-import { mock, subscribeChanges as mockSubscribe } from './store';
-import type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User } from './store';
+import type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User } from './types';
 
 export type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User };
 
@@ -50,9 +48,6 @@ export interface UserRow extends Omit<User, 'password'> {
 
 const API_URL: string =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) || 'http://localhost:4000';
-
-// Dev-only: true bila aplikasi harus tetap jalan walau server mati (fallback mock).
-const USE_MOCK_FALLBACK = true;
 
 const TOKEN_KEY = 'zproject.jwt';
 
@@ -125,10 +120,8 @@ let socket: ReturnType<typeof io> | null = null;
 
 export function subscribeChanges(fn: () => void) {
   listeners.add(fn);
-  const off = mockSubscribe(fn);
   return () => {
     listeners.delete(fn);
-    off();
   };
 }
 
@@ -186,7 +179,7 @@ const remote = {
     const qs = new URLSearchParams(query).toString();
     return http<{ items: OrderView[]; total: number; page: number }>(`/api/orders${qs ? `?${qs}` : ''}`);
   },
-  createOrder: (body: Parameters<typeof mock.createOrder>[0]) => http<OrderView>('/api/orders', { method: 'POST', body }),
+  createOrder: (body: { order_number: string; recipient_name: string; pickup_method: PickupMethod; product_id: string; store_id: string; trader_id?: string; order_amount?: number | null }) => http<OrderView>('/api/orders', { method: 'POST', body }),
   updateStatus: (id: string, to: Status) => http<OrderView>(`/api/orders/${id}/status`, { method: 'PATCH', body: { to_status: to } }),
   scan: async (code: string, file?: { uri: string; name: string; type: string }) => {
     if (!file) return http<OrderView | null>('/api/orders/scan', { method: 'POST', body: { code } });
@@ -229,22 +222,5 @@ const remote = {
   updateUser: (id: string, patch: Partial<User>) => http<void>(`/api/users/${id}`, { method: 'PATCH', body: patch }),
 };
 
-function isNetworkError(e: unknown) {
-  return e instanceof TypeError || (e instanceof Error && /fetch|network|load failed/i.test(e.message));
-}
-
-/** api = remote; bila server mati (network error) dan mode fallback aktif, pakai mock dev. */
-export const api: typeof remote = new Proxy(remote, {
-  get(target, prop) {
-    const value = target[prop as keyof typeof remote];
-    if (typeof value !== 'function') return value;
-    return (...args: unknown[]) =>
-      (value as (...a: unknown[]) => Promise<unknown>).apply(target, args).catch((e) => {
-        if (USE_MOCK_FALLBACK && isNetworkError(e) && typeof (mock as unknown as Record<string, unknown>)[prop as string] === 'function') {
-          console.warn(`[api] server tak terjangkau — fallback mock untuk ${String(prop)}`);
-          return (mock as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[prop as string](...args);
-        }
-        throw e;
-      });
-  },
-});
+/** api — panggilan langsung; error (termasuk server mati) dilempar ke pemanggil. */
+export const api = remote;

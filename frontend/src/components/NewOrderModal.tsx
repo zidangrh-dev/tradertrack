@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '../lib/api';
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
-import { colors, radius } from '../theme';
+import { colors, radius, pickupMethodOptions, webNoOutline } from '../theme';
 import { Button, Field, Select, Sheet, type SelectOption } from './ui';
-
-const METHOD_OPTIONS: SelectOption[] = [
-  { value: 'zaydan_ambilan_gjm', label: 'Zaydan Ambilan GJM' },
-  { value: 'self_pick_up', label: 'Self Pick Up' },
-];
 
 export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolean; onClose: () => void; user: SessionUser | null; onCreated: () => void }) {
   const isAdmin = user?.role === 'admin';
@@ -136,7 +131,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
 
           <View style={styles.twoColumn}>
             <View style={styles.column}>
-              <Select block label="Metode pengambilan" value={method} options={METHOD_OPTIONS} onChange={(v) => setMethod(v as 'zaydan_ambilan_gjm' | 'self_pick_up')} placeholder="Pilih metode" />
+              <Select block label="Metode pengambilan" value={method} options={pickupMethodOptions} onChange={(v) => setMethod(v as 'zaydan_ambilan_gjm' | 'self_pick_up')} placeholder="Pilih metode" />
             </View>
             <View style={styles.column}>
               {isAdmin ? (
@@ -206,40 +201,24 @@ function TraderForm({ open, onClose, onSave }: { open: boolean; onClose: () => v
     }
   };
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.traderModal}>
-          <View style={styles.modalHead}>
-            <Text style={styles.modalTitle}>Tambah trader baru</Text>
-            <Pressable onPress={onClose} hitSlop={10}><Text style={styles.modalClose}>×</Text></Pressable>
-          </View>
-          <Field style={webNoOutline} label="Username" value={username} onChangeText={setUsername} placeholder="mis. trader-budi" autoCapitalize="none" />
-          <Field style={webNoOutline} label="Nama lengkap" value={name} onChangeText={setName} placeholder="Nama lengkap trader" />
-          <Field style={webNoOutline} label="Kata sandi awal" value={password} onChangeText={setPassword} secureTextEntry placeholder="Kata sandi untuk login" />
-          <View style={styles.modalActions}>
-            <Button label="Batal" variant="secondary" onPress={onClose} disabled={busy} />
-            <Button label={busy ? 'Menyimpan…' : 'Simpan trader'} onPress={save} disabled={busy} style={{ flex: 1 }} />
-          </View>
-        </View>
+    <Sheet open={open} onClose={onClose} title="Tambah trader baru">
+      <Field style={webNoOutline} label="Username" value={username} onChangeText={setUsername} placeholder="mis. trader-budi" autoCapitalize="none" />
+      <Field style={webNoOutline} label="Nama lengkap" value={name} onChangeText={setName} placeholder="Nama lengkap trader" />
+      <Field style={webNoOutline} label="Kata sandi awal" value={password} onChangeText={setPassword} secureTextEntry placeholder="Kata sandi untuk login" />
+      <View style={styles.modalActions}>
+        <Button label="Batal" variant="secondary" onPress={onClose} disabled={busy} />
+        <Button label={busy ? 'Menyimpan…' : 'Simpan trader'} onPress={save} disabled={busy} style={{ flex: 1 }} />
       </View>
-    </Modal>
+    </Sheet>
   );
 }
 
-const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknown) as ViewStyle;
-
 const styles = StyleSheet.create({
-  fieldLabel: { fontSize: 10, fontWeight: '800', color: '#596675', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   formStack: { gap: 20 },
   formBlock: { width: '100%' },
   twoColumn: { flexDirection: 'row', gap: 14 },
   column: { flex: 1, minWidth: 0 },
   formActions: { marginTop: 26, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,22,42,.45)', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 20 },
-  traderModal: { backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 460, padding: 20, shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 20 },
-  modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
-  modalClose: { fontSize: 26, color: colors.faint, paddingHorizontal: 4 },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   locked: { fontSize: 11, color: colors.muted, marginTop: 6, backgroundColor: '#F4F6F8', borderRadius: 8, padding: 11, borderWidth: 1, borderColor: '#E2E8F0' },
   barcodeAdd: {

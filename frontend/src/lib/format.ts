@@ -1,4 +1,4 @@
-import { colors, statusLabel, type Status } from '../theme';
+import { colors, type Status } from '../theme';
 
 export function durationLabel(updatedAt: string) {
   const ms = Date.now() - new Date(updatedAt).getTime();
@@ -14,10 +14,6 @@ export function dateTime(iso: string) {
   return new Date(iso).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function dateShort(iso: string) {
-  return new Date(iso).toLocaleDateString('id-ID', { dateStyle: 'short' });
-}
-
 export function isToday(iso: string) {
   const d = new Date(iso);
   const t = new Date();
@@ -30,10 +26,6 @@ export function statusPalette(status: Status) {
     case 'proses_pick_up': return { color: '#2E6EB5', bg: '#E7F1FD' };
     default: return { color: '#A8610F', bg: '#FCF1DE' };
   }
-}
-
-export function statusText(status: Status) {
-  return statusLabel[status];
 }
 
 export const statusColor: Record<Status, string> = {
