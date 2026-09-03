@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { api, type MarketplaceStore, type ProductRow } from '../../src/lib/api';
+import { api, subscribeChanges, type MarketplaceStore, type ProductRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { colors, radius } from '../../src/theme';
@@ -48,7 +48,10 @@ export default function MasterData() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+    return subscribeChanges(load);
+  }, [load]);
 
   // Statistik Ringkasan Enterprise
   const stats = useMemo(() => {
