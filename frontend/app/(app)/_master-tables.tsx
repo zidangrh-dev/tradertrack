@@ -5,12 +5,7 @@ import { colors, radius } from '../../src/theme';
 import type { MarketplaceStore, ProductRow } from '../../src/lib/api';
 import { IconAction } from '../../src/components/ui';
 
-export interface TableStyleSet {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
-
-export function MetricsRow({ stats, styles }: { stats: { totalProduk: number; aktif: number; totalKuota: number; totalTerpakai: number; totalSisa: number }; styles: TableStyleSet }) {
+export function MetricsRow({ stats }: { stats: { totalProduk: number; aktif: number; totalKuota: number; totalTerpakai: number; totalSisa: number } }) {
   return (
     <View style={styles.metricsGrid}>
       <View style={styles.metricCard}>
@@ -39,10 +34,9 @@ export function MetricsRow({ stats, styles }: { stats: { totalProduk: number; ak
   );
 }
 
-export function ProductTable({ items, loading, styles, onMore }: {
+export function ProductTable({ items, loading, onMore }: {
   items: ProductRow[];
   loading: boolean;
-  styles: TableStyleSet;
   onMore: (item: ProductRow, pos: { x: number; y: number }, event?: unknown) => void;
 }) {
   return (
@@ -138,9 +132,8 @@ export function ProductTable({ items, loading, styles, onMore }: {
   );
 }
 
-export function StoreTable({ stores, styles, onRemove, onAdd }: {
+export function StoreTable({ stores, onRemove, onAdd }: {
   stores: MarketplaceStore[];
-  styles: TableStyleSet;
   onRemove: (store: MarketplaceStore) => void;
   onAdd: () => void;
 }) {

@@ -173,7 +173,7 @@ export default function MasterData() {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <MetricsRow stats={stats} styles={styles} />
+        <MetricsRow stats={stats} />
 
         {/* Filter & Search Bar */}
         <View style={styles.controlBar}>
@@ -209,13 +209,11 @@ export default function MasterData() {
         <ProductTable
           items={filteredItems}
           loading={loading}
-          styles={styles}
           onMore={(item, pos) => { setActionPosition(pos); setActionItem(item); }}
         />
 
         <StoreTable
           stores={stores}
-          styles={styles}
           onRemove={(store) => confirmAsk('Hapus toko marketplace', `Hapus "${store.name}" dari daftar?`, () => removeStore(store))}
           onAdd={() => setShowStoreForm(true)}
         />

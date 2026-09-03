@@ -6,9 +6,9 @@ import { useOrders } from '../../src/hooks/useOrders';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useSettings } from '../../src/hooks/useSettings';
 import { colors, radius, space } from '../../src/theme';
-import { dateTime } from '../../src/lib/format';
 import { Button, EmptyState, Field, OrderCard, PageHeader, Sheet } from '../../src/components/ui';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
+import { BarcodeScanner } from '../../src/components/BarcodeScanner';
 
 export default function Pickup() {
   useAdminOnly();
@@ -20,9 +20,11 @@ export default function Pickup() {
   );
 
   const [scanOpen, setScanOpen] = useState(false);
+  const [scanMode, setScanMode] = useState<'camera' | 'manual'>(Platform.OS === 'web' ? 'manual' : 'camera');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<OrderView | null>(null);
+  const [scanOrder, setScanOrder] = useState<OrderView | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const settings = useSettings();
 
@@ -44,8 +46,8 @@ export default function Pickup() {
     }
   };
 
-  const doScan = async () => {
-    const c = code.trim();
+  const doScan = async (raw: string) => {
+    const c = raw.trim();
     if (!c) return;
     setCode('');
     setScanOpen(false);
@@ -55,15 +57,19 @@ export default function Pickup() {
         notify('Tidak ditemukan', `"${c}" tidak cocok dengan nomor pesanan mana pun.`);
         return;
       }
-      if (result.status !== 'proses_pick_up') {
-        setInfo(`Order #${result.order_number} sudah diproses · ${result.picked_up_at ? dateTime(result.picked_up_at) : ''}`);
-      } else {
-        setInfo(`${result.order_number} → Proses pick up`);
-      }
       refresh();
+      // Scan cocok → buka modal detail untuk proses paket (pickup/foto/selesai).
+      setScanOrder(result);
     } catch (e) {
-      notify('Gagal', (e as Error).message);
+      // Order baru (data_masuk) tanpa bukti ditolak server → toast pesannya, tanpa modal.
+      notify('Scan tidak dapat diproses', (e as Error).message);
     }
+  };
+
+  const openScan = () => {
+    setScanMode(Platform.OS === 'web' ? 'manual' : 'camera');
+    setCode('');
+    setScanOpen(true);
   };
 
   return (
@@ -71,7 +77,7 @@ export default function Pickup() {
       <PageHeader
         title="Pick up"
         subtitle="Kelola verifikasi paket dan pindahkan order dengan bukti yang tepat."
-        action={<Button label="Scan nomor pesanan" icon="⌗" onPress={() => setScanOpen(true)} />}
+        action={<Button label="Scan nomor pesanan" icon="⌗" onPress={openScan} />}
       />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
@@ -118,16 +124,32 @@ export default function Pickup() {
       </ScrollView>
 
       <Sheet open={scanOpen} onClose={() => setScanOpen(false)} title="Scan nomor pesanan">
-        <Text style={styles.note}>
-          {Platform.OS === 'web'
-            ? 'Prototype web tidak membuka kamera asli — masukkan nomor pesanan untuk simulasi pemindaian.'
-            : 'Kamera native terbuka di APK Android. Di prototype ini masukkan nomor pesanan manual.'}
-        </Text>
-        <Field label="Nomor pesanan" value={code} onChangeText={setCode} placeholder="Contoh: TRK-240626-018" autoCapitalize="characters" />
-        <Button label="Cocokkan" fullWidth onPress={() => doScan()} />
+        {scanMode === 'camera' ? (
+          <>
+            <BarcodeScanner
+              onDetected={(c) => doScan(c)}
+              onClose={() => { setScanOpen(false); }}
+            />
+            <Button label="Atau masukkan nomor manual" variant="ghost" size="sm" fullWidth onPress={() => setScanMode('manual')} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.note}>
+              {Platform.OS === 'web'
+                ? 'Scan kamera tidak tersedia di browser — masukkan nomor pesanan untuk simulasi pemindaian.'
+                : 'Masukkan nomor pesanan secara manual, atau gunakan kamera barcode.'}
+            </Text>
+            <Field label="Nomor pesanan" value={code} onChangeText={setCode} placeholder="Contoh: TRK-240626-018" autoCapitalize="characters" />
+            <Button label="Cocokkan" fullWidth onPress={() => doScan(code)} />
+            {Platform.OS !== 'web' && (
+              <Button label="Buka kamera barcode" variant="secondary" size="sm" fullWidth onPress={() => setScanMode('camera')} />
+            )}
+          </>
+        )}
       </Sheet>
 
       <OrderDetailModal order={selected} onClose={() => setSelected(null)} onChanged={refresh} />
+      <OrderDetailModal order={scanOrder} onClose={() => setScanOrder(null)} onChanged={refresh} />
     </View>
   );
 }

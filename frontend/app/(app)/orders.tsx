@@ -124,24 +124,25 @@ export default function Orders() {
 
   const columns: DataTableColumn<OrderView>[] = [
     {
-      key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 175,
-      render: (o) => <Text style={dtStyles.orderCode}>{o.order_number}</Text>,
+      // Proporsi: 2 unit dari sisa lebar tabel (setelah kolom fixed).
+      key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 2,
+      render: (o) => <Text style={dtStyles.orderCode} numberOfLines={1}>{o.order_number}</Text>,
     },
     {
-      key: 'product', label: 'Produk & toko', sortKey: 'product' as keyof OrderView,
+      key: 'product', label: 'Produk & toko', sortKey: 'product' as keyof OrderView, width: 2.5,
       render: (o) => (
         <View>
           <Text style={dtStyles.productName} numberOfLines={1}>{o.product_name}</Text>
-          <Text style={dtStyles.storeName}>{o.store_name}</Text>
+          <Text style={dtStyles.storeName} numberOfLines={1}>{o.store_name}</Text>
         </View>
       ),
     },
     {
-      key: 'recipient', label: 'Penerima', sortKey: 'recipient' as keyof OrderView,
+      key: 'recipient', label: 'Penerima', sortKey: 'recipient' as keyof OrderView, width: 2,
       render: (o) => <Text style={dtStyles.cellText} numberOfLines={1}>{o.recipient_name}</Text>,
     },
     {
-      key: 'trader', label: 'Trader', sortKey: 'trader' as keyof OrderView, width: 160,
+      key: 'trader', label: 'Trader', sortKey: 'trader' as keyof OrderView, width: 2,
       render: (o) => (
         <View style={dtStyles.person}>
           <Avatar name={o.trader_name} size={22} />
@@ -150,11 +151,11 @@ export default function Orders() {
       ),
     },
     {
-      key: 'method', label: 'Metode', sortKey: 'method' as keyof OrderView, width: 165,
-      render: (o) => <Text style={dtStyles.method}>{pickupMethodLabel[o.pickup_method]}</Text>,
+      key: 'method', label: 'Metode', sortKey: 'method' as keyof OrderView, width: 2,
+      render: (o) => <Text style={dtStyles.method} numberOfLines={1}>{pickupMethodLabel[o.pickup_method]}</Text>,
     },
     {
-      key: 'status', label: 'Status', sortKey: 'status' as keyof OrderView, width: 140,
+      key: 'status', label: 'Status', sortKey: 'status' as keyof OrderView, width: 1.5,
       render: (o) => {
         if (o.is_problem) return <FlagBadge kind="problem" />;
         if (o.is_pending) return <FlagBadge kind="pending" />;
@@ -162,7 +163,7 @@ export default function Orders() {
       },
     },
     {
-      key: 'photo_count', label: 'Bukti', sortKey: 'photo_count' as keyof OrderView, width: 95,
+      key: 'photo_count', label: 'Bukti', sortKey: 'photo_count' as keyof OrderView, width: 1,
       render: (o) => (
         <Text style={o.photo_count > 0 ? dtStyles.photoOk : dtStyles.photoEmpty}>
           {o.photo_count > 0 ? `▣ ${o.photo_count}` : '—'}
@@ -170,11 +171,12 @@ export default function Orders() {
       ),
     },
     {
-      key: 'created_at', label: 'Input', sortKey: 'created_at' as keyof OrderView, width: 115,
-      render: (o) => <Text style={dtStyles.timeText}>{durationLabel(o.updated_at)}</Text>,
+      key: 'created_at', label: 'Input', sortKey: 'created_at' as keyof OrderView, width: 1.5,
+      render: (o) => <Text style={dtStyles.timeText} numberOfLines={1}>{durationLabel(o.updated_at)}</Text>,
     },
     {
-      key: 'actions', label: '', width: 158,
+      // Lebar tetap: 4 tombol aksi 30px + gap tidak boleh terjepit.
+      key: 'actions', label: '', width: 158, fixed: true,
       render: (o) => {
         const isOwner = o.trader_id === user?.id;
         const editable = isOwner && o.status === 'data_masuk';

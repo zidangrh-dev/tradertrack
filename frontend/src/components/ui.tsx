@@ -443,7 +443,10 @@ export interface DataTableColumn<T> {
   key: string;
   label: string;
   sortKey?: keyof T;
+  /** Proporsi lebar kolom (kolom tanpa width = flex 1). Tabel selalu pas kontainer. */
   width?: number;
+  /** Kolom berlebar tetap (px) — untuk konten yang tidak boleh terjepit, mis. tombol aksi. */
+  fixed?: boolean;
   render: (item: T) => React.ReactNode;
 }
 
@@ -484,54 +487,53 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <View style={dtStyles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={dtStyles.scrollContent}>
-        <View style={dtStyles.table}>
-          {/* Header */}
-          <View style={dtStyles.headerRow}>
-            {columns.map((col) => {
-              const active = sortKey === col.key;
-              const isAsc = active && sortDir === 'asc';
-              return (
-                <Pressable
-                  key={col.key}
-                  style={[dtStyles.headerCell, col.width ? { width: col.width } : { flex: 1 }]}
-                  onPress={() => col.sortKey && onSort?.(col.key)}
-                  disabled={!col.sortKey}
-                >
-                  <Text style={[dtStyles.headerText, active && dtStyles.headerTextActive]} numberOfLines={1}>
-                    {col.label}
+      {/* Tanpa scroll horizontal: kolom width = proporsi, tabel selalu pas kontainer. */}
+      <View style={dtStyles.table}>
+        {/* Header */}
+        <View style={dtStyles.headerRow}>
+          {columns.map((col) => {
+            const active = sortKey === col.key;
+            const isAsc = active && sortDir === 'asc';
+            return (
+              <Pressable
+                key={col.key}
+                style={[dtStyles.headerCell, col.fixed ? { width: col.width } : col.width ? { flex: col.width } : { flex: 1 }]}
+                onPress={() => col.sortKey && onSort?.(col.key)}
+                disabled={!col.sortKey}
+              >
+                <Text style={[dtStyles.headerText, active && dtStyles.headerTextActive]} numberOfLines={1}>
+                  {col.label}
+                </Text>
+                {col.sortKey && (
+                  <Text style={[dtStyles.sortArrow, active ? dtStyles.sortArrowActive : dtStyles.sortArrowInactive]}>
+                    {active ? (isAsc ? '▲' : '▼') : '⇅'}
                   </Text>
-                  {col.sortKey && (
-                    <Text style={[dtStyles.sortArrow, active ? dtStyles.sortArrowActive : dtStyles.sortArrowInactive]}>
-                      {active ? (isAsc ? '▲' : '▼') : '⇅'}
-                    </Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Rows */}
-          {data.map((item, idx) => (
-            <Pressable
-              key={item.id}
-              style={({ pressed }) => [
-                dtStyles.dataRow,
-                idx % 2 === 1 && dtStyles.dataRowAlt,
-                pressed && onRowPress && { backgroundColor: colors.primarySoft },
-              ]}
-              onPress={() => onRowPress?.(item)}
-              disabled={!onRowPress}
-            >
-              {columns.map((col) => (
-              <View key={col.key} style={[dtStyles.dataCell, col.width ? { width: col.width } : { flex: 1 }]}>
-                  {col.render(item)}
-                </View>
-              ))}
-            </Pressable>
-          ))}
+                )}
+              </Pressable>
+            );
+          })}
         </View>
-      </ScrollView>
+
+        {/* Rows */}
+        {data.map((item, idx) => (
+          <Pressable
+            key={item.id}
+            style={({ pressed }) => [
+              dtStyles.dataRow,
+              idx % 2 === 1 && dtStyles.dataRowAlt,
+              pressed && onRowPress && { backgroundColor: colors.primarySoft },
+            ]}
+            onPress={() => onRowPress?.(item)}
+            disabled={!onRowPress}
+          >
+            {columns.map((col) => (
+              <View key={col.key} style={[dtStyles.dataCell, col.fixed ? { width: col.width } : col.width ? { flex: col.width } : { flex: 1 }]}>
+                {col.render(item)}
+              </View>
+            ))}
+          </Pressable>
+        ))}
+      </View>
 
       {/* Pagination */}
       {totalPages != null && totalPages > 0 && (
@@ -633,8 +635,7 @@ const selStyles = StyleSheet.create({
 
 const dtStyles = StyleSheet.create({
   container: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: '#D8DEE6', overflow: 'hidden' },
-  scrollContent: { flexGrow: 1 },
-  table: { width: '100%', minWidth: 1100 },
+  table: { width: '100%' },
   headerRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#CBD5E1', backgroundColor: '#F1F5F9' },
   headerCell: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44 },
   headerText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.55, textTransform: 'uppercase', color: '#475569' },
