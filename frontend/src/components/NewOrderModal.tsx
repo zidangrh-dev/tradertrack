@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '../lib/api';
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
@@ -21,6 +21,9 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   const [barcodeImg, setBarcodeImg] = useState<PickedPhoto | null>(null);
   const [busy, setBusy] = useState(false);
   const [showTrader, setShowTrader] = useState(false);
+  // Isi sheet maksimal ±408px: dua kolom hanya muat jika jendela ≥ ±480px.
+  // Di HP susun satu kolom agar trigger Select (min-width 180px) tidak meluber.
+  const isNarrow = useWindowDimensions().width < 480;
 
   useEffect(() => {
     if (!open || !user) return;
@@ -96,7 +99,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
     <Sheet open={open} onClose={onClose} title="Input order baru">
       <ScrollView contentContainerStyle={{ paddingBottom: 6 }}>
         <View style={styles.formStack}>
-          <View style={styles.twoColumn}>
+          <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
             <View style={styles.column}>
               <Select
                 block
@@ -120,7 +123,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
             </View>
           </View>
 
-          <View style={styles.twoColumn}>
+          <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
             <View style={styles.column}>
               <Field style={webNoOutline} label="Nomor pesanan" value={orderNumber} onChangeText={setOrderNumber} placeholder="TRK-..." />
             </View>
@@ -129,7 +132,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
             </View>
           </View>
 
-          <View style={styles.twoColumn}>
+          <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
             <View style={styles.column}>
               <Select block label="Metode pengambilan" value={method} options={pickupMethodOptions} onChange={(v) => setMethod(v as 'zaydan_ambilan_gjm' | 'self_pick_up')} placeholder="Pilih metode" />
             </View>
@@ -217,6 +220,7 @@ const styles = StyleSheet.create({
   formStack: { gap: 20 },
   formBlock: { width: '100%' },
   twoColumn: { flexDirection: 'row', gap: 14 },
+  twoColumnStacked: { flexDirection: 'column', gap: 14 },
   column: { flex: 1, minWidth: 0 },
   formActions: { marginTop: 26, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },

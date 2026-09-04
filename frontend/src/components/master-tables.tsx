@@ -1,9 +1,9 @@
 // Komponen tabel & metrik Master Data — dipisah dari halaman agar halaman hanya berisi logika.
-// Nama file berawalan `_` sehingga expo-router mengabaikannya sebagai rute.
+// Berada di src/components (di luar app/) agar tidak dipindai expo-router sebagai rute.
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '../../src/theme';
-import type { MarketplaceStore, ProductRow } from '../../src/lib/api';
-import { IconAction } from '../../src/components/ui';
+import { colors, radius } from '../theme';
+import type { MarketplaceStore, ProductRow } from '../lib/api';
+import { IconAction } from './ui';
 
 export function MetricsRow({ stats }: { stats: { totalProduk: number; aktif: number; totalKuota: number; totalTerpakai: number; totalSisa: number } }) {
   return (

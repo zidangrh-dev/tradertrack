@@ -264,7 +264,7 @@ export function Select({
   const top = Math.min(anchor.y, Math.max(12, winH - itemCount * 50 - 16));
 
   return (
-    <View ref={ref}>
+    <View ref={ref} style={block ? { width: '100%' } : undefined}>
       <Pressable
         onPress={toggle}
         {...triggerHover.handlers}

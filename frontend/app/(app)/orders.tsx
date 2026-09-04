@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions,
 } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
@@ -9,7 +9,7 @@ import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
-import { Avatar, Button, DataTable, Field, FlagBadge, IconAction, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
+import { Avatar, Button, DataTable, EmptyState, Field, FlagBadge, IconAction, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 
@@ -34,6 +34,10 @@ async function copyText(text: string) {
 export default function Orders() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  // Layar sempit (HP): filter ditumpuk & tabel diganti kartu — 9 kolom + kolom
+  // aksi fixed 158px tidak mungkin muat di lebar HP (sisa ±20px per kolom).
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 700;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
@@ -122,6 +126,24 @@ export default function Orders() {
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
   const rangeEnd = Math.min(visiblePage * PER_PAGE, total);
 
+  // Baris aksi order milik sendiri yang masih Data masuk — dipakai kolom aksi
+  // tabel (desktop) dan footer kartu (HP) agar tidak ada duplikasi handler.
+  const renderActions = (o: OrderView) => (
+    <View style={dtStyles.rowActions}>
+      <IconAction icon="⧉" label="Salin data order" onPress={async () => {
+        try {
+          await copyText(orderCopyRow(o).join('\t'));
+          notify('Berhasil', 'Data order disalin.');
+        } catch (e) {
+          notify('Gagal menyalin', (e as Error).message);
+        }
+      }} />
+      <IconAction icon="→" variant="primary" label={`Proses pick up ${o.order_number}`} onPress={() => processPickup(o, refresh)} />
+      <IconAction icon="✎" label={`Edit ${o.order_number}`} onPress={() => setEditing(o)} />
+      <IconAction icon="✕" variant="danger" label={`Hapus ${o.order_number}`} onPress={() => removeOrder(o, refresh)} />
+    </View>
+  );
+
   const columns: DataTableColumn<OrderView>[] = [
     {
       // Proporsi: 2 unit dari sisa lebar tabel (setelah kolom fixed).
@@ -178,28 +200,13 @@ export default function Orders() {
       // Lebar tetap: 4 tombol aksi 30px + gap tidak boleh terjepit.
       key: 'actions', label: '', width: 158, fixed: true,
       render: (o) => {
-        const isOwner = o.trader_id === user?.id;
-        const editable = isOwner && o.status === 'data_masuk';
+        const editable = o.trader_id === user?.id && o.status === 'data_masuk';
         if (!editable) {
           return (
             <IconAction icon="›" label={`Buka detail ${o.order_number}`} onPress={() => setSelected(o)} />
           );
         }
-        return (
-          <View style={dtStyles.rowActions}>
-            <IconAction icon="⧉" label="Salin data order" onPress={async () => {
-              try {
-                await copyText(orderCopyRow(o).join('\t'));
-                notify('Berhasil', 'Data order disalin.');
-              } catch (e) {
-                notify('Gagal menyalin', (e as Error).message);
-              }
-            }} />
-            <IconAction icon="→" variant="primary" label={`Proses pick up ${o.order_number}`} onPress={() => processPickup(o, refresh)} />
-            <IconAction icon="✎" label={`Edit ${o.order_number}`} onPress={() => setEditing(o)} />
-            <IconAction icon="✕" variant="danger" label={`Hapus ${o.order_number}`} onPress={() => removeOrder(o, refresh)} />
-          </View>
-        );
+        return renderActions(o);
       },
     },
   ];
@@ -212,24 +219,28 @@ export default function Orders() {
         action={<Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />}
       />
 
-      <View style={styles.filterBar}>
-        <SearchInput value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
+      <View style={[styles.filterBar, isNarrow && styles.filterBarNarrow]}>
+        <View style={isNarrow ? styles.searchBoxNarrow : styles.searchBox}>
+          <SearchInput value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
+        </View>
 
         <Select
           label="Status"
           value={status}
           options={statusOptions}
           onChange={(v) => { setStatus(v); setPage(1); }}
-          placeholder="Semua"
+          placeholder="Semua status"
           clearLabel="Semua"
+          block={isNarrow}
         />
         <Select
           label="Metode"
           value={method}
           options={pickupMethodOptions}
           onChange={(v) => { setMethod(v); setPage(1); }}
-          placeholder="Semua"
+          placeholder="Semua metode"
           clearLabel="Semua"
+          block={isNarrow}
         />
         {isAdmin && (
           <Select
@@ -237,8 +248,9 @@ export default function Orders() {
             value={trader}
             options={traders}
             onChange={(v) => { setTrader(v); setPage(1); }}
-            placeholder="Semua"
+            placeholder="Semua trader"
             clearLabel="Semua"
+            block={isNarrow}
           />
         )}
         <Select
@@ -246,23 +258,24 @@ export default function Orders() {
           value={period}
           options={Object.entries(PERIOD_OPTIONS).map(([value, label]) => ({ value, label }))}
           onChange={(v) => { setPeriod(v); setPage(1); }}
-          placeholder="Semua"
+          placeholder="Semua periode"
           clearLabel="Semua"
+          block={isNarrow}
         />
 
         {activeFilters > 0 && (
-          <Pressable onPress={resetFilters} style={styles.resetBtn}>
+          <Pressable onPress={resetFilters} style={[styles.resetBtn, isNarrow && styles.resetBtnNarrow]}>
             <Text style={styles.resetIcon}>↻</Text>
             <Text style={styles.resetText}>Reset{activeFilters > 1 ? ` (${activeFilters})` : ''}</Text>
           </Pressable>
         )}
       </View>
 
-      <View style={styles.tableSection}>
-        <View style={styles.tableIntro}>
+      <View style={[styles.tableSection, isNarrow && styles.tableSectionNarrow]}>
+        <View style={[styles.tableIntro, isNarrow && styles.tableIntroNarrow]}>
           <View>
             <Text style={styles.tableTitle}>{isAdmin ? 'Semua order' : 'Order saya'}</Text>
-            <Text style={styles.tableHint}>Klik judul kolom untuk mengurutkan data.</Text>
+            {!isNarrow && <Text style={styles.tableHint}>Klik judul kolom untuk mengurutkan data.</Text>}
           </View>
           <View style={styles.tableTools}>
             <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {total}</Text>
@@ -278,6 +291,34 @@ export default function Orders() {
             <Text style={styles.errorText}>Terjadi kendala saat mengambil data. Periksa koneksi ke server, lalu coba muat ulang.</Text>
             <Button label="Muat ulang" variant="secondary" size="sm" onPress={refresh} />
           </View>
+        ) : isNarrow ? (
+          sorted.length === 0 ? (
+            <EmptyState icon="≡" text="Tidak ada order yang cocok dengan filter." />
+          ) : (
+            <>
+              <View style={styles.cardList}>
+                {sorted.map((o) => (
+                  <OrderCard
+                    key={o.id}
+                    order={o}
+                    onPress={() => setSelected(o)}
+                    actions={
+                      o.trader_id === user?.id && o.status === 'data_masuk'
+                        ? <View style={styles.cardActions}>{renderActions(o)}</View>
+                        : undefined
+                    }
+                  />
+                ))}
+              </View>
+              {totalPages > 1 && (
+                <View style={styles.cardPager}>
+                  <Button label="‹ Sebelumnya" variant="secondary" size="sm" disabled={visiblePage <= 1} onPress={() => setPage(visiblePage - 1)} />
+                  <Text style={styles.cardPagerText}>Hal. {visiblePage}/{totalPages}</Text>
+                  <Button label="Berikutnya ›" variant="secondary" size="sm" disabled={visiblePage >= totalPages} onPress={() => setPage(visiblePage + 1)} />
+                </View>
+              )}
+            </>
+          )
         ) : (
           <DataTable
             columns={columns}
@@ -389,17 +430,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#D8DEE6',
     borderRadius: radius.md, padding: 10,
   },
+  filterBarNarrow: { flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'stretch', gap: 10, marginBottom: 14 },
   searchBox: { flex: 1, minWidth: 280 },
+  searchBoxNarrow: { width: '100%' },
 
   resetBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     height: 44, paddingHorizontal: 12, borderRadius: radius.md,
   },
+  resetBtnNarrow: { alignSelf: 'flex-start' },
   resetIcon: { fontSize: 14, color: colors.primary },
   resetText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 
   tableSection: { marginHorizontal: 20 },
+  tableSectionNarrow: { marginHorizontal: 12 },
   tableIntro: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 10, paddingHorizontal: 2 },
+  tableIntroNarrow: { flexWrap: 'wrap', gap: 8 },
   tableTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   tableHint: { fontSize: 11, color: colors.faint, marginTop: 3 },
   tableTools: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -407,5 +453,12 @@ const styles = StyleSheet.create({
   errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginTop: 24, alignItems: 'center', gap: 8 },
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
   errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },
+
+  // Tampilan kartu (layar sempit)
+  cardList: { gap: 10 },
+  cardActions: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.line },
+  cardPager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12 },
+  cardPagerText: { fontSize: 12, fontWeight: '700', color: colors.muted },
+
   ownerNote: { fontSize: 9, color: colors.faint, marginVertical: 8 },
 });

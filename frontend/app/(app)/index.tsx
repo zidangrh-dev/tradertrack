@@ -116,6 +116,9 @@ export default function Kanban() {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
+  // Lebar kolom eksplisit (32 = padding papan 2×16, 28 = gap antar kolom 2×14):
+  // flex:1 di dalam ScrollView horizontal tidak menjamin kolom sama lebar.
+  const colWidth = wide ? Math.floor((width - 32 - 2 * 14) / 3) : Math.round(width * 0.82);
   const { orders, refresh, loading } = useOrders();
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -203,7 +206,7 @@ export default function Kanban() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScrollOuter} contentContainerStyle={styles.boardScroll}>
             <View style={styles.board}>
               {COLUMNS.map((status) => (
-                <View key={status} style={[styles.column, wide && styles.columnWide, !wide && { width: Math.round(width * 0.82) }]}>
+                <View key={status} style={[styles.column, { width: colWidth }]}>
                   <View style={styles.colHead}>
                     <View style={[styles.dot, { backgroundColor: statusColor[status] }]} />
                     <Text style={styles.colTitle}>{statusLabel[status]}</Text>
@@ -248,7 +251,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt, borderRadius: radius.lg, padding: 12,
     borderWidth: 1, borderColor: colors.line,
   },
-  columnWide: { flex: 1 },
   colHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   colTitle: { fontWeight: '800', fontSize: 14, color: colors.text, letterSpacing: -0.2 },
@@ -272,11 +274,13 @@ const styles = StyleSheet.create({
   },
   cardProblem: { borderTopWidth: 3, borderTopColor: colors.red },
   cardPicked: { borderColor: '#C9DAF5', backgroundColor: '#FAFCFF' },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
+  // minHeight menyamakan tinggi kartu dalam satu kolom: ruang badge & nama
+  // produk 2 baris direservasi walau kartu tidak memilikinya.
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6, minHeight: 24 },
   cardNumber: { fontSize: 9, fontWeight: '800', color: colors.primaryMuted, letterSpacing: 0.3 },
   
   
-  cardProduct: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 8 },
+  cardProduct: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.text, marginTop: 8, minHeight: 38 },
   cardMeta: { fontSize: 10, color: colors.muted, marginTop: 3 },
   cardFoot: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

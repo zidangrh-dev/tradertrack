@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, useWindowDimensions, View, type ColorValue } from 'react-native';
 import { Sidebar } from '../../src/components/Sidebar';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -13,9 +14,12 @@ export default function AppLayout() {
   const isAdmin = user?.role === 'admin';
   // Web desktop/tablet lebar memakai sidebar; layar sempit memakai tab bawah.
   const wide = useWindowDimensions().width >= 900;
+  // Android edge-to-edge: konten digambar sampai ke belakang status bar, jadi
+  // beri jarak atas setinggi inset agar header halaman tidak tertutup bar HP.
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
+    <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column', paddingTop: insets.top }}>
       {wide && <Sidebar />}
       <View style={{ flex: 1 }}>
         <Tabs

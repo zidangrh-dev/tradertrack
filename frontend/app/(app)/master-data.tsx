@@ -5,7 +5,7 @@ import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { colors, radius } from '../../src/theme';
 import { Button, Field, PageHeader, SearchInput, Sheet } from '../../src/components/ui';
-import { MetricsRow, ProductTable, StoreTable } from './_master-tables';
+import { MetricsRow, ProductTable, StoreTable } from '../../src/components/master-tables';
 
 function StoreForm({ open, onClose, onSave }: { open: boolean; onClose: () => void; onSave: (name: string) => void }) {
   const [name, setName] = useState('');
