@@ -554,13 +554,20 @@ export default (pool) => {
     const perProduk = perProdukRaw.map((r) => ({ ...r, amount: Number(r.amount), remaining_quota: Math.max(0, r.quota - r.used_quota) }));
 
     const threshold = (await S()).pending_threshold_hours;
+    // Delayed ikut rentang: hanya order yang masih pending/bermasalah dan
+    // pembaruannya terjadi di dalam rentang terpilih.
+    const delayedConds = [
+      `(o.is_problem OR (o.status IN ('data_masuk','proses_pick_up') AND o.updated_at <= now() - ($1 || ' hours')::interval))`,
+    ];
+    const delayedArgs = [String(threshold)];
+    if (start) { delayedConds.push(`o.updated_at >= $${delayedArgs.length + 1}`); delayedArgs.push(start); }
+    if (to) { delayedConds.push(`o.updated_at <= $${delayedArgs.length + 1}`); delayedArgs.push(to); }
     const { rows: delayed } = await pool.query(
       `SELECT o.order_number, o.product_name, u.display_name AS trader, o.updated_at, o.is_problem
        FROM orders o JOIN users u ON u.id = o.trader_id
-       WHERE o.is_problem
-          OR (o.status IN ('data_masuk','proses_pick_up') AND o.updated_at <= now() - ($1 || ' hours')::interval)
+       WHERE ${delayedConds.join(' AND ')}
        ORDER BY o.updated_at ASC`,
-      [String(threshold)],
+      delayedArgs,
     );
     const delayedRows = delayed.map((o) => {
       const hours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;

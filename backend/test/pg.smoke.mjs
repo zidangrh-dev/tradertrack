@@ -61,6 +61,14 @@ await repo.resetProductQuota(p.id);
 const reset = (await repo.listProducts()).find((m) => m.id === p.id);
 assert.equal(reset.quota, 0);
 
+// reports: dari/to membatasi totals DAN delayed (jalur SQL produksi).
+const rAll = await repo.reports('', undefined, undefined);
+assert.ok(rAll.totals.total >= 1, 'reports tanpa filter memuat order');
+const farFuture = await repo.reports('', '2099-01-01T00:00:00.000Z', '2099-02-01T00:00:00.000Z');
+assert.equal(farFuture.totals.total, 0, 'rentang masa depan total 0');
+assert.equal(farFuture.delayed.length, 0, 'rentang masa depan tidak memuat delayed');
+assert.ok(!farFuture.perTrader.length && !farFuture.perProduk.length, 'rentang masa depan kosong di semua bagian');
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');

@@ -416,8 +416,11 @@ export function reports(range, from, to) {
   });
   const perProduk = [...byProduk.values()].map((r) => ({ ...r, remaining_quota: Math.max(0, r.quota - r.used_quota) }));
 
+  // Delayed ikut rentang (berbasis updated_at, selaras PG): order yang masih
+  // pending/bermasalah dan pembaruannya terjadi di dalam rentang terpilih.
+  const delayedInRange = (o) => (!start || o.updated_at >= start) && (!to || o.updated_at <= to);
   const delayed = db.orders
-    .filter((o) => o.is_problem || withMeta(o).is_pending)
+    .filter((o) => (o.is_problem || withMeta(o).is_pending) && delayedInRange(o))
     .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
     .map((o) => {
       const hours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;

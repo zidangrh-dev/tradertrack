@@ -763,6 +763,20 @@ describe('CF7 Analytics', () => {
     assert.equal(status, 200);
     assert.equal(data.totals.total, 0);
   });
+  test('reports: delayed ikut dibatasi rentang from/to', async () => {
+    // Buat order baru (updated_at = sekarang) supaya ada kandidat delayed.
+    const o = await (await client(admin).post('/api/orders', order())).data;
+    const { status: s, data: d } = await client(admin).get('/api/reports?range=kustom&from=2026-01-02T00:00:00.000Z&to=2026-01-01T00:00:00.000Z');
+    assert.equal(s, 200);
+    assert.equal(d.totals.total, 0);
+    // Rentang yang tidak memuat order ini tidak boleh memuatnya di delayed.
+    assert.ok(!d.delayed.some((x) => x.order_number === o.order_number), 'order di luar rentang tidak muncul di delayed');
+    // Order yang baru dibuat masuk rentang today → boleh muncul di delayed bila pending.
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(todayStart); tomorrow.setDate(tomorrow.getDate() + 1);
+    const { data: d2 } = await client(admin).get(`/api/reports?range=kustom&from=${encodeURIComponent(todayStart.toISOString())}&to=${encodeURIComponent(tomorrow.toISOString())}`);
+    assert.ok(d2.totals.total >= 1, 'rentang hari ini memuat order baru');
+  });
 });
 
 describe('CF8 Produk, toko marketplace & pengaturan', () => {
