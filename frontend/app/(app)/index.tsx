@@ -88,8 +88,10 @@ function DraggableCard({
         </View>
 
         {order.status === 'selesai' && (
-          <View style={styles.proofChip}>
-            <Text style={styles.proofText}>▣ {order.photo_count} foto</Text>
+          <View style={styles.actionZone}>
+            <View style={styles.proofChip}>
+              <Text style={styles.proofText}>▣ {order.photo_count} foto</Text>
+            </View>
           </View>
         )}
         {order.status === 'data_masuk' && (
@@ -116,9 +118,10 @@ export default function Kanban() {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
-  // Lebar kolom eksplisit (32 = padding papan 2×16, 28 = gap antar kolom 2×14):
-  // flex:1 di dalam ScrollView horizontal tidak menjamin kolom sama lebar.
-  const colWidth = wide ? Math.floor((width - 32 - 2 * 14) / 3) : Math.round(width * 0.82);
+  // Mode sempit: lebar kolom eksplisit agar rata dalam ScrollView horizontal.
+  // Mode lebar: kolom memakai flex:1 (diukur dari lebar asli konten, bukan
+  // lebar jendela) sehingga tidak pernah lebih lebar dari wadahnya.
+  const colWidth = Math.round(width * 0.82);
   const { orders, refresh, loading } = useOrders();
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -203,10 +206,13 @@ export default function Kanban() {
         <EmptyState icon="⌕" text={`Tidak ada order yang cocok dengan "${search.trim()}".`} />
       ) : (
         <View style={styles.viewport}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScrollOuter} contentContainerStyle={styles.boardScroll}>
-            <View style={styles.board}>
+          {/* Layar lebar: flex row murni agar kolom terkunci ke tinggi viewport
+              (tanpa ScrollView pembungkus yang bikin halaman ikut scroll vertikal).
+              Layar sempit: ScrollView horizontal seperti biasa. */}
+          {wide ? (
+            <View style={[styles.board, styles.boardWide]}>
               {COLUMNS.map((status) => (
-                <View key={status} style={[styles.column, { width: colWidth }]}>
+                <View key={status} style={[styles.column, styles.columnWide]}>
                   <View style={styles.colHead}>
                     <View style={[styles.dot, { backgroundColor: statusColor[status] }]} />
                     <Text style={styles.colTitle}>{statusLabel[status]}</Text>
@@ -228,7 +234,34 @@ export default function Kanban() {
                 </View>
               ))}
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScrollOuter} contentContainerStyle={styles.boardScroll}>
+              <View style={styles.board}>
+                {COLUMNS.map((status) => (
+                  <View key={status} style={[styles.column, { width: colWidth }]}>
+                    <View style={styles.colHead}>
+                      <View style={[styles.dot, { backgroundColor: statusColor[status] }]} />
+                      <Text style={styles.colTitle}>{statusLabel[status]}</Text>
+                      <View style={styles.colCountPill}>
+                        <Text style={[styles.colCount, { color: statusColor[status] }]}>{byStatus[status].length}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.colSub}>{COL_SUB[status]}</Text>
+
+                    <ScrollView style={styles.cardList} contentContainerStyle={styles.cardListContent} showsVerticalScrollIndicator={false}>
+                      {byStatus[status].length === 0 ? (
+                        <ColumnEmpty text={searching ? 'Tidak cocok' : 'Belum ada kartu'} />
+                      ) : (
+                        byStatus[status].map((o) => (
+                          <DraggableCard key={o.id} order={o} onTap={setSelected} onMove={move} dragEnabled={wide} />
+                        ))
+                      )}
+                    </ScrollView>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
         </View>
       )}
 
@@ -242,10 +275,17 @@ export default function Kanban() {
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   searchWrap: { paddingHorizontal: 16, paddingBottom: 12 },
-  viewport: { flex: 1 },
-  boardScrollOuter: { flex: 1 },
+  viewport: { flex: 1, minHeight: 0 },
+  boardScrollOuter: { flex: 1, minHeight: 0 },
   boardScroll: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 12 },
-  board: { flexDirection: 'row', gap: 14, flexGrow: 1 },
+  board: { flexDirection: 'row', gap: 14, flexGrow: 1, minHeight: 0 },
+  // Layar lebar: padding 16 agar kolom sejajar header/pencarian; colWidth
+  // sudah menghitung ruang 32 (2×16) untuk padding ini.
+  boardWide: { paddingHorizontal: 16, paddingBottom: 12 },
+  // Layar lebar: kolom stretch penuh ke tinggi viewport; minHeight 0 agar
+  // daftar kartu di dalamnya bisa scroll sendiri, bukan mendorong halaman.
+  // flex:1 membagi lebar konten (bukan lebar jendela) jadi 3 kolom rata.
+  columnWide: { minHeight: 0, flex: 1 },
 
   column: {
     backgroundColor: colors.surfaceAlt, borderRadius: radius.lg, padding: 12,
@@ -293,6 +333,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden',
   },
   durationPending: { color: '#A8610F', backgroundColor: '#FCF1DE' },
-  proofChip: { marginTop: 9, alignSelf: 'flex-start' },
+  // actionZone: tinggi kartu konsisten — kolom data_masuk & proses_pick_up
+  // memakai area ini untuk tombol sm 32px (margin 10 atas), kolom selesai
+  // memakai chip foto yang lebih pendek, jadi tinggi area dipatok 32px.
+  actionZone: { height: 32, justifyContent: 'flex-end', marginTop: 10 },
+  proofChip: { alignSelf: 'flex-start' },
   proofText: { fontSize: 9, fontWeight: '800', color: '#1F7A4D', backgroundColor: '#E3F5EC', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: 'hidden' },
 });

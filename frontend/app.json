@@ -30,6 +30,9 @@
     "android": {
       "package": "id.zproject.app"
     },
+    "web": {
+      "favicon": "./assets/zproject-logo.png"
+    },
     "extra": {
       "apiUrl": "https://pasukanzaydan.net"
     }
