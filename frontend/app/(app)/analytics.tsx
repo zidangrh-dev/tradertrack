@@ -1,18 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { api, type Reports } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { colors, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
-import { Button, EmptyState, PageHeader } from '../../src/components/ui';
-
-const RANGES = [
-  { key: 'hari_ini', label: 'Hari ini' },
-  { key: '7_hari', label: '7 hari terakhir' },
-  { key: 'bulan_ini', label: 'Bulan berjalan' },
-  { key: 'kustom', label: 'Rentang khusus' },
-] as const;
+import { Button, EmptyState, PageHeader, Sheet } from '../../src/components/ui';
 
 const STATUS_META: { key: Status; label: string; color: string }[] = [
   { key: 'data_masuk', label: 'Data masuk', color: colors.amber },
@@ -45,48 +38,132 @@ function useCountUp(target: number, duration = 550) {
   return display;
 }
 
-/* ---------- Segmented range (slider mengikuti pilihan) ---------- */
+/* ---------- Kalender: satu-satunya filter rentang tanggal ---------- */
 
-function Segmented({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [pos, setPos] = useState<{ x: number; w: number }[]>([]);
-  const [pillW, setPillW] = useState(0);
-  const slide = useRef(new Animated.Value(0)).current;
+const DAYS = ['M', 'S', 'S', 'R', 'K', 'J', 'S']; // Senin pertama
 
-  useEffect(() => {
-    const idx = RANGES.findIndex((r) => r.key === value);
-    const p = pos[idx];
-    if (p) {
-      setPillW(p.w);
-      Animated.spring(slide, { toValue: p.x, useNativeDriver: true, friction: 9, tension: 120 }).start();
+const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+// Kunci berpadding (2026-09-03) — perbandingan rentang lewat string butuh urutan leksikografis.
+const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parseKey = (k: string) => {
+  const [y, m, d] = k.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+/** Ambil 6 minggu penuh (Senin–Minggu) yang memuat bulan `view`. */
+function monthGrid(view: Date): Date[] {
+  const first = new Date(view.getFullYear(), view.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(1 - ((first.getDay() + 6) % 7)); // mundur ke Senin
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+}
+
+function fmtDate(d: Date) {
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Pill rentang tanggal — satu baris dengan tombol Export CSV di header kanan.
+function RangePill({ fromKey, toKey, onPress }: { fromKey: string; toKey: string; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityLabel="Pilih rentang tanggal"
+      onPress={onPress}
+      style={({ pressed }) => [styles.rangePill, pressed && { opacity: 0.85 }]}
+    >
+      <View style={styles.rangePillGlyphBox}>
+        <Text style={styles.rangePillGlyph}>▦</Text>
+      </View>
+      <View>
+        <Text style={styles.rangePillLabel}>Rentang tanggal</Text>
+        <Text style={styles.rangePillValue}>{fmtDate(parseKey(fromKey))} — {fmtDate(parseKey(toKey))}</Text>
+      </View>
+      <Text style={styles.rangePillCaret}>▾</Text>
+    </Pressable>
+  );
+}
+
+function Calendar({ initialFrom, initialTo, onApply, onCancel }: {
+  initialFrom: string;
+  initialTo: string;
+  onApply: (fromKey: string, toKey: string) => void;
+  onCancel: () => void;
+}) {
+  // Draf di dalam modal: menutup tanpa "Terapkan" tidak mengubah rentang aktif.
+  const [fromKey, setFromKey] = useState<string | null>(initialFrom);
+  const [toKey, setToKey] = useState<string | null>(initialTo);
+  // Buka di bulan yang memuat rentang aktif.
+  const [view, setView] = useState(() => {
+    const base = parseKey(initialTo);
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+  const cells = useMemo(() => monthGrid(view), [view]);
+
+  const go = (delta: number) => setView((v) => new Date(v.getFullYear(), v.getMonth() + delta, 1));
+
+  // Urutan ketuk: mulai → akhir (otomatis tukar bila terbalik) → ketuk lagi memulai rentang baru.
+  const pick = (k: string) => {
+    if (!fromKey) { setFromKey(k); return; }
+    if (!toKey) {
+      if (k < fromKey) { setToKey(fromKey); setFromKey(k); } else { setToKey(k); }
+      return;
     }
-  }, [value, pos, slide]);
+    setFromKey(k);
+    setToKey(null);
+  };
+
+  const inRange = (k: string) => !!fromKey && !!toKey && k > fromKey && k < toKey;
+  const complete = !!fromKey && !!toKey;
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segScroll}>
-      <View style={styles.seg}>
-        <Animated.View style={[styles.segPill, { width: pillW, transform: [{ translateX: slide }] }]} />
-        {RANGES.map((r, i) => {
-          const active = r.key === value;
+    <View>
+      <View style={styles.calHead}>
+        <Pressable onPress={() => go(-1)} hitSlop={10} style={styles.calNav}>
+          <Text style={styles.calNavText}>‹</Text>
+        </Pressable>
+        <Text style={styles.calTitle}>{MONTHS[view.getMonth()]} {view.getFullYear()}</Text>
+        <Pressable onPress={() => go(1)} hitSlop={10} style={styles.calNav}>
+          <Text style={styles.calNavText}>›</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.calDow}>
+        {DAYS.map((d, i) => <Text key={i} style={styles.calDowText}>{d}</Text>)}
+      </View>
+
+      <View style={styles.calGrid}>
+        {cells.map((d, i) => {
+          const k = keyOf(d);
+          const outside = d.getMonth() !== view.getMonth();
+          const isFrom = fromKey === k;
+          const isTo = toKey === k;
+          const style = isFrom || isTo ? styles.calCellEnd : inRange(k) ? styles.calCellRange : undefined;
+          const textStyle = isFrom || isTo ? styles.calCellTextEnd : inRange(k) ? styles.calCellTextRange : undefined;
           return (
             <Pressable
-              key={r.key}
-              onPress={() => onChange(r.key)}
-              onLayout={(e) => {
-                const { x, width } = e.nativeEvent.layout;
-                setPos((cur) => {
-                  const next = [...cur];
-                  next[i] = { x, w: width };
-                  return next;
-                });
-              }}
-              style={({ pressed }) => [styles.segItem, pressed && { opacity: 0.8 }]}
+              key={i}
+              disabled={outside}
+              onPress={() => pick(k)}
+              style={[styles.calCell, style, outside && { opacity: 0 }]}
             >
-              <Text style={[styles.segText, active && styles.segTextActive]}>{r.label}</Text>
+              <Text style={[styles.calCellText, textStyle]}>{d.getDate()}</Text>
             </Pressable>
           );
         })}
       </View>
-    </ScrollView>
+
+      <Text style={styles.calHint}>
+        {!fromKey ? 'Ketuk tanggal mulai.' : !toKey ? 'Ketuk tanggal akhir.' : `${fmtDate(parseKey(fromKey))} — ${fmtDate(parseKey(toKey))}`}
+      </Text>
+      <View style={styles.calActions}>
+        <Button label="Batal" variant="secondary" onPress={onCancel} />
+        <Button label="Terapkan" disabled={!complete} onPress={() => complete && onApply(fromKey!, toKey!)} style={{ flex: 1 }} />
+      </View>
+    </View>
   );
 }
 
@@ -136,7 +213,10 @@ function Panel({ title, subtitle, children }: { title: string; subtitle?: string
 
 export default function Analytics() {
   useAdminOnly();
-  const [range, setRange] = useState<string>('bulan_ini');
+  // Satu-satunya filter: rentang tanggal lewat kalender. Bawaan = bulan berjalan.
+  const [fromKey, setFromKey] = useState(() => keyOf(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [toKey, setToKey] = useState(() => keyOf(new Date()));
+  const [showCal, setShowCal] = useState(false);
   const [data, setData] = useState<Reports | null>(null);
   const [error, setError] = useState(false);
   const [load, setLoad] = useState(0);
@@ -144,12 +224,24 @@ export default function Analytics() {
   useEffect(() => {
     setData(null);
     setError(false);
-    api.reports(range).then(setData).catch(() => setError(true));
-  }, [range, load]);
+    const from = parseKey(fromKey).toISOString();
+    const to = parseKey(toKey);
+    to.setDate(to.getDate() + 1); // inklusif sampai akhir hari
+    api.reports('', from, to.toISOString()).then(setData).catch(() => setError(true));
+  }, [fromKey, toKey, load]);
+
+  // Baris aksi di kanan header — pill rentang sejajar (satu deret) dengan Export CSV.
+  // Di posisi loading/error tidak ada data, jadi Export dimatikan.
+  const headerActions = (onExport?: () => void) => (
+    <View style={styles.headerActions}>
+      <RangePill fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} />
+      <ExportBtn onPress={onExport} disabled={!onExport} />
+    </View>
+  );
 
   if (error) return (
     <View style={styles.wrap}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={<ExportBtn disabled />} />
+      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions()} />
       <View style={styles.errorBox}>
         <Text style={styles.errorTitle}>Gagal memuat laporan</Text>
         <Text style={styles.errorText}>Terjadi kendala saat mengambil data. Periksa koneksi ke server, lalu coba muat ulang.</Text>
@@ -159,7 +251,7 @@ export default function Analytics() {
   );
   if (!data) return (
     <View style={styles.wrap}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={<ExportBtn disabled />} />
+      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions()} />
       <ActivityIndicator style={{ marginTop: 48 }} color={colors.primary} />
     </View>
   );
@@ -184,16 +276,24 @@ export default function Analytics() {
     rows.push('Order tertunda atau bermasalah');
     rows.push(['Nomor order', 'Produk', 'Trader', 'Durasi', 'Status'].join(','));
     data.delayed.forEach((d) => rows.push([d.order_number, d.product_name, d.trader, d.duration, d.is_problem ? 'Bermasalah' : 'Tertunda'].map(esc).join(',')));
-    downloadCsv(rows.join('\n'), `zproject-laporan-${range}.csv`);
+    downloadCsv(rows.join('\n'), `zproject-laporan-${fromKey}-${toKey}.csv`);
   };
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={styles.wrapContent}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={<ExportBtn onPress={exportCsv} />} />
+      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions(exportCsv)} />
 
-      <View style={styles.rangeRow}>
-        <Segmented value={range} onChange={setRange} />
-      </View>
+      <Sheet open={showCal} onClose={() => setShowCal(false)} title="Pilih rentang tanggal">
+        {/* Render kondisional: draf kalender selalu segar dari rentang aktif tiap kali modal dibuka. */}
+        {showCal && (
+          <Calendar
+            initialFrom={fromKey}
+            initialTo={toKey}
+            onApply={(f, t) => { setFromKey(f); setToKey(t); setShowCal(false); }}
+            onCancel={() => setShowCal(false)}
+          />
+        )}
+      </Sheet>
 
       <View style={styles.metrics}>
         <MetricCard label="Total order" value={t.total} color={colors.primary} />
@@ -305,17 +405,39 @@ const styles = StyleSheet.create({
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
   errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },
 
-  rangeRow: { paddingHorizontal: 20, marginBottom: space.lg },
-  segScroll: { paddingRight: 20 },
-  seg: { flexDirection: 'row', gap: 4, padding: 4, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.full, alignSelf: 'flex-start' },
-  segPill: {
-    position: 'absolute', left: 0, top: 4, bottom: 4, borderRadius: radius.full,
-    backgroundColor: colors.primary, shadowColor: '#0F162A', shadowOpacity: 0.18,
-    shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 3,
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  // Pill rentang tanggal (pemicu modal kalender) — setinggi tombol Export CSV.
+  rangePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, height: 40,
+    paddingHorizontal: 12, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.full,
+    shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
-  segItem: { paddingHorizontal: 15, height: 34, justifyContent: 'center' },
-  segText: { fontSize: 12, fontWeight: '700', color: colors.muted },
-  segTextActive: { color: colors.onPrimary },
+  rangePillGlyphBox: { width: 24, height: 24, borderRadius: radius.sm, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  rangePillGlyph: { fontSize: 11, color: colors.primary },
+  rangePillLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.7, color: colors.faint, textTransform: 'uppercase' },
+  rangePillValue: { fontSize: 11, fontWeight: '700', color: colors.text },
+  rangePillCaret: { fontSize: 9, color: colors.faint },
+
+  // Kalender mini di dalam modal
+  calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  calTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
+  calNav: { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
+  calNavText: { fontSize: 18, color: colors.muted, lineHeight: 20, marginTop: -2 },
+  calDow: { flexDirection: 'row' },
+  calDowText: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '800', color: colors.faint, paddingVertical: 4 },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: {
+    width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
+    borderRadius: radius.sm,
+  },
+  calCellEnd: { backgroundColor: colors.primary },
+  calCellRange: { backgroundColor: colors.primarySoft },
+  calCellText: { fontSize: 12, color: colors.text, fontWeight: '600' },
+  calCellTextEnd: { color: colors.onPrimary, fontWeight: '800' },
+  calCellTextRange: { color: colors.primary },
+  calHint: { fontSize: 10, color: colors.faint, marginTop: 10 },
+  calActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
 
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginBottom: space.lg },
   metric: {

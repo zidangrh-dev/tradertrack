@@ -159,6 +159,8 @@ const remote = {
     await http('/api/logout', { method: 'POST' }).catch(() => undefined);
     await setToken(null);
   },
+  changePassword: (current_password: string, new_password: string) =>
+    http<void>('/api/me/password', { method: 'POST', body: { current_password, new_password } }),
   getSession: async () => {
     try {
       const u = await http<SessionUser | null>('/api/session');
@@ -204,7 +206,12 @@ const remote = {
   deleteOwnOrder: (id: string) => http<void>(`/api/orders/${id}`, { method: 'DELETE' }),
   editOwnOrder: (id: string, patch: Partial<Order>) => http<OrderView>(`/api/orders/${id}`, { method: 'PATCH', body: patch }),
 
-  reports: (range: string) => http<Reports>(`/api/reports?range=${range}`),
+  reports: (range: string, from?: string, to?: string) => {
+    const qs = new URLSearchParams({ range });
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    return http<Reports>(`/api/reports?${qs.toString()}`);
+  },
   listMarketplaceStores: () => http<MarketplaceStore[]>('/api/marketplace-stores'),
   createMarketplaceStore: (name: string) => http<MarketplaceStore[]>('/api/marketplace-stores', { method: 'POST', body: { name } }),
   deleteMarketplaceStore: (id: string) => http<MarketplaceStore[]>(`/api/marketplace-stores/${id}`, { method: 'DELETE' }),
