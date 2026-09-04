@@ -515,10 +515,14 @@ export default (pool) => {
     return getOrder(id);
   };
 
-  const reports = async (range) => {
-    const from = rangeToFrom(range);
-    const where = from ? ` WHERE o.created_at >= $1` : '';
-    const args = from ? [from] : [];
+  const reports = async (range, from, to) => {
+    // Rentang khusus (from/to eksplisit) menimpa rentang bernama (range).
+    const start = from || rangeToFrom(range);
+    const where = [];
+    const args = [];
+    if (start) { where.push(`o.created_at >= $${args.length + 1}`); args.push(start); }
+    if (to) { where.push(`o.created_at <= $${args.length + 1}`); args.push(to); }
+    const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
 
     const { rows: totalRows } = await pool.query(
       `SELECT COUNT(*)::int AS total,
@@ -526,14 +530,14 @@ export default (pool) => {
               COALESCE(SUM((o.status = 'proses_pick_up')::int), 0) AS proses_pick_up,
               COALESCE(SUM((o.status = 'selesai')::int), 0) AS selesai,
               COALESCE(SUM(o.is_problem::int), 0) AS bermasalah
-       FROM orders o${where}`,
+       FROM orders o${whereSql}`,
       args,
     );
     const totals = totalRows[0];
 
     const { rows: perTrader } = await pool.query(
       `SELECT u.display_name AS trader, COUNT(*)::int AS total, COALESCE(SUM((o.status = 'selesai')::int), 0)::int AS selesai
-       FROM orders o JOIN users u ON u.id = o.trader_id${where}
+       FROM orders o JOIN users u ON u.id = o.trader_id${whereSql}
        GROUP BY u.display_name ORDER BY total DESC`,
       args,
     );
@@ -543,7 +547,7 @@ export default (pool) => {
     const { rows: perProdukRaw } = await pool.query(
       `SELECT p.name AS product_name, p.quota,
               COUNT(o.id)::int AS used_quota, COALESCE(SUM(o.order_amount), 0)::numeric AS amount
-       FROM orders o JOIN products p ON p.id = o.product_id${where}
+       FROM orders o JOIN products p ON p.id = o.product_id${whereSql}
        GROUP BY p.id ORDER BY used_quota DESC`,
       args,
     );

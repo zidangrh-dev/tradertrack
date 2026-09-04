@@ -382,9 +382,10 @@ export function editOrder(id, patch, actorId) {
   return withMeta(o);
 }
 
-export function reports(range) {
-  const from = rangeToFrom(range);
-  const inRange = (o) => !from || o.created_at >= from;
+export function reports(range, from, to) {
+  // Rentang khusus (from/to eksplisit) menimpa rentang bernama (range).
+  const start = from || rangeToFrom(range);
+  const inRange = (o) => (!start || o.created_at >= start) && (!to || o.created_at <= to);
 
   const list = db.orders.filter(inRange);
   const totals = {

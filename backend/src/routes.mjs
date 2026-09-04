@@ -147,6 +147,24 @@ const upload = multer({
     }));
   }
 
+  // Ganti password akun sendiri — wajib verifikasi password lama.
+  r.post('/me/password', requireAuth, asyncH(async (req, res) => {
+    const b = req.body ?? {};
+    const current = String(b.current_password ?? '');
+    const next = String(b.new_password ?? '');
+    if (!current || !next) return res.status(400).json({ error: 'Kata sandi lama dan baru wajib diisi.' });
+    if (next.length < 6) return res.status(400).json({ error: 'Kata sandi baru minimal 6 karakter.' });
+    const u = await repo.userById(req.user.id);
+    if (!u || !(await bcrypt.compare(current, u.password_hash))) {
+      return res.status(400).json({ error: 'Kata sandi lama salah.' });
+    }
+    if (await bcrypt.compare(next, u.password_hash)) {
+      return res.status(400).json({ error: 'Kata sandi baru tidak boleh sama dengan yang lama.' });
+    }
+    await repo.updateUser(u.id, { password_hash: await bcrypt.hash(next, 10) });
+    noContent(res);
+  }));
+
   // ---------- Orders ----------
   // Trader hanya melihat order miliknya sendiri; admin melihat semua (filter trader opsional).
   r.get('/orders', requireAuth, asyncH(async (req, res) => {
@@ -289,7 +307,7 @@ const upload = multer({
 
   // ---------- Reports ----------
   r.get('/reports', requireAdmin, asyncH(async (req, res) => {
-    ok(res, await repo.reports(String(req.query.range ?? '')));
+    ok(res, await repo.reports(String(req.query.range ?? ''), req.query.from ? String(req.query.from) : undefined, req.query.to ? String(req.query.to) : undefined));
   }));
 
   // ---------- Produk (tipe barang + kuota) ----------

@@ -166,6 +166,34 @@ describe('CF1 Autentikasi & role', () => {
     const { status } = await client().post('/api/login', { username: u, password: 'pw' });
     assert.equal(status, 401);
   });
+  test('ganti password sendiri — sukses & login pakai baru', async () => {
+    // akun sementara agar tidak mengubah sandi admin/nabila global
+    const u = `pw_${Date.now()}`;
+    const { data: created } = await client(admin).post('/api/users', { username: u, password: 'old123', display_name: 'PW User', role: 'trader' });
+    const tok = await login(u, 'old123');
+    // salah sandi lama → tolak
+    const { status: bad } = await client(tok).post('/api/me/password', { current_password: 'salah', new_password: 'new12345' });
+    assert.equal(bad, 400);
+    // sukses
+    const { status: ok1 } = await client(tok).post('/api/me/password', { current_password: 'old123', new_password: 'new12345' });
+    assert.equal(ok1, 204);
+    // sandi lama tak bisa dipakai, yang baru bisa
+    const rOld = await client().post('/api/login', { username: u, password: 'old123' });
+    const rNew = await client().post('/api/login', { username: u, password: 'new12345' });
+    assert.equal(rOld.status, 401);
+    assert.equal(rNew.status, 200);
+    // cleanup
+    await client(admin).patch(`/api/users/${created.id}`, { is_active: false });
+  });
+  test('ganti password sendiri — validasi input', async () => {
+    const tok = await login('nabila', 'trader');
+    const r1 = await client(tok).post('/api/me/password', { current_password: 'trader', new_password: '123' });
+    assert.equal(r1.status, 400, 'minimal 6 karakter');
+    const r2 = await client(tok).post('/api/me/password', { current_password: 'trader', new_password: 'trader' });
+    assert.equal(r2.status, 400, 'sama dengan lama ditolak');
+    const r3 = await client().post('/api/me/password', { current_password: 'x', new_password: 'y12345' });
+    assert.equal(r3.status, 401, 'tanpa token');
+  });
   void tra2;
 });
 
@@ -711,6 +739,29 @@ describe('CF7 Analytics', () => {
     const trader = await login('nabila', 'trader');
     const { status } = await client(trader).get('/api/reports?range=bulan_ini');
     assert.equal(status, 403);
+  });
+  test('reports rentang khusus from/to membatasi hasil', async () => {
+    // order dibuat 'sekarang'; rentang kemarin-hari ini pasti memuatnya,
+    // rentang bulan lalu tidak.
+    const d = new Date();
+    const iso = (dt) => dt.toISOString();
+    const fromToday = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const toToday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    const lastMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const { status: s1, data: r1 } = await client(admin).get(`/api/reports?range=kustom&from=${encodeURIComponent(iso(fromToday))}&to=${encodeURIComponent(iso(toToday))}`);
+    assert.equal(s1, 200);
+    const { status: s2, data: r2 } = await client(admin).get(`/api/reports?range=kustom&from=${encodeURIComponent(iso(lastMonth))}&to=${encodeURIComponent(iso(new Date(d.getFullYear(), d.getMonth() - 1, 28)))}`);
+    assert.equal(s2, 200);
+    // rentang hari ini harus memuat order (seluruh suite membuat banyak order);
+    // rentang bulan lalu yang sempit hampir pasti kosong — paling tidak
+    // tidak lebih besar dari rentang hari ini.
+    assert.ok(r1.totals.total > 0, 'rentang hari ini memuat order');
+    assert.ok(r2.totals.total <= r1.totals.total, 'rentang bulan lalu <= hari ini');
+  });
+  test('reports from > to tetap ok (tanpa hasil)', async () => {
+    const { status, data } = await client(admin).get('/api/reports?range=kustom&from=2026-01-02T00:00:00.000Z&to=2026-01-01T00:00:00.000Z');
+    assert.equal(status, 200);
+    assert.equal(data.totals.total, 0);
   });
 });
 
