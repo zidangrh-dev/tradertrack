@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { api, type Reports } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
@@ -67,20 +67,20 @@ function fmtDate(d: Date) {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// Pill rentang tanggal — satu baris dengan tombol Export CSV di header kanan.
-function RangePill({ fromKey, toKey, onPress }: { fromKey: string; toKey: string; onPress: () => void }) {
+// Pill rentang tanggal — di header kanan (lebar) atau baris aksi sendiri (HP).
+function RangePill({ fromKey, toKey, onPress, flex }: { fromKey: string; toKey: string; onPress: () => void; flex?: boolean }) {
   return (
     <Pressable
       accessibilityLabel="Pilih rentang tanggal"
       onPress={onPress}
-      style={({ pressed }) => [styles.rangePill, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [styles.rangePill, flex && styles.rangePillFlex, pressed && { opacity: 0.85 }]}
     >
       <View style={styles.rangePillGlyphBox}>
         <Text style={styles.rangePillGlyph}>▦</Text>
       </View>
-      <View>
+      <View style={styles.rangePillText}>
         <Text style={styles.rangePillLabel}>Rentang tanggal</Text>
-        <Text style={styles.rangePillValue}>{fmtDate(parseKey(fromKey))} — {fmtDate(parseKey(toKey))}</Text>
+        <Text style={styles.rangePillValue} numberOfLines={1}>{fmtDate(parseKey(fromKey))} — {fmtDate(parseKey(toKey))}</Text>
       </View>
       <Text style={styles.rangePillCaret}>▾</Text>
     </Pressable>
@@ -169,13 +169,21 @@ function Calendar({ initialFrom, initialTo, onApply, onCancel }: {
 
 /* ---------- KPI card ---------- */
 
-function MetricCard({ label, value, color, danger }: { label: string; value: number; color: string; danger?: boolean }) {
+function MetricCard({ label, value, color, danger, wide, dangerSpan }: { label: string; value: number; color: string; danger?: boolean; wide?: boolean; dangerSpan?: boolean }) {
   const shown = useCountUp(value);
   return (
-    <Hover style={[styles.metric, danger && styles.metricDanger]} hoverStyle={styles.metricHover}>
+    <Hover
+      style={[
+        styles.metric,
+        !wide && styles.metricMobile,
+        dangerSpan && styles.metricDangerSpan,
+        danger && styles.metricDanger,
+      ]}
+      hoverStyle={styles.metricHover}
+    >
       <View style={[styles.metricDot, { backgroundColor: color }]} />
       <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, danger && { color: colors.red }]}>{shown}</Text>
+      <Text style={[styles.metricValue, !wide && styles.metricValueMobile, danger && { color: colors.red }]}>{shown}</Text>
     </Hover>
   );
 }
@@ -201,11 +209,11 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 
 /* ---------- Panel ---------- */
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+function Panel({ title, subtitle, children, wide }: { title: string; subtitle?: string; children: ReactNode; wide?: boolean }) {
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, !wide && styles.panelMobile]}>
       <Text style={styles.panelTitle}>{title}</Text>
-      {!!subtitle && <Text style={styles.panelSub}>{subtitle}</Text>}
+      {!!subtitle && <Text style={styles.panelSub} numberOfLines={wide ? undefined : 2}>{subtitle}</Text>}
       {children}
     </View>
   );
@@ -213,6 +221,8 @@ function Panel({ title, subtitle, children }: { title: string; subtitle?: string
 
 export default function Analytics() {
   useAdminOnly();
+  const { width } = useWindowDimensions();
+  const wide = width >= 900;
   // Satu-satunya filter: rentang tanggal lewat kalender. Bawaan = bulan berjalan.
   const [fromKey, setFromKey] = useState(() => keyOf(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [toKey, setToKey] = useState(() => keyOf(new Date()));
@@ -230,18 +240,32 @@ export default function Analytics() {
     api.reports('', from, to.toISOString()).then(setData).catch(() => setError(true));
   }, [fromKey, toKey, load]);
 
-  // Baris aksi di kanan header — pill rentang sejajar (satu deret) dengan Export CSV.
-  // Di posisi loading/error tidak ada data, jadi Export dimatikan.
-  const headerActions = (onExport?: () => void) => (
-    <View style={styles.headerActions}>
-      <RangePill fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} />
-      <ExportBtn onPress={onExport} disabled={!onExport} />
-    </View>
+  // Header halaman: lebar = aksi di kanan; HP = judul sendiri + baris aksi di bawah.
+  const pageTitle = (
+    <PageHeader
+      title="Analytics"
+      subtitle={wide ? 'Baca performa order dan rekap pembayaran dalam satu tampilan.' : undefined}
+    />
+  );
+
+  const renderCal = () => (
+    <Sheet open={showCal} onClose={() => setShowCal(false)} title="Pilih rentang tanggal">
+      {showCal && (
+        <Calendar
+          initialFrom={fromKey}
+          initialTo={toKey}
+          onApply={(f, t) => { setFromKey(f); setToKey(t); setShowCal(false); }}
+          onCancel={() => setShowCal(false)}
+        />
+      )}
+    </Sheet>
   );
 
   if (error) return (
     <View style={styles.wrap}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions()} />
+      {pageTitle}
+      {!wide && <View style={styles.mobileActions}><RangePill flex fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} /></View>}
+      {renderCal()}
       <View style={styles.errorBox}>
         <Text style={styles.errorTitle}>Gagal memuat laporan</Text>
         <Text style={styles.errorText}>Terjadi kendala saat mengambil data. Periksa koneksi ke server, lalu coba muat ulang.</Text>
@@ -251,7 +275,9 @@ export default function Analytics() {
   );
   if (!data) return (
     <View style={styles.wrap}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions()} />
+      {pageTitle}
+      {!wide && <View style={styles.mobileActions}><RangePill flex fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} /></View>}
+      {renderCal()}
       <ActivityIndicator style={{ marginTop: 48 }} color={colors.primary} />
     </View>
   );
@@ -281,29 +307,38 @@ export default function Analytics() {
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={styles.wrapContent}>
-      <PageHeader title="Analytics" subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan." action={headerActions(exportCsv)} />
+      {wide ? (
+        <PageHeader
+          title="Analytics"
+          subtitle="Baca performa order dan rekap pembayaran dalam satu tampilan."
+          action={
+            <View style={styles.headerActions}>
+              <RangePill fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} />
+              <ExportBtn onPress={exportCsv} />
+            </View>
+          }
+        />
+      ) : (
+        <>
+          <PageHeader title="Analytics" />
+          <View style={styles.mobileActions}>
+            <RangePill flex fromKey={fromKey} toKey={toKey} onPress={() => setShowCal(true)} />
+            <ExportBtn onPress={exportCsv} />
+          </View>
+        </>
+      )}
 
-      <Sheet open={showCal} onClose={() => setShowCal(false)} title="Pilih rentang tanggal">
-        {/* Render kondisional: draf kalender selalu segar dari rentang aktif tiap kali modal dibuka. */}
-        {showCal && (
-          <Calendar
-            initialFrom={fromKey}
-            initialTo={toKey}
-            onApply={(f, t) => { setFromKey(f); setToKey(t); setShowCal(false); }}
-            onCancel={() => setShowCal(false)}
-          />
-        )}
-      </Sheet>
+      {renderCal()}
 
-      <View style={styles.metrics}>
-        <MetricCard label="Total order" value={t.total} color={colors.primary} />
-        <MetricCard label="Data masuk" value={t.data_masuk} color={colors.amber} />
-        <MetricCard label="Proses pick up" value={t.proses_pick_up} color={colors.blue} />
-        <MetricCard label="Selesai" value={t.selesai} color={colors.green} />
-        <MetricCard label="Bermasalah" value={t.bermasalah} color={colors.red} danger />
+      <View style={[styles.metrics, !wide && styles.metricsMobile]}>
+        <MetricCard label="Total order" value={t.total} color={colors.primary} wide={wide} />
+        <MetricCard label="Data masuk" value={t.data_masuk} color={colors.amber} wide={wide} />
+        <MetricCard label="Proses pick up" value={t.proses_pick_up} color={colors.blue} wide={wide} />
+        <MetricCard label="Selesai" value={t.selesai} color={colors.green} wide={wide} />
+        <MetricCard label="Bermasalah" value={t.bermasalah} color={colors.red} danger dangerSpan wide={wide} />
       </View>
 
-      <Panel title="Distribusi status" subtitle="Proporsi seluruh order pada rentang terpilih">
+      <Panel wide={wide} title="Distribusi status" subtitle="Proporsi seluruh order pada rentang terpilih">
         <View style={styles.distBar}>
           {STATUS_META.map((s) => {
             const val = t[s.key];
@@ -322,10 +357,10 @@ export default function Analytics() {
         </View>
       </Panel>
 
-      <Panel title="Jumlah order per trader" subtitle="Diurutkan menurun · batang = proporsi terhadap total order terbanyak">
+      <Panel wide={wide} title="Jumlah order per trader" subtitle="Diurutkan menurun · batang = proporsi terhadap total order terbanyak">
         {data.perTrader.map((r) => (
-          <Hover key={r.trader} style={styles.traderRow} hoverStyle={styles.traderRowHover}>
-            <Text style={styles.traderName} numberOfLines={1}>{r.trader}</Text>
+          <Hover key={r.trader} style={[styles.traderRow, !wide && styles.traderRowMobile]} hoverStyle={styles.traderRowHover}>
+            <Text style={[styles.traderName, !wide && styles.traderNameMobile]} numberOfLines={1}>{r.trader}</Text>
             <View style={styles.traderBarWrap}>
               <Bar pct={Math.round((r.total / maxTrader) * 100)} color={colors.primary} />
               <View style={styles.traderCounts}>
@@ -338,7 +373,7 @@ export default function Analytics() {
         ))}
       </Panel>
 
-      <Panel title="Rekap performa produk" subtitle="Rekap order per tipe barang (kuota lintas toko) · batang = proporsi nominal terbesar">
+      <Panel wide={wide} title="Rekap performa produk" subtitle="Rekap order per tipe barang (kuota lintas toko) · batang = proporsi nominal terbesar">
         {data.perProduk.length === 0 ? (
           <EmptyState icon="▤" text="Belum ada data produk pada rentang ini." />
         ) : (
@@ -359,21 +394,36 @@ export default function Analytics() {
         )}
       </Panel>
 
-      <Panel title="Order tertunda atau bermasalah" subtitle="Diurutkan dari yang paling lama">
+      <Panel wide={wide} title="Order tertunda atau bermasalah" subtitle="Diurutkan dari yang paling lama">
         {data.delayed.length === 0 ? (
           <EmptyState icon="✓" text="Tidak ada order tertunda atau bermasalah pada rentang ini." />
         ) : (
-          data.delayed.map((d, i) => (
-            <Hover key={i} style={styles.delayedRow} hoverStyle={styles.traderRowHover}>
-              <Text style={styles.delayedOrder}>{d.order_number}</Text>
-              <Text style={styles.delayedProduct} numberOfLines={1}>{d.product_name}</Text>
-              <Text style={styles.delayedTrader} numberOfLines={1}>{d.trader}</Text>
-              <Text style={styles.delayedDuration}>{d.duration}</Text>
-              <Text style={[styles.delayedStatus, d.is_problem ? styles.problemText : styles.pendingText]}>
-                {d.is_problem ? 'Bermasalah' : 'Tertunda'}
-              </Text>
-            </Hover>
-          ))
+          data.delayed.map((d, i) =>
+            wide ? (
+              <Hover key={i} style={styles.delayedRow} hoverStyle={styles.traderRowHover}>
+                <Text style={styles.delayedOrder} numberOfLines={1}>{d.order_number}</Text>
+                <Text style={styles.delayedProduct} numberOfLines={1}>{d.product_name}</Text>
+                <Text style={styles.delayedTrader} numberOfLines={1}>{d.trader}</Text>
+                <Text style={styles.delayedDuration}>{d.duration}</Text>
+                <Text style={[styles.delayedStatus, d.is_problem ? styles.problemText : styles.pendingText]}>
+                  {d.is_problem ? 'Bermasalah' : 'Tertunda'}
+                </Text>
+              </Hover>
+            ) : (
+              <Hover key={i} style={styles.delayedCard} hoverStyle={styles.traderRowHover}>
+                <View style={styles.delayedCardTop}>
+                  <Text style={styles.delayedCardOrder} numberOfLines={1}>{d.order_number}</Text>
+                  <Text style={styles.delayedCardDuration}>{d.duration}</Text>
+                  <Text style={[styles.delayedStatus, d.is_problem ? styles.problemText : styles.pendingText]}>
+                    {d.is_problem ? 'Bermasalah' : 'Tertunda'}
+                  </Text>
+                </View>
+                <Text style={styles.delayedCardMeta} numberOfLines={1}>
+                  {d.product_name} · {d.trader}
+                </Text>
+              </Hover>
+            ),
+          )
         )}
       </Panel>
     </ScrollView>
@@ -406,6 +456,8 @@ const styles = StyleSheet.create({
   errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },
 
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  // HP: aksi pindah ke baris sendiri di bawah judul halaman.
+  mobileActions: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   // Pill rentang tanggal (pemicu modal kalender) — setinggi tombol Export CSV.
   rangePill: {
     flexDirection: 'row', alignItems: 'center', gap: 8, height: 40,
@@ -413,8 +465,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.full,
     shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
+  rangePillFlex: { flex: 1, minWidth: 0 },
   rangePillGlyphBox: { width: 24, height: 24, borderRadius: radius.sm, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   rangePillGlyph: { fontSize: 11, color: colors.primary },
+  rangePillText: { flexShrink: 1, minWidth: 0 },
   rangePillLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.7, color: colors.faint, textTransform: 'uppercase' },
   rangePillValue: { fontSize: 11, fontWeight: '700', color: colors.text },
   rangePillCaret: { fontSize: 9, color: colors.faint },
@@ -440,16 +494,21 @@ const styles = StyleSheet.create({
   calActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
 
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginBottom: space.lg },
+  // HP: dua kolom rata; kartu Bermasalah membentang penuh di bawah.
+  metricsMobile: { gap: 8, paddingHorizontal: 12 },
   metric: {
     flexGrow: 1, flexBasis: 180, minWidth: 150,
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line,
     padding: 14, position: 'relative', overflow: 'hidden',
   },
+  metricMobile: { flexBasis: '46%', minWidth: 0, padding: 12 },
+  metricDangerSpan: { flexBasis: '100%', minWidth: 0 },
   metricDanger: { backgroundColor: '#FFF7F6', borderColor: '#F5DAD5' },
   metricHover: { backgroundColor: '#F5F6FA' },
   metricDot: { width: 8, height: 8, borderRadius: 4, position: 'absolute', top: 12, left: 12 },
   metricLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, marginLeft: 14 },
   metricValue: { fontSize: 26, fontWeight: '800', color: colors.text, marginTop: 6, letterSpacing: -0.5 },
+  metricValueMobile: { fontSize: 20 },
 
   panel: {
     backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line,
@@ -458,6 +517,7 @@ const styles = StyleSheet.create({
   },
   panelTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
   panelSub: { fontSize: 10, color: colors.muted, marginTop: 3, marginBottom: 12 },
+  panelMobile: { marginHorizontal: 12, padding: 14 },
 
   distBar: { flexDirection: 'row', height: 12, borderRadius: radius.full, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
   distSegment: { height: 12 },
@@ -470,8 +530,10 @@ const styles = StyleSheet.create({
   legendPct: { fontSize: 10, fontWeight: '700', color: colors.faint },
 
   traderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceAlt },
+  traderRowMobile: { gap: 8 },
   traderRowHover: { backgroundColor: '#F7F8FC' },
   traderName: { width: 110, fontSize: 12, fontWeight: '700', color: colors.text },
+  traderNameMobile: { flex: 0.6, width: undefined, minWidth: 0 },
   traderBarWrap: { flex: 1, gap: 5 },
   traderCounts: { flexDirection: 'row', gap: 10 },
   countSelesai: { fontSize: 9, color: '#1F7A4D', fontWeight: '700' },
@@ -497,4 +559,11 @@ const styles = StyleSheet.create({
   delayedStatus: { fontSize: 9, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
   problemText: { color: '#C1433A', backgroundColor: '#FCE9E6' },
   pendingText: { color: '#A8610F', backgroundColor: '#FCF1DE' },
+
+  // HP: item tertunda jadi kartu dua baris agar tidak sesak satu lajur.
+  delayedCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceAlt, gap: 4 },
+  delayedCardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  delayedCardOrder: { flex: 1, fontSize: 11, fontWeight: '800', color: colors.primaryMuted, minWidth: 0 },
+  delayedCardDuration: { fontSize: 10, fontWeight: '700', color: '#C1433A' },
+  delayedCardMeta: { fontSize: 10, color: colors.faint },
 });

@@ -48,18 +48,19 @@ export function BarcodeScanner({ onDetected, onClose }: { onDetected: (code: str
 
   return (
     <View style={styles.wrap}>
-      <CameraView
-        style={styles.camera}
-        facing="back"
-        active={active}
-        onBarcodeScanned={handleDetected}
-        barcodeScannerSettings={{ barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e'] }}
-      >
-        <View style={styles.overlay}>
+      <View style={styles.cameraWrap}>
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          active={active}
+          onBarcodeScanned={handleDetected}
+          barcodeScannerSettings={{ barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e'] }}
+        />
+        <View style={styles.overlay} pointerEvents="none">
           <View style={styles.frame} />
           <Text style={styles.hint}>Arahkan kamera ke nomor order / barcode resi</Text>
         </View>
-      </CameraView>
+      </View>
       <Button label="Tutup kamera" variant="secondary" size="sm" onPress={onClose} style={styles.closeBtn} />
     </View>
   );
@@ -67,8 +68,12 @@ export function BarcodeScanner({ onDetected, onClose }: { onDetected: (code: str
 
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
-  camera: { height: 300, borderRadius: radius.md, overflow: 'hidden' },
-  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: 'rgba(0,0,0,0.12)' },
+  cameraWrap: { height: 300, borderRadius: radius.md, overflow: 'hidden' },
+  overlay: {
+    position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
+    alignItems: 'center', justifyContent: 'center', gap: 14,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
   frame: {
     width: 220, height: 90,
     borderWidth: 2, borderColor: '#FFFFFF',

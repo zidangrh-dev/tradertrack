@@ -108,8 +108,16 @@ export function createProduct(input) {
 
 export function deleteProduct(id) {
   const p = findProduct(id);
-  if (usedQuotaOf(id) > 0) throw new Error('Produk yang sudah dipakai order tidak dapat dihapus. Nonaktifkan bila tidak digunakan.');
-  db.products.splice(db.products.indexOf(p), 1);
+  const orders = db.orders.filter((o) => o.product_id === id);
+  const active = orders.some((o) => o.status !== 'selesai');
+  if (active) throw new Error('Produk masih memiliki order aktif. Selesaikan semua order sebelum menghapus produk.');
+  if (orders.length > 0) {
+    // Semua order sudah selesai: arsipkan lewat nonaktif (hapus fisik tidak mungkin karena order merujuk).
+    p.is_active = false;
+    p.updated_at = now();
+  } else {
+    db.products.splice(db.products.indexOf(p), 1);
+  }
   return listProducts();
 }
 

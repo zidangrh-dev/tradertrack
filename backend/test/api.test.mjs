@@ -866,6 +866,36 @@ describe('CF8 Produk, toko marketplace & pengaturan', () => {
     const { status } = await client(admin).patch(`/api/products/${used.id}`, { quota: 0 });
     assert.equal(status, 400);
   });
+  test('hapus produk: tanpa order → fisik; order aktif → tolak; semua selesai → soft delete', async () => {
+    const mk = async (name) => (await client(admin).post('/api/products', { name, quota: 5 })).data.find((p) => p.name === name);
+
+    // Tanpa order sama sekali → dihapus fisik dari daftar.
+    const pEmpty = await mk(`Produk Hapus Kosong ${Date.now()}`);
+    const delEmpty = await client(admin).del(`/api/products/${pEmpty.id}`);
+    assert.equal(delEmpty.status, 200);
+    assert.ok(!delEmpty.data.some((p) => p.id === pEmpty.id), 'produk tanpa order dihapus fisik');
+
+    // Masih ada order aktif (data_masuk) → tolak.
+    const pAct = await mk(`Produk Hapus Aktif ${Date.now()}`);
+    const o1 = await client(trader).post('/api/orders', order({ product_id: pAct.id }));
+    assert.equal(o1.status, 201);
+    const delAct = await client(admin).del(`/api/products/${pAct.id}`);
+    assert.equal(delAct.status, 400);
+    assert.match(delAct.data.error, /order aktif/);
+
+    // Semua order selesai → hapus boleh, tapi menjadi soft (nonaktif) karena order merujuk.
+    const pDone = await mk(`Produk Hapus Selesai ${Date.now()}`);
+    const o2 = await client(trader).post('/api/orders', order({ product_id: pDone.id }));
+    assert.equal(o2.status, 201);
+    const up = await postMultipart(admin, `/api/orders/${o2.data.id}/photos`, { file: "bukti-selesai.jpg" }); assert.equal(up.status, 200);
+    const comp = await client(admin).patch(`/api/orders/${o2.data.id}/complete`, { note: 'x' });
+    assert.equal(comp.status, 200);
+    const delDone = await client(admin).del(`/api/products/${pDone.id}`);
+    assert.equal(delDone.status, 200);
+    const doneRow = delDone.data.find((p) => p.id === pDone.id);
+    assert.ok(doneRow, 'produk tetap ada (soft delete)');
+    assert.equal(doneRow.is_active, false, 'soft delete menonaktifkan produk');
+  });
   test('nama produk duplikat → tolak', async () => {
     // Seed sudah punya 'Wireless Keyboard K2'.
     const dup = await client(admin).post('/api/products', { name: 'Wireless Keyboard K2', quota: 3 });

@@ -188,11 +188,23 @@ export default (pool) => {
   };
 
   const deleteProduct = async (id) => {
-    const { rows } = await pool.query(`SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1`, [id]);
-    if (!rows[0]) throw new Error('Produk tidak ditemukan.');
-    if (rows[0].used > 0) throw new Error('Produk yang sudah dipakai order tidak dapat dihapus. Nonaktifkan bila tidak digunakan.');
-    const result = await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
-    if (result.rowCount === 0) throw new Error('Produk tidak ditemukan.');
+    const exists = await pool.query(`SELECT id FROM products WHERE id = $1`, [id]);
+    if (!exists.rows[0]) throw new Error('Produk tidak ditemukan.');
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COALESCE(SUM((status <> 'selesai')::int), 0)::int AS active
+       FROM orders WHERE product_id = $1`,
+      [id],
+    );
+    const { total, active } = rows[0];
+    if (active > 0) throw new Error('Produk masih memiliki order aktif. Selesaikan semua order sebelum menghapus produk.');
+    if (total > 0) {
+      // Semua order sudah selesai: tidak bisa hapus fisik (FK), arsipkan lewat nonaktif.
+      await pool.query(`UPDATE products SET is_active = false, updated_at = now() WHERE id = $1`, [id]);
+    } else {
+      const result = await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
+      if (result.rowCount === 0) throw new Error('Produk tidak ditemukan.');
+    }
     return listProducts();
   };
 

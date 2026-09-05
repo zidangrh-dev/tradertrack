@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { api, subscribeChanges, type MarketplaceStore, type ProductRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
@@ -20,6 +20,8 @@ function StoreForm({ open, onClose, onSave }: { open: boolean; onClose: () => vo
 
 export default function MasterData() {
   useAdminOnly();
+  const { width } = useWindowDimensions();
+  const wide = width >= 900;
 
   const [items, setItems] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,16 +173,16 @@ export default function MasterData() {
     <View style={styles.wrap}>
       <PageHeader
         title="Master data"
-        subtitle="Katalog resmi produk, toko marketplace, dan kontrol alokasi kuota."
+        subtitle={wide ? 'Katalog resmi produk, toko marketplace, dan kontrol alokasi kuota.' : undefined}
         action={<Button label="Tambah produk" icon="+" onPress={() => setShowNew(true)} />}
       />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <MetricsRow stats={stats} />
+        <MetricsRow wide={wide} stats={stats} />
 
         {/* Filter & Search Bar */}
         <View style={styles.controlBar}>
-          <View style={styles.searchBox}>
+          <View style={[styles.searchBox, !wide && styles.searchBoxMobile]}>
             <SearchInput value={search} onChangeText={setSearch} placeholder="Cari nama produk..." />
           </View>
 
@@ -210,12 +212,14 @@ export default function MasterData() {
 
         {/* Enterprise Data Table */}
         <ProductTable
+          wide={wide}
           items={filteredItems}
           loading={loading}
           onMore={(item, pos) => { setActionPosition(pos); setActionItem(item); }}
         />
 
         <StoreTable
+          wide={wide}
           stores={stores}
           onRemove={(store) => confirmAsk('Hapus toko marketplace', `Hapus "${store.name}" dari daftar?`, () => removeStore(store))}
           onAdd={() => setShowStoreForm(true)}
@@ -324,17 +328,8 @@ export default function MasterData() {
 
 const styles = StyleSheet.create({
 
-  wrap: { flex: 1, backgroundColor: '#F8FAFC' },
+  wrap: { flex: 1, backgroundColor: colors.canvas },
   scrollContainer: { paddingHorizontal: 16, paddingBottom: 32 },
-
-  // Summary Metrics
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 8,
-    marginBottom: 16,
-  },
 
   // Search & Filter
   controlBar: {
@@ -349,8 +344,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 240,
   },
+  searchBoxMobile: { flexBasis: '100%', minWidth: 0 },
   filterGroup: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
   },
   filterChip: {
@@ -375,38 +372,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Enterprise Table
-  tableCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-  },
-
-  // Status Badges
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    alignSelf: 'flex-start',
-  },
-
   actionBackdrop: { flex: 1, backgroundColor: 'transparent' },
   actionPopup: { position: 'absolute', width: 148, padding: 4, borderRadius: radius.sm, borderWidth: 1, borderColor: '#D8DEE6', backgroundColor: '#FFFFFF', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, elevation: 8 },
   popupItem: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 5 },
   popupText: { fontSize: 11, fontWeight: '700', color: '#334155' },
   popupDanger: { backgroundColor: '#FFF7F7' },
   popupDangerText: { fontSize: 11, fontWeight: '700', color: '#991B1B' },
-
-  // Empty state inside table
-  emptyTable: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
 
   // Modal styling
   formContainer: {

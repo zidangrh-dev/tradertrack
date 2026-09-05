@@ -46,8 +46,21 @@ export interface UserRow extends Omit<User, 'password'> {
 
 /* ---------- Konfigurasi ---------- */
 
-const API_URL: string =
-  (Constants.expoConfig?.extra?.apiUrl as string | undefined) || 'http://localhost:4000';
+// URL API bertingkat:
+// 1. Expo Go / dev di perangkat native — turunkan dari host dev server
+//    (hostUri, mis. "192.168.10.77:8081" atau "10.0.2.2:8081") → port 4000.
+//    Otomatis mengikuti IP laptop yang sedang dipakai, tanpa edit manual.
+// 2. Web & build produksi — pakai extra.apiUrl dari app.json, fallback localhost.
+function resolveApiUrl(): string {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri && Platform.OS !== 'web') {
+    const host = hostUri.split(':')[0];
+    if (host) return `http://${host}:4000`;
+  }
+  return (Constants.expoConfig?.extra?.apiUrl as string | undefined) || 'http://localhost:4000';
+}
+
+const API_URL: string = resolveApiUrl();
 
 const TOKEN_KEY = 'zproject.jwt';
 

@@ -53,6 +53,17 @@ assert.equal(freed.remaining_quota, 1, 'kuota kembali setelah order dihapus');
 // Duplikat nama produk → ditolak.
 await assert.rejects(() => repo.createProduct({ name: 'Smoke Quota', quota: 5 }), /sudah terdaftar/);
 
+// Hapus produk: tanpa order → fisik; order aktif → ditolak; semua selesai → soft nonaktif.
+const delFree = await repo.createProduct({ name: 'Smoke Hapus Bebas', quota: 5 });
+const freeRow = delFree.find((x) => x.name === 'Smoke Hapus Bebas');
+await repo.deleteProduct(freeRow.id);
+assert.ok(!(await repo.listProducts()).some((x) => x.id === freeRow.id), 'produk tanpa order dihapus fisik');
+
+const delActive = await repo.createProduct({ name: 'Smoke Hapus Aktif', quota: 5 });
+const activeRow = delActive.find((x) => x.name === 'Smoke Hapus Aktif');
+await repo.createOrder({ order_number: `TRK-DEL-${Date.now()}`, recipient_name: 'A', pickup_method: 'zaydan_ambilan_gjm', product_id: activeRow.id, store_id: stores[0].id }, actorId);
+await assert.rejects(() => repo.deleteProduct(activeRow.id), /order aktif/, 'produk berorder aktif tidak bisa dihapus');
+
 // Add-quota atomic + reset.
 await repo.addProductQuota(p.id, 10);
 const added = (await repo.listProducts()).find((m) => m.id === p.id);
