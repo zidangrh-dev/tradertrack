@@ -27,8 +27,14 @@
       ],
       "expo-status-bar"
     ],
+    "icon": "./assets/icon.png",
     "android": {
       "package": "id.zproject.app",
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-foreground.png",
+        "backgroundColor": "#384C71"
+      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
