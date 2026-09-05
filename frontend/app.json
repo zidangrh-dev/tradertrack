@@ -34,7 +34,7 @@
       "favicon": "./assets/zproject-logo.jpg"
     },
     "extra": {
-      "apiUrl": "http://localhost:4000"
+      "apiUrl": "https://pasukanzaydan.net"
     }
   }
 }
