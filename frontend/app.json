@@ -28,13 +28,21 @@
       "expo-status-bar"
     ],
     "android": {
-      "package": "id.zproject.app"
+      "package": "id.zproject.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/zproject-logo.jpg"
     },
     "extra": {
-      "apiUrl": "https://pasukanzaydan.net"
+      "apiUrl": "https://pasukanzaydan.net",
+      "router": {},
+      "eas": {
+        "projectId": "95a43f55-aee5-43f4-8854-9a6cef826bd7"
+      }
     }
   }
 }
