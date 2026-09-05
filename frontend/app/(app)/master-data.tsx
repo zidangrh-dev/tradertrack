@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { api, subscribeChanges, type MarketplaceStore, type ProductRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
@@ -50,10 +51,14 @@ export default function MasterData() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    load();
-    return subscribeChanges(load);
-  }, [load]);
+  // Muat + langganan realtime hanya saat tab fokus (sama seperti useOrders):
+  // tab yang tidak aktif tidak ikut fetch ulang produk/toko setiap event server.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return subscribeChanges(load);
+    }, [load]),
+  );
 
   // Statistik Ringkasan Enterprise
   const stats = useMemo(() => {

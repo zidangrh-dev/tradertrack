@@ -258,10 +258,12 @@ export function Select({
   };
 
   const selected = options.find((o) => o.value === value);
-  const itemCount = options.length + (clearLabel ? 1 : 0) + (onAdd ? 1 : 0);
   const menuW = Math.min(Math.max(anchor.w, 260), 360);
   const left = Math.max(12, Math.min(anchor.x, winW - menuW - 12));
-  const top = Math.min(anchor.y, Math.max(12, winH - itemCount * 50 - 16));
+  // Batas tinggi menu: daftar panjang (banyak trader/produk/toko) di-scroll
+  // di dalam ScrollView, bukan menembus layar tanpa bisa digulir.
+  const menuMaxH = Math.min(320, Math.round(winH * 0.55));
+  const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - 24));
 
   return (
     <View ref={ref} style={block ? { width: '100%' } : undefined}>
@@ -299,7 +301,8 @@ export function Select({
                 {!value && <Text style={selStyles.check}>✓</Text>}
               </HoverItem>
             )}
-            {options.map((opt) => {
+            <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator>
+              {options.map((opt) => {
               const sel = opt.value === value;
               const labelBlock = (
                 <View style={{ flex: 1 }}>
@@ -325,6 +328,7 @@ export function Select({
                 </View>
               );
             })}
+            </ScrollView>
             {!!onAdd && (
               <>
                 <View style={selStyles.divider} />

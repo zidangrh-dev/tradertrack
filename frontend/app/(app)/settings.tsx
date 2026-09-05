@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Modal } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Modal, useWindowDimensions } from 'react-native';
 import { api, type AppSettings, type UserRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
@@ -83,11 +83,14 @@ function NumField({ label, value, onChange }: { label: string; value: string; on
 }
 
 function UsersSheet({ open, onClose, users, meId, onChanged, onCreate }: { open: boolean; onClose: () => void; users: UserRow[]; meId: string; onChanged: () => void; onCreate: () => void }) {
+  const { height: winH } = useWindowDimensions();
   return (
     <Sheet open={open} onClose={onClose} title="Kelola akun pengguna" wide>
-      {users.map((u) => (
-        <UserRow key={u.id} user={u} isSelf={u.id === meId} onChanged={onChanged} />
-      ))}
+      <ScrollView style={{ maxHeight: Math.round(winH * 0.52) }} bounces={false} showsVerticalScrollIndicator>
+        {users.map((u) => (
+          <UserRow key={u.id} user={u} isSelf={u.id === meId} onChanged={onChanged} />
+        ))}
+      </ScrollView>
       <View style={{ marginTop: space.md }}>
         <Button label="Buat akun baru" icon="+" variant="secondary" fullWidth onPress={onCreate} />
       </View>

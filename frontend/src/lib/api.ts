@@ -138,9 +138,16 @@ export function subscribeChanges(fn: () => void) {
   };
 }
 
-function fire() {
-  listeners.forEach((fn) => fn());
-}
+// Coalesce: banyak emit server beruntun (mis. unggah foto/ubah status) digabung
+  // jadi satu refresh agar layar tidak dirender ulang berkali-kali dalam sekejap.
+  let fireTimer: ReturnType<typeof setTimeout> | null = null;
+  function fire() {
+    if (fireTimer) clearTimeout(fireTimer);
+    fireTimer = setTimeout(() => {
+      fireTimer = null;
+      listeners.forEach((fn) => fn());
+    }, 200);
+  }
 
 async function connectRealtime() {
   if (socket || !(await getToken())) return;

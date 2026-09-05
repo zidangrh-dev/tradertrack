@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { api, subscribeChanges, type OrderView } from '../lib/api';
 
 export function useOrders(query: Record<string, string> = {}) {
@@ -25,14 +26,16 @@ export function useOrders(query: Record<string, string> = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(effectiveQuery)]);
 
-  useEffect(() => {
-    refresh();
-    // Simulasi realtime: setiap mutasi data lokal memicu refresh.
-    const off = subscribeChanges(refresh);
-    return () => {
-      off();
-    };
-  }, [refresh]);
+  // Refresh + langganan realtime HANYA saat layar fokus: tab yang tidak aktif
+  // berhenti fetch/render 200 order setiap event server (penyebab scroll berat di HP).
+  // Data basi saat blur ditutup oleh refresh() begitu layar kembali difokus.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+      const off = subscribeChanges(refresh);
+      return off;
+    }, [refresh]),
+  );
 
   return { orders, total, loading, error, refresh };
 }
