@@ -80,6 +80,17 @@ export function updateUser(id, patch) {
   u.updated_at = now();
 }
 
+export function deleteUser(id) {
+  const u = db.users.find((x) => x.id === id);
+  if (!u) throw new Error('Pengguna tidak ditemukan.');
+  const riwayat =
+    db.orders.some((o) => o.trader_id === id) ||
+    db.photos.some((p) => p.uploaded_by === id) ||
+    db.events.some((e) => e.actor_id === id);
+  if (riwayat) throw new Error('Akun masih memiliki riwayat order/foto. Nonaktifkan bila tidak dipakai.');
+  db.users.splice(db.users.indexOf(u), 1);
+}
+
 // ---------- Katalog: produk (tipe barang, kuota lintas toko) + toko marketplace ----------
 
 function usedQuotaOf(productId) {

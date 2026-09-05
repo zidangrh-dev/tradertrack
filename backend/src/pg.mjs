@@ -130,6 +130,24 @@ export default (pool) => {
     if (rowCount === 0) throw new Error('Pengguna tidak ditemukan.');
   };
 
+  const deleteUser = async (id) => {
+    const exists = await pool.query(`SELECT 1 FROM users WHERE id = $1`, [id]);
+    if (!exists.rows[0]) throw new Error('Pengguna tidak ditemukan.');
+    // Riwayat mereferensikan user (order, foto, event) — hapus fisik tidak boleh.
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM orders WHERE trader_id = $1)::int AS orders,
+         (SELECT COUNT(*) FROM order_photos WHERE uploaded_by = $1)::int AS photos,
+         (SELECT COUNT(*) FROM order_events WHERE actor_id = $1)::int AS events`,
+      [id],
+    );
+    const { orders, photos, events } = rows[0];
+    if (orders + photos + events > 0) {
+      throw new Error('Akun masih memiliki riwayat order/foto. Nonaktifkan bila tidak dipakai.');
+    }
+    await pool.query(`DELETE FROM users WHERE id = $1`, [id]);
+  };
+
   // ---------- Katalog: produk (tipe barang, kuota lintas toko) + toko marketplace ----------
 
   const listMarketplaceStores = async () => {
@@ -593,7 +611,7 @@ export default (pool) => {
 
   return {
     settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
-    activeAdminCount, createUser, updateUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
+    activeAdminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
     orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,
   };

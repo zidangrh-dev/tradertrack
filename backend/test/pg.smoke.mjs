@@ -64,6 +64,12 @@ const activeRow = delActive.find((x) => x.name === 'Smoke Hapus Aktif');
 await repo.createOrder({ order_number: `TRK-DEL-${Date.now()}`, recipient_name: 'A', pickup_method: 'zaydan_ambilan_gjm', product_id: activeRow.id, store_id: stores[0].id }, actorId);
 await assert.rejects(() => repo.deleteProduct(activeRow.id), /order aktif/, 'produk berorder aktif tidak bisa dihapus');
 
+// Hapus akun: tanpa riwayat → sukses; berorder → ditolak.
+const delUser = await repo.createUser({ username: `smoke_del_${Date.now()}`, password_hash: 'x', display_name: 'Del User', role: 'trader' });
+await repo.deleteUser(delUser.id);
+assert.ok(!(await repo.users()).some((x) => x.id === delUser.id), 'akun tanpa riwayat terhapus');
+await assert.rejects(() => repo.deleteUser(actorId), /riwayat/, 'akun berorder/foto tidak bisa dihapus');
+
 // Add-quota atomic + reset.
 await repo.addProductQuota(p.id, 10);
 const added = (await repo.listProducts()).find((m) => m.id === p.id);

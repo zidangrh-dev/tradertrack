@@ -151,6 +151,33 @@ describe('CF1 Autentikasi & role', () => {
     const { status } = await client(admin).post('/api/users', { username: 'nabila', password: 'x', display_name: 'X', role: 'trader' });
     assert.equal(status, 400);
   });
+  test('hapus akun: tanpa riwayat → sukses; berorder → tolak; diri sendiri → tolak', async () => {
+    // Akun baru tanpa order → hapus sukses.
+    const u = `del_${Date.now()}`;
+    const { data: created } = await client(admin).post('/api/users', { username: u, password: 'pw', display_name: 'Del User', role: 'trader' });
+    const delOk = await client(admin).del(`/api/users/${created.id}`);
+    assert.equal(delOk.status, 204);
+    const { data: after } = await client(admin).get('/api/users');
+    assert.ok(!after.some((x) => x.id === created.id), 'akun tanpa riwayat terhapus');
+
+    // Akun berorder → tolak.
+    const u2 = `del2_${Date.now()}`;
+    const { data: created2 } = await client(admin).post('/api/users', { username: u2, password: 'pw', display_name: 'Del2', role: 'trader' });
+    const tok2 = await login(u2, 'pw');
+    const o = await client(tok2).post('/api/orders', order());
+    assert.equal(o.status, 201);
+    const delBlocked = await client(admin).del(`/api/users/${created2.id}`);
+    assert.equal(delBlocked.status, 400);
+    assert.match(delBlocked.data.error, /riwayat/);
+    // cleanup: hapus ordernya dulu supaya akun bisa dibersihkan.
+    const { data: orders } = await client(tok2).get('/api/orders');
+    await client(tok2).del(`/api/orders/${orders.items[0].id}`);
+    await client(admin).del(`/api/users/${created2.id}`);
+
+    // Hapus diri sendiri → tolak.
+    const delSelf = await client(admin).del('/api/users/u-admin');
+    assert.equal(delSelf.status, 400);
+  });
   test('nonaktifkan admin terakhir → tolak', async () => {
     const { status } = await client(admin).patch('/api/users/u-admin', { is_active: false });
     assert.equal(status, 400);

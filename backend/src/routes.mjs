@@ -403,6 +403,19 @@ const upload = multer({
     noContent(res);
   }));
 
+  r.delete('/users/:id', requireAdmin, asyncH(async (req, res) => {
+    const target = await repo.userById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: 'Anda tidak dapat menghapus akun sendiri.' });
+    }
+    if (target.role === 'admin' && (await repo.activeAdminCount()) <= 1) {
+      return res.status(400).json({ error: 'Akun admin terakhir tidak dapat dihapus.' });
+    }
+    await repo.deleteUser(req.params.id);
+    noContent(res);
+  }));
+
   app.use('/api', r);
 
   // Middleware error untuk multer (fileFilter/limits) — di luar asyncH.

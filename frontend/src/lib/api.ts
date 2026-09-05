@@ -240,6 +240,7 @@ const remote = {
   listUsers: () => http<UserRow[]>('/api/users'),
   createUser: (input: { username: string; password: string; display_name: string; role: Role }) => http<void>('/api/users', { method: 'POST', body: input }),
   updateUser: (id: string, patch: Partial<User>) => http<void>(`/api/users/${id}`, { method: 'PATCH', body: patch }),
+  deleteUser: (id: string) => http<void>(`/api/users/${id}`, { method: 'DELETE' }),
 };
 
 /** api — panggilan langsung; error (termasuk server mati) dilempar ke pemanggil. */
