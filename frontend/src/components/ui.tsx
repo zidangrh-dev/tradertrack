@@ -237,6 +237,7 @@ export function Select({
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0 });
+  const [query, setQuery] = useState('');
   const ref = useRef<View>(null);
   const { width: winW, height: winH } = useWindowDimensions();
   const triggerHover = useHover();
@@ -246,6 +247,7 @@ export function Select({
       setOpen(false);
       return;
     }
+    setQuery('');
     ref.current?.measureInWindow((x, y, w) => {
       setAnchor({ x, y: y + 50, w });
       setOpen(true);
@@ -260,10 +262,16 @@ export function Select({
   const selected = options.find((o) => o.value === value);
   const menuW = Math.min(Math.max(anchor.w, 260), 360);
   const left = Math.max(12, Math.min(anchor.x, winW - menuW - 12));
+  // Cari hanya untuk daftar panjang (≥8 opsi: trader/produk/toko); daftar pendek
+  // (status/metode/periode/role) tetap polos.
+  const showSearch = options.length >= 8;
+  const q = query.trim().toLowerCase();
+  const filtered = showSearch && q ? options.filter((o) => `${o.label} ${o.sub ?? ''}`.toLowerCase().includes(q)) : options;
+  const searchH = showSearch ? 50 : 0;
   // Batas tinggi menu: daftar panjang (banyak trader/produk/toko) di-scroll
   // di dalam ScrollView, bukan menembus layar tanpa bisa digulir.
   const menuMaxH = Math.min(320, Math.round(winH * 0.55));
-  const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - 24));
+  const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - searchH - 24));
 
   return (
     <View ref={ref} style={block ? { width: '100%' } : undefined}>
@@ -295,14 +303,38 @@ export function Select({
         <View style={selStyles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
           <View style={[selStyles.menu, { left, top, width: menuW }]}>
+            {showSearch && (
+              <View style={[styles.searchBox, selStyles.searchRow]}>
+                <Text style={styles.searchIcon}>⌕</Text>
+                <TextInput
+                  style={[styles.searchInput, webNoOutline]}
+                  placeholder={`Cari ${label.toLowerCase()}…`}
+                  placeholderTextColor={colors.faint}
+                  value={query}
+                  onChangeText={setQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+                {!!query && (
+                  <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                    <Text style={styles.searchClear}>✕</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
             {!!clearLabel && (
               <HoverItem onPress={() => pick('')} style={[selStyles.item, !value && selStyles.itemActive]} hoverStyle={selStyles.itemHover}>
                 <Text style={[selStyles.itemLabel, !value && selStyles.itemLabelActive]} numberOfLines={1}>{clearLabel}</Text>
                 {!value && <Text style={selStyles.check}>✓</Text>}
               </HoverItem>
             )}
-            <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator>
-              {options.map((opt) => {
+            <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
+              {filtered.length === 0 ? (
+                <View style={selStyles.noResult}>
+                  <Text style={selStyles.noResultText}>Tidak ada hasil untuk “{query.trim()}”</Text>
+                </View>
+              ) : (
+              filtered.map((opt) => {
               const sel = opt.value === value;
               const labelBlock = (
                 <View style={{ flex: 1 }}>
@@ -327,7 +359,8 @@ export function Select({
                   )}
                 </View>
               );
-            })}
+            })
+              )}
             </ScrollView>
             {!!onAdd && (
               <>
@@ -613,6 +646,9 @@ const selStyles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, overflow: 'hidden',
     shadowColor: '#0F162A', shadowOpacity: 0.14, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 10,
   },
+  searchRow: { margin: 8, marginBottom: 4, height: 40 },
+  noResult: { paddingVertical: 20, alignItems: 'center' },
+  noResultText: { fontSize: 12, color: colors.faint },
   item: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 14, paddingVertical: 10, minHeight: 44 },
   itemActive: { backgroundColor: colors.primarySoft },
   itemHover: { backgroundColor: '#F2F4F9' },

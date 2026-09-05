@@ -10,7 +10,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   const isAdmin = user?.role === 'admin';
   const [orderNumber, setOrderNumber] = useState('');
   const [recipient, setRecipient] = useState('');
-  const [method, setMethod] = useState<'zaydan_ambilan_gjm' | 'self_pick_up'>('zaydan_ambilan_gjm');
+  const [method, setMethod] = useState<'zaydan_ambilan_gjm' | 'self_pick_up'>('self_pick_up');
   const [traderId, setTraderId] = useState<string>(user?.id ?? '');
   const [traders, setTraders] = useState<SessionUser[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -28,7 +28,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   useEffect(() => {
     if (!open || !user) return;
     setOrderNumber(''); setRecipient('');
-    setMethod('zaydan_ambilan_gjm'); setAmount(''); setProductId(''); setStoreId(''); setBarcodeImg(null);
+    setMethod('self_pick_up'); setAmount(''); setProductId(''); setStoreId(''); setBarcodeImg(null);
     setTraderId(user.id);
     if (isAdmin) api.listUsers().then((us) => setTraders(us.filter((u) => u.is_active)));
     api.listProducts().then(setProducts).catch(() => setProducts([]));
