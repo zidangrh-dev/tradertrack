@@ -279,9 +279,10 @@ const styles = StyleSheet.create({
   boardScrollOuter: { flex: 1, minHeight: 0 },
   boardScroll: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 12 },
   board: { flexDirection: 'row', gap: 14, flexGrow: 1, minHeight: 0 },
-  // Layar lebar: padding 16 agar kolom sejajar header/pencarian; colWidth
-  // sudah menghitung ruang 32 (2×16) untuk padding ini.
-  boardWide: { paddingHorizontal: 16, paddingBottom: 12 },
+  // Layar lebar: padding 16 agar kolom sejajar header/pencarian. flex:1
+  // (grow+shrink, basis 0) memaksa papan pas tinggi viewport sehingga daftar
+  // kartu di tiap kolom punya ruang terbatas dan bisa scroll vertikal sendiri.
+  boardWide: { paddingHorizontal: 16, paddingBottom: 12, flex: 1, minHeight: 0 },
   // Layar lebar: kolom stretch penuh ke tinggi viewport; minHeight 0 agar
   // daftar kartu di dalamnya bisa scroll sendiri, bukan mendorong halaman.
   // flex:1 membagi lebar konten (bukan lebar jendela) jadi 3 kolom rata.

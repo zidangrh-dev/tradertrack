@@ -64,7 +64,7 @@ export function Sidebar() {
   return (
     <View style={styles.sidebar}>
       <View style={styles.brandRow}>
-        <Image source={require('../../assets/zproject-logo.png')} style={styles.brandMark} resizeMode="contain" />
+        <Image source={require('../../assets/zproject-logo.jpg')} style={styles.brandMark} resizeMode="contain" />
         <Text style={styles.brand}>
           Z<Text style={styles.brandLight}>PROJECT</Text>
         </Text>
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, marginBottom: 26 },
-  brandMark: { width: 30, height: 31, borderRadius: radius.md },
+  brandMark: { width: 32, height: 32, borderRadius: radius.sm, overflow: 'hidden' },
   brand: { color: colors.text, fontWeight: '800', fontSize: 15, letterSpacing: -0.5 },
   brandLight: { color: colors.faint, fontWeight: '600' },
   section: {

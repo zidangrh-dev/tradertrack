@@ -31,10 +31,10 @@
       "package": "id.zproject.app"
     },
     "web": {
-      "favicon": "./assets/zproject-logo.png"
+      "favicon": "./assets/zproject-logo.jpg"
     },
     "extra": {
-      "apiUrl": "https://pasukanzaydan.net"
+      "apiUrl": "http://localhost:4000"
     }
   }
 }

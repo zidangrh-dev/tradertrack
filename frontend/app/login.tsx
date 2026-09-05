@@ -30,7 +30,7 @@ export default function Login() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.brandRow}>
-            <Image source={require('../assets/zproject-logo.png')} style={styles.brandMark} resizeMode="contain" />
+            <Image source={require('../assets/zproject-logo.jpg')} style={styles.brandMark} resizeMode="contain" />
             <Text style={styles.brand}>Z<Text style={styles.brandLight}>PROJECT</Text></Text>
           </View>
 
@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
     shadowColor: '#0F162A', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 12 }, shadowRadius: 28, elevation: 6,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 28 },
-  brandMark: { width: 32, height: 33, borderRadius: radius.md },
+  brandMark: { width: 34, height: 34, borderRadius: radius.sm, overflow: 'hidden' },
   brand: { color: colors.text, fontWeight: '800', fontSize: 16, letterSpacing: -0.5 },
   brandLight: { color: colors.faint, fontWeight: '600' },
   kicker: { color: colors.primary, fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
