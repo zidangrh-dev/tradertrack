@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { api, type Reports } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
-import { useAdminOnly } from '../../src/hooks/useRoleGuard';
+import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
 import { Button, EmptyState, PageHeader, Sheet } from '../../src/components/ui';
@@ -220,7 +220,8 @@ function Panel({ title, subtitle, children, wide }: { title: string; subtitle?: 
 }
 
 export default function Analytics() {
-  useAdminOnly();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const { width } = useWindowDimensions();
   const wide = width >= 900;
   // Satu-satunya filter: rentang tanggal lewat kalender. Bawaan = bulan berjalan.
@@ -357,21 +358,24 @@ export default function Analytics() {
         </View>
       </Panel>
 
-      <Panel wide={wide} title="Jumlah order per trader" subtitle="Diurutkan menurun · batang = proporsi terhadap total order terbanyak">
-        {data.perTrader.map((r) => (
-          <Hover key={r.trader} style={[styles.traderRow, !wide && styles.traderRowMobile]} hoverStyle={styles.traderRowHover}>
-            <Text style={[styles.traderName, !wide && styles.traderNameMobile]} numberOfLines={1}>{r.trader}</Text>
-            <View style={styles.traderBarWrap}>
-              <Bar pct={Math.round((r.total / maxTrader) * 100)} color={colors.primary} />
-              <View style={styles.traderCounts}>
-                <Text style={styles.countSelesai}>{r.selesai} selesai</Text>
-                <Text style={styles.countBelum}>{r.belum_selesai} belum</Text>
+      {/* Perbandingan antar-trader khusus admin; trader hanya melihat datanya sendiri. */}
+      {isAdmin && (
+        <Panel wide={wide} title="Jumlah order per trader" subtitle="Diurutkan menurun · batang = proporsi terhadap total order terbanyak">
+          {data.perTrader.map((r) => (
+            <Hover key={r.trader} style={[styles.traderRow, !wide && styles.traderRowMobile]} hoverStyle={styles.traderRowHover}>
+              <Text style={[styles.traderName, !wide && styles.traderNameMobile]} numberOfLines={1}>{r.trader}</Text>
+              <View style={styles.traderBarWrap}>
+                <Bar pct={Math.round((r.total / maxTrader) * 100)} color={colors.primary} />
+                <View style={styles.traderCounts}>
+                  <Text style={styles.countSelesai}>{r.selesai} selesai</Text>
+                  <Text style={styles.countBelum}>{r.belum_selesai} belum</Text>
+                </View>
               </View>
-            </View>
-            <Text style={styles.traderTotal}>{r.total}</Text>
-          </Hover>
-        ))}
-      </Panel>
+              <Text style={styles.traderTotal}>{r.total}</Text>
+            </Hover>
+          ))}
+        </Panel>
+      )}
 
       <Panel wide={wide} title="Rekap performa produk" subtitle="Rekap order per tipe barang (kuota lintas toko) · batang = proporsi nominal terbesar">
         {data.perProduk.length === 0 ? (
@@ -450,7 +454,7 @@ function downloadCsv(content: string, filename: string) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  wrapContent: { paddingBottom: 32 },
+  wrapContent: { paddingBottom: 120 },
   errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginHorizontal: 16, marginTop: 24, alignItems: 'center', gap: 8 },
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
   errorText: { color: colors.muted, fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 6 },

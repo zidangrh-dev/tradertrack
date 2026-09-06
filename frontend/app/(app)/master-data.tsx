@@ -334,7 +334,7 @@ export default function MasterData() {
 const styles = StyleSheet.create({
 
   wrap: { flex: 1, backgroundColor: colors.canvas },
-  scrollContainer: { paddingHorizontal: 16, paddingBottom: 32 },
+  scrollContainer: { paddingHorizontal: 16, paddingBottom: 120 },
 
   // Search & Filter
   controlBar: {

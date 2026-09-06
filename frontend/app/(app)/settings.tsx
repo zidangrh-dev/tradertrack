@@ -37,7 +37,7 @@ export default function Settings() {
   if (!settings) return null;
 
   return (
-    <ScrollView style={styles.wrap} contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView style={styles.wrap} contentContainerStyle={{ paddingBottom: 120 }}>
       <PageHeader title="Pengaturan" subtitle="Atur batas operasional dan aturan bukti penyelesaian order." />
 
       <Panel title="Ambang waktu tertunda" note="Order akan diberi penanda Tertunda setelah melewati durasi ini di satu status. Dipakai oleh papan Kanban dan laporan order tertunda.">

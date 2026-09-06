@@ -33,7 +33,7 @@ export function Sidebar() {
     { href: '/(app)', icon: '▦', label: 'Papan kerja', adminOnly: true },
     { href: '/(app)/orders', icon: '≡', label: 'Daftar order', badge: String(total) },
     { href: '/(app)/pickup', icon: '⌗', label: 'Pick up', badge: String(pickupCount), badgeDanger: true, adminOnly: true },
-    { href: '/(app)/analytics', icon: '◒', label: 'Analytics', adminOnly: true },
+    { href: '/(app)/analytics', icon: '◒', label: 'Analytics' },
   ];
 
   const MANAGE_ITEMS: Item[] = [

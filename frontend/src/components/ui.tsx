@@ -183,8 +183,12 @@ export function SelectField({ label, value, options, onChange }: { label: string
 export function Sheet({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, wide && styles.sheetWide]} onPress={(e) => e.stopPropagation()}>
+      {/* Kotak sheet View polos: ScrollView di dalamnya menjadi responder langsung.
+          Pembungkus Pressable membuat negosiasi responder di Android tidak pasti —
+          scroll modal kadang kena kadang tidak. */}
+      <View style={styles.modalRoot}>
+        <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onClose} />
+        <View style={[styles.sheet, wide && styles.sheetWide]}>
           <View style={styles.sheetHead}>
             <Text style={styles.sheetTitle}>{title}</Text>
             <Pressable onPress={onClose} hitSlop={10}>
@@ -192,8 +196,8 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
             </Pressable>
           </View>
           {children}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -759,7 +763,8 @@ const styles = StyleSheet.create({
   },
   selectRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   // Sheet
-  backdrop: { flex: 1, backgroundColor: backdropColor, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  modalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  backdrop: { backgroundColor: backdropColor },
   sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 460, maxHeight: '88%', padding: 20, shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 12 },
   sheetWide: { maxWidth: 560 },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { api, type OrderView } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
@@ -27,8 +28,8 @@ function orderCopyRow(o: OrderView) {
 }
 
 async function copyText(text: string) {
-  if (typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('Clipboard tidak tersedia di browser ini.');
-  await navigator.clipboard.writeText(text);
+  // expo-clipboard: native (APK/iOS) + web sekaligus — navigator.clipboard hanya ada di browser.
+  await Clipboard.setStringAsync(text);
 }
 
 export default function Orders() {
@@ -462,7 +463,7 @@ const dtStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  wrapContent: { paddingBottom: 32 },
+  wrapContent: { paddingBottom: 120 },
 
   // Baris filter: kolom cari + tombol Filter (kriteria di panel yang bisa dibuka).
   filterBar: {

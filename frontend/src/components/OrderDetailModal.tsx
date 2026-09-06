@@ -61,7 +61,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
   return (
     <Sheet open={!!order} onClose={onClose} title={order.order_number} wide>
-      <ScrollView contentContainerStyle={{ paddingBottom: 8 }}>
+      <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 8 }}>
         <View style={styles.topRow}>
           <StatusTag status={status} />
           {detail?.is_problem && <Text style={styles.problemTag}>Bermasalah</Text>}
@@ -192,11 +192,11 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
             <Button label="Hapus order" variant="danger" onPress={() => confirmAsk('Hapus', 'Hapus order ini?', async () => { try { await api.deleteOwnOrder(order.id); onChanged?.(); onClose(); } catch (e) { notify('Gagal', (e as Error).message); } })} />
           </View>
         )}
-
-        <Sheet open={!!preview} onClose={() => setPreview(null)} title="Pratinjau foto">
-          <PhotoPreview filePath={preview} />
-        </Sheet>
       </ScrollView>
+      {/* Modal pratinjau di luar ScrollView — Modal tak boleh berada dalam elemen scroll. */}
+      <Sheet open={!!preview} onClose={() => setPreview(null)} title="Pratinjau foto">
+        <PhotoPreview filePath={preview} />
+      </Sheet>
     </Sheet>
   );
 }

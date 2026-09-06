@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   colSub: { fontSize: 10, color: colors.faint, marginTop: 4, marginBottom: 10 },
 
   cardList: { flex: 1 },
-  cardListContent: { gap: 8, paddingBottom: 6 },
+  cardListContent: { gap: 8, paddingBottom: 120 },
 
   colEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   colEmptyText: { fontSize: 10, color: colors.faint },

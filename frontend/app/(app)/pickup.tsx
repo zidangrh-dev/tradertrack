@@ -80,7 +80,7 @@ export default function Pickup() {
         action={<Button label="Scan nomor pesanan" icon="⌗" onPress={openScan} />}
       />
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={styles.controlBar}>
           <View style={styles.controlIntro}>
             <Text style={styles.controlTitle}>Workspace pick up</Text>

@@ -97,7 +97,7 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
 
   return (
     <Sheet open={open} onClose={onClose} title="Input order baru">
-      <ScrollView contentContainerStyle={{ paddingBottom: 6 }}>
+      <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 6 }}>
         <View style={styles.formStack}>
           <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
             <View style={styles.column}>
