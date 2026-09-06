@@ -4,6 +4,9 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+// File = class expo-file-system (baca file lokal → bytes()) — bukan DOM File global.
+// Dipakai di native: Expo Winter fetch hanya menerima part ber-`bytes()`, bukan {uri}.
+import { File as ExpoFile } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { io } from 'socket.io-client';
 import type { AppSettings, Product, MarketplaceStore, Order, OrderPhoto, OrderEvent, PickupMethod, Role, Status, User } from './types';
@@ -88,17 +91,29 @@ export async function uploadsUrl(filePath: string): Promise<string> {
 
 /* ---------- HTTP ---------- */
 
-// FormData lintas platform: web butuh Blob asli (fetch dari blob-uri hasil picker),
-// native React Native pakai format {uri, name, type}.
+// FormData lintas platform:
+//  - Web: fetch blob-uri -> Blob asli, append dgn filename.
+//  - Native (Expo SDK 57): global fetch = expo Winter fetch → part file HANYA bisa
+//    Blob/File dgn `bytes()` — objek {uri,name,type} memicu
+//    "Unsupported FormDataPart implementation". Jadi baca file lewat expo-file-system
+//    dan append File (punya bytes() + name/type).
 async function photoForm(file: { uri: string; name: string; type: string }, extra?: Record<string, string>): Promise<FormData> {
   const form = new FormData();
   for (const [k, v] of Object.entries(extra ?? {})) form.append(k, v);
+  const name = file.name || 'foto.jpg';
+  const type = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
   if (Platform.OS === 'web') {
     const res = await fetch(file.uri);
     const blob = await res.blob();
-    form.append('photo', blob, file.name);
+    form.append('photo', blob, name);
   } else {
-    form.append('photo', { uri: file.uri, name: file.name, type: file.type } as unknown as Blob);
+    // File dari expo-file-system: baca isi file lokal (file://) → object ber-`bytes()`
+    // yang dikenali Winter fetch (expo/fetch) sbg part multipart.
+    const fsFile = new ExpoFile(file.uri);
+    const bytes = await fsFile.bytes();
+    // File WinterCG: {bytes(): Promise<Uint8Array>, name, type} — didukung convertFormData.
+    const winterFile = { bytes: async () => bytes, name, type } as unknown as Blob;
+    form.append('photo', winterFile, name);
   }
   return form;
 }
