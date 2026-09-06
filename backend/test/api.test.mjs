@@ -128,7 +128,7 @@ describe('CF1 Autentikasi & role', () => {
     assert.equal(data.role, 'admin');
   });
   test('trader akses endpoint admin → 403', async () => {
-    for (const p of ['/api/users', '/api/reports?range=bulan_ini']) {
+    for (const p of ['/api/users']) {
       const { status } = await client(trader).get(p);
       assert.equal(status, 403, p);
     }
@@ -765,10 +765,15 @@ describe('CF7 Analytics', () => {
     const { status } = await client(admin).get('/api/reports?range=abc');
     assert.equal(status, 200);
   });
-  test('reports oleh trader → 403', async () => {
+  test('reports oleh trader → hanya data miliknya (scoping, tanpa kebocoran)', async () => {
     const trader = await login('nabila', 'trader');
-    const { status } = await client(trader).get('/api/reports?range=bulan_ini');
-    assert.equal(status, 403);
+    const { status, data } = await client(trader).get('/api/reports');
+    assert.equal(status, 200);
+    assert.ok(data.totals.total >= 1, 'trader melihat laporannya sendiri');
+    // Scoping: tidak boleh ada nama/trader lain di mana pun.
+    assert.equal(data.perTrader.length, 1, 'rekap per trader hanya berisi dirinya');
+    const myName = data.perTrader[0].trader;
+    assert.ok(data.delayed.every((d) => d.trader === myName), 'daftar tertunda hanya order miliknya');
   });
   test('reports rentang khusus from/to membatasi hasil', async () => {
     // order dibuat 'sekarang'; rentang kemarin-hari ini pasti memuatnya,

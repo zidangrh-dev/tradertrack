@@ -402,10 +402,12 @@ export function editOrder(id, patch, actorId) {
   return withMeta(o);
 }
 
-export function reports(range, from, to) {
+export function reports(range, from, to, traderId) {
   // Rentang khusus (from/to eksplisit) menimpa rentang bernama (range).
   const start = from || rangeToFrom(range);
-  const inRange = (o) => (!start || o.created_at >= start) && (!to || o.created_at <= to);
+  // Trader hanya melihat laporan order miliknya sendiri; admin tanpa filter.
+  const mine = (o) => !traderId || o.trader_id === traderId;
+  const inRange = (o) => mine(o) && (!start || o.created_at >= start) && (!to || o.created_at <= to);
 
   const list = db.orders.filter(inRange);
   const totals = {
@@ -438,7 +440,7 @@ export function reports(range, from, to) {
 
   // Delayed ikut rentang (berbasis updated_at, selaras PG): order yang masih
   // pending/bermasalah dan pembaruannya terjadi di dalam rentang terpilih.
-  const delayedInRange = (o) => (!start || o.updated_at >= start) && (!to || o.updated_at <= to);
+  const delayedInRange = (o) => mine(o) && (!start || o.updated_at >= start) && (!to || o.updated_at <= to);
   const delayed = db.orders
     .filter((o) => (o.is_problem || withMeta(o).is_pending) && delayedInRange(o))
     .sort((a, b) => a.updated_at.localeCompare(b.updated_at))

@@ -86,6 +86,13 @@ assert.equal(farFuture.totals.total, 0, 'rentang masa depan total 0');
 assert.equal(farFuture.delayed.length, 0, 'rentang masa depan tidak memuat delayed');
 assert.ok(!farFuture.perTrader.length && !farFuture.perProduk.length, 'rentang masa depan kosong di semua bagian');
 
+// Scoping laporan per trader (jalur SQL): trader hanya melihat order miliknya.
+const nabila = await repo.userByUsername('nabila');
+const scoped = await repo.reports('', undefined, undefined, nabila.id);
+assert.ok(scoped.totals.total >= 1, 'laporan trader memuat order miliknya');
+assert.ok(scoped.perTrader.length === 1 && scoped.perTrader[0].trader === nabila.display_name, 'laporan trader tidak memuat nama trader lain');
+assert.ok(scoped.delayed.every((d) => d.trader === nabila.display_name), 'daftar tertunda trader tidak memuat trader lain');
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');

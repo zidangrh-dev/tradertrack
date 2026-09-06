@@ -306,8 +306,15 @@ const upload = multer({
   }));
 
   // ---------- Reports ----------
-  r.get('/reports', requireAdmin, asyncH(async (req, res) => {
-    ok(res, await repo.reports(String(req.query.range ?? ''), req.query.from ? String(req.query.from) : undefined, req.query.to ? String(req.query.to) : undefined));
+  r.get('/reports', requireAuth, asyncH(async (req, res) => {
+    // Admin: laporan semua trader. Trader: hanya order miliknya (scoping di repo).
+    const traderId = req.user.role === 'admin' ? undefined : req.user.id;
+    ok(res, await repo.reports(
+      String(req.query.range ?? ''),
+      req.query.from ? String(req.query.from) : undefined,
+      req.query.to ? String(req.query.to) : undefined,
+      traderId,
+    ));
   }));
 
   // ---------- Produk (tipe barang + kuota) ----------

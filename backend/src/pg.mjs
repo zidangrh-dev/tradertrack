@@ -546,13 +546,15 @@ export default (pool) => {
     return getOrder(id);
   };
 
-  const reports = async (range, from, to) => {
+  const reports = async (range, from, to, traderId) => {
     // Rentang khusus (from/to eksplisit) menimpa rentang bernama (range).
     const start = from || rangeToFrom(range);
     const where = [];
     const args = [];
     if (start) { where.push(`o.created_at >= $${args.length + 1}`); args.push(start); }
     if (to) { where.push(`o.created_at <= $${args.length + 1}`); args.push(to); }
+    // Trader hanya melihat laporan order miliknya sendiri; admin tanpa filter.
+    if (traderId) { where.push(`o.trader_id = $${args.length + 1}`); args.push(traderId); }
     const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
 
     const { rows: totalRows } = await pool.query(
@@ -593,6 +595,7 @@ export default (pool) => {
     const delayedArgs = [String(threshold)];
     if (start) { delayedConds.push(`o.updated_at >= $${delayedArgs.length + 1}`); delayedArgs.push(start); }
     if (to) { delayedConds.push(`o.updated_at <= $${delayedArgs.length + 1}`); delayedArgs.push(to); }
+    if (traderId) { delayedConds.push(`o.trader_id = $${delayedArgs.length + 1}`); delayedArgs.push(traderId); }
     const { rows: delayed } = await pool.query(
       `SELECT o.order_number, o.product_name, u.display_name AS trader, o.updated_at, o.is_problem
        FROM orders o JOIN users u ON u.id = o.trader_id
