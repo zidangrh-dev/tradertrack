@@ -110,17 +110,18 @@ export function Field({ label, hint, style, ...rest }: TextInputProps & { label:
 }
 
 /** Kotak pencarian dengan ikon ⌕ dan tombol bersih — dipakai semua layar. */
-export function SearchInput({ value, onChangeText, placeholder = 'Cari...' }: {
+export function SearchInput({ value, onChangeText, placeholder = 'Cari...', compact = false }: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
+  compact?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={[styles.searchBox, focused && styles.searchBoxFocused]}>
-      <Text style={[styles.searchIcon, focused && styles.searchIconFocused]}>⌕</Text>
+    <View style={[styles.searchBox, compact && styles.searchBoxCompact, focused && styles.searchBoxFocused]}>
+      <Text style={[styles.searchIcon, compact && styles.searchIconCompact, focused && styles.searchIconFocused]}>⌕</Text>
       <TextInput
-        style={[styles.searchInput, webNoOutline]}
+        style={[styles.searchInput, compact && styles.searchInputCompact, webNoOutline]}
         placeholder={placeholder}
         placeholderTextColor={colors.faint}
         value={value}
@@ -130,7 +131,7 @@ export function SearchInput({ value, onChangeText, placeholder = 'Cari...' }: {
       />
       {!!value && (
         <Pressable onPress={() => onChangeText('')} hitSlop={8}>
-          <Text style={styles.searchClear}>✕</Text>
+          <Text style={[styles.searchClear, compact && styles.searchClearCompact]}>✕</Text>
         </Pressable>
       )}
     </View>
@@ -223,7 +224,7 @@ function useHover() {
 }
 
 export function Select({
-  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel, block = false,
+  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel, block = false, compact = false,
 }: {
   label: string;
   value: string;
@@ -234,6 +235,7 @@ export function Select({
   onAdd?: () => void;
   addLabel?: string;
   block?: boolean;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0 });
@@ -280,6 +282,7 @@ export function Select({
         {...triggerHover.handlers}
         style={({ pressed }) => [
           selStyles.trigger,
+          compact && selStyles.triggerCompact,
           block && selStyles.triggerBlock,
           webTransition('background-color, border-color, opacity'),
           triggerHover.hovered && !open && selStyles.triggerHover,
@@ -290,13 +293,13 @@ export function Select({
       >
         {!!value ? (
           <>
-            <Text style={[selStyles.caption, !!value && selStyles.captionActive]}>{label}</Text>
-            <Text style={[selStyles.value, !!value && selStyles.valueActive]} numberOfLines={1}>{selected ? selected.label : placeholder}</Text>
+            <Text style={[selStyles.caption, compact && selStyles.captionCompact, !!value && selStyles.captionActive]}>{label}</Text>
+            <Text style={[selStyles.value, compact && selStyles.valueCompact, !!value && selStyles.valueActive]} numberOfLines={1}>{selected ? selected.label : placeholder}</Text>
           </>
         ) : (
-          <Text style={selStyles.placeholder} numberOfLines={1}>{placeholder}</Text>
+          <Text style={[selStyles.placeholder, compact && selStyles.placeholderCompact]} numberOfLines={1}>{placeholder}</Text>
         )}
-        <Text style={selStyles.caret}>▾</Text>
+        <Text style={[selStyles.caret, compact && selStyles.caretCompact]}>▾</Text>
       </Pressable>
 
       <Modal transparent visible={open} onRequestClose={() => setOpen(false)} animationType="fade">
@@ -629,6 +632,11 @@ const selStyles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
   },
   triggerBlock: { alignSelf: 'stretch', width: '100%' },
+  triggerCompact: { height: 34, minWidth: 150, paddingHorizontal: 10 },
+  captionCompact: { fontSize: 8 },
+  valueCompact: { fontSize: 11 },
+  placeholderCompact: { fontSize: 11 },
+  caretCompact: { fontSize: 9 },
   triggerHover: { backgroundColor: '#F8FAFC', borderColor: '#94A3B8' },
   triggerOpen: { borderColor: colors.primary },
   triggerActive: { borderColor: '#A8BACD', backgroundColor: colors.primarySoft },
@@ -730,6 +738,10 @@ const styles = StyleSheet.create({
     shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
   searchBoxFocused: { borderColor: colors.primary, shadowOpacity: 0.08 },
+  searchBoxCompact: { height: 34 },
+  searchIconCompact: { fontSize: 13 },
+  searchInputCompact: { fontSize: 12 },
+  searchClearCompact: { fontSize: 13 },
   searchIcon: { fontSize: 15, color: colors.faint },
   searchIconFocused: { color: colors.primary },
   searchInput: { flex: 1, fontSize: 13, color: colors.text, paddingVertical: 0 },

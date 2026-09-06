@@ -168,9 +168,9 @@ const upload = multer({
   // ---------- Orders ----------
   // Trader hanya melihat order miliknya sendiri; admin melihat semua (filter trader opsional).
   r.get('/orders', requireAuth, asyncH(async (req, res) => {
-    const { q, status, pickup_method, page, per_page, from, to } = req.query;
+    const { q, status, pickup_method, store, page, per_page, from, to } = req.query;
     const trader = req.user.role === 'admin' ? req.query.trader : req.user.id;
-    ok(res, await repo.listOrders({ q, status, pickup_method, trader, page, per_page, from, to }));
+    ok(res, await repo.listOrders({ q, status, pickup_method, store, trader, page, per_page, from, to }));
   }));
 
   r.post('/orders', requireAuth, asyncH(async (req, res) => {

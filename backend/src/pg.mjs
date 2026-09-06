@@ -313,6 +313,7 @@ export default (pool) => {
     }
     if (query.status) { conds.push(`o.status = $${vals.length + 1}`); vals.push(query.status); }
     if (query.pickup_method) { conds.push(`o.pickup_method = $${vals.length + 1}`); vals.push(query.pickup_method); }
+    if (query.store) { conds.push(`o.store_id = $${vals.length + 1}`); vals.push(query.store); }
     if (query.trader) { conds.push(`o.trader_id = $${vals.length + 1}`); vals.push(query.trader); }
     if (query.from) { conds.push(`o.created_at >= $${vals.length + 1}`); vals.push(query.from); }
     if (query.to) { conds.push(`o.created_at <= $${vals.length + 1}`); vals.push(query.to); }

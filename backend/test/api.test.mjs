@@ -305,6 +305,9 @@ describe('CF3 Daftar order', () => {
     assert.ok(m.data.items.every((o) => o.pickup_method === 'self_pick_up'));
     const t = await client(admin).get('/api/orders?trader=u-nabila');
     assert.ok(t.data.items.every((o) => o.trader_id === 'u-nabila'));
+    const st = await client(admin).get('/api/orders?store=st-shopee');
+    assert.ok(st.data.items.length >= 1);
+    assert.ok(st.data.items.every((o) => o.store_id === 'st-shopee'));
   });
   test('filter rentang tanggal from/to', async () => {
     const now = new Date();

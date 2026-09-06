@@ -42,7 +42,9 @@ export default function Orders() {
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
+  const [store, setStore] = useState('');
   const [period, setPeriod] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -50,6 +52,7 @@ export default function Orders() {
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [editing, setEditing] = useState<OrderView | null>(null);
   const [traders, setTraders] = useState<SelectOption[]>([]);
+  const [stores, setStores] = useState<SelectOption[]>([]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -58,11 +61,18 @@ export default function Orders() {
     ).catch(() => setTraders([]));
   }, [isAdmin]);
 
+  useEffect(() => {
+    api.listMarketplaceStores().then((ss) =>
+      setStores(ss.map((s) => ({ value: s.id, label: s.name }))),
+    ).catch(() => setStores([]));
+  }, []);
+
   const query = useMemo(() => {
     const q: Record<string, string> = {};
     if (search.trim()) q.q = search.trim();
     if (status) q.status = status;
     if (method) q.pickup_method = method;
+    if (store) q.store = store;
     if (trader) q.trader = trader;
     q.page = String(page);
     q.per_page = String(PER_PAGE);
@@ -71,7 +81,7 @@ export default function Orders() {
     if (period === '7_hari') q.from = new Date(Date.now() - 7 * 864e5).toISOString();
     if (period === 'bulan_ini') q.from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
     return q;
-  }, [search, status, method, trader, period, page]);
+  }, [search, status, method, store, trader, period, page]);
 
   const { orders, total, loading, error, refresh } = useOrders(query);
 
@@ -110,10 +120,10 @@ export default function Orders() {
   };
 
   const resetFilters = () => {
-    setStatus(''); setMethod(''); setTrader(''); setPeriod(''); setPage(1);
+    setStatus(''); setMethod(''); setStore(''); setTrader(''); setPeriod(''); setPage(1);
   };
 
-  const activeFilters = [status, method, trader, period].filter(Boolean).length;
+  const activeFilters = [status, method, store, trader, period].filter(Boolean).length;
   const copyFiltered = async () => {
     try {
       const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
@@ -219,11 +229,27 @@ export default function Orders() {
         action={<Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />}
       />
 
-      <View style={[styles.filterBar, isNarrow && styles.filterBarNarrow]}>
-        <View style={isNarrow ? styles.searchBoxNarrow : styles.searchBox}>
-          <SearchInput value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
+      <View style={styles.filterBar}>
+        <View style={styles.searchBox}>
+          <SearchInput compact value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
         </View>
+        <Pressable
+          onPress={() => setShowFilters((v) => !v)}
+          style={[styles.filterBtn, activeFilters > 0 && styles.filterBtnActive]}
+          accessibilityLabel={showFilters ? 'Sembunyikan filter' : 'Tampilkan filter'}
+        >
+          <Text style={[styles.filterIcon, activeFilters > 0 && styles.filterIconActive]}>⚙</Text>
+          <Text style={[styles.filterText, activeFilters > 0 && styles.filterTextActive]}>Filter</Text>
+          {activeFilters > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilters}</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
 
+      {showFilters && (
+      <View style={[styles.filterBar, styles.filterPanel, isNarrow && styles.filterBarNarrow]}>
         <Select
           label="Status"
           value={status}
@@ -231,6 +257,7 @@ export default function Orders() {
           onChange={(v) => { setStatus(v); setPage(1); }}
           placeholder="Semua status"
           clearLabel="Semua"
+          compact
           block={isNarrow}
         />
         <Select
@@ -240,6 +267,17 @@ export default function Orders() {
           onChange={(v) => { setMethod(v); setPage(1); }}
           placeholder="Semua metode"
           clearLabel="Semua"
+          compact
+          block={isNarrow}
+        />
+        <Select
+          label="Toko"
+          value={store}
+          options={stores}
+          onChange={(v) => { setStore(v); setPage(1); }}
+          placeholder="Semua toko"
+          clearLabel="Semua"
+          compact
           block={isNarrow}
         />
         {isAdmin && (
@@ -250,6 +288,7 @@ export default function Orders() {
             onChange={(v) => { setTrader(v); setPage(1); }}
             placeholder="Semua trader"
             clearLabel="Semua"
+            compact
             block={isNarrow}
           />
         )}
@@ -260,6 +299,7 @@ export default function Orders() {
           onChange={(v) => { setPeriod(v); setPage(1); }}
           placeholder="Semua periode"
           clearLabel="Semua"
+          compact
           block={isNarrow}
         />
 
@@ -270,6 +310,7 @@ export default function Orders() {
           </Pressable>
         )}
       </View>
+      )}
 
       <View style={[styles.tableSection, isNarrow && styles.tableSectionNarrow]}>
         <View style={[styles.tableIntro, isNarrow && styles.tableIntroNarrow]}>
@@ -423,24 +464,38 @@ const styles = StyleSheet.create({
   wrap: { flex: 1 },
   wrapContent: { paddingBottom: 32 },
 
-  // Filter bar ala ERP: satu baris kardus, dropdown anchored.
+  // Baris filter: kolom cari + tombol Filter (kriteria di panel yang bisa dibuka).
   filterBar: {
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
-    marginHorizontal: 20, marginBottom: 18,
-    backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#D8DEE6',
-    borderRadius: radius.md, padding: 10,
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6,
+    marginHorizontal: 20, marginBottom: 6,
   },
-  filterBarNarrow: { flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'stretch', gap: 10, marginBottom: 14 },
-  searchBox: { flex: 1, minWidth: 280 },
-  searchBoxNarrow: { width: '100%' },
+  filterPanel: { marginBottom: 14 },
+  filterBarNarrow: { flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'stretch', gap: 8, marginBottom: 14 },
+  searchBox: { flex: 1, minWidth: 0 },
+
+  filterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    height: 34, paddingHorizontal: 10, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  },
+  filterBtnActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  filterIcon: { fontSize: 13, color: colors.muted },
+  filterIconActive: { color: colors.primary },
+  filterText: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  filterTextActive: { color: colors.primary },
+  filterBadge: {
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  filterBadgeText: { fontSize: 10, fontWeight: '800', color: colors.onPrimary },
 
   resetBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    height: 44, paddingHorizontal: 12, borderRadius: radius.md,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    height: 34, paddingHorizontal: 8, borderRadius: radius.sm,
   },
   resetBtnNarrow: { alignSelf: 'flex-start' },
-  resetIcon: { fontSize: 14, color: colors.primary },
-  resetText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  resetIcon: { fontSize: 13, color: colors.primary },
+  resetText: { fontSize: 11, fontWeight: '700', color: colors.primary },
 
   tableSection: { marginHorizontal: 20 },
   tableSectionNarrow: { marginHorizontal: 12 },
