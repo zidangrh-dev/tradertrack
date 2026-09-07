@@ -3,7 +3,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius } from '../theme';
 import type { MarketplaceStore, ProductRow } from '../lib/api';
-import { IconAction } from './ui';
+import { ActionMenu, type ActionMenuItem } from './ui';
 
 export function MetricsRow({ stats, wide }: { stats: { totalProduk: number; aktif: number; totalKuota: number; totalTerpakai: number; totalSisa: number }; wide?: boolean }) {
   const items: { label: string; value: number; sub: string; dark?: boolean }[] = [
@@ -51,22 +51,14 @@ function QuotaCell({ item, compact }: { item: ProductRow; compact?: boolean }) {
   );
 }
 
-export function ProductTable({ items, loading, wide, onMore }: {
+export function ProductTable({ items, loading, wide, actionsFor }: {
   items: ProductRow[];
   loading: boolean;
   wide?: boolean;
-  onMore: (item: ProductRow, pos: { x: number; y: number }, event?: unknown) => void;
+  /** Item dropdown per produk — dropdown-nya sendiri dirender di sini (ActionMenu). */
+  actionsFor: (item: ProductRow) => ActionMenuItem[];
 }) {
   // HP: tabel ringkas — kolom SISA & STATUS disembunyikan, sisa digabung ke sel kuota.
-  const openAction = (item: ProductRow) => (event?: unknown) => {
-    const target = event as { currentTarget?: { measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void } } | undefined;
-    if (target?.currentTarget?.measureInWindow) {
-      target.currentTarget.measureInWindow((x, y, w, h) => onMore(item, { x: x + w - 148, y: y + h + 6 }, event));
-    } else {
-      onMore(item, { x: 0, y: 0 }, event);
-    }
-  };
-
   return (
     <View style={styles.tableCard}>
       <View style={styles.tableHeader}>
@@ -133,7 +125,7 @@ export function ProductTable({ items, loading, wide, onMore }: {
 
               {/* Aksi */}
               <View style={[styles.td, { width: 48, alignItems: 'flex-end' }]}>
-                <IconAction icon="⋯" label={`Aksi ${item.name}`} onPress={openAction(item)} />
+                <ActionMenu label={`Aksi produk ${item.name}`} items={actionsFor(item)} />
               </View>
             </View>
           );
@@ -167,7 +159,10 @@ export function StoreTable({ stores, wide, onRemove, onAdd }: {
               <Text style={styles.productName} numberOfLines={1}>{store.name}</Text>
             </View>
             <View style={[styles.td, { width: 48, alignItems: 'flex-end' }]}>
-              <IconAction icon="✕" variant="danger" label={`Hapus ${store.name}`} onPress={() => onRemove(store)} />
+              <ActionMenu
+                label={`Aksi toko ${store.name}`}
+                items={[{ key: 'delete', label: 'Hapus toko', icon: 'trash-outline', danger: true, onPress: () => onRemove(store) }]}
+              />
             </View>
           </View>
         ))

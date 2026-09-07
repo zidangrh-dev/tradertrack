@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Modal, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { api, type AppSettings, type UserRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space } from '../../src/theme';
-import { Avatar, Button, Field, PageHeader, SelectField, Sheet } from '../../src/components/ui';
+import { ActionMenu, Avatar, Button, Field, PageHeader, SelectField, Sheet, type ActionMenuItem } from '../../src/components/ui';
 
 export default function Settings() {
   useAdminOnly();
@@ -103,8 +103,6 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
   const [name, setName] = useState(user.display_name);
   const [role, setRole] = useState(user.role);
   const [password, setPassword] = useState('');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
   const save = async () => {
     try {
@@ -139,12 +137,35 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
     }
   };
 
-  const openMenu = (event: any) => {
-    event.currentTarget?.measureInWindow?.((x: number, y: number, w: number, h: number) => {
-      setMenuPos({ x: x + w - 168, y: y + h + 4 });
-      setMenuOpen(true);
+  const menuItems: ActionMenuItem[] = [
+    {
+      key: 'edit',
+      label: editing ? 'Tutup edit' : 'Edit akun',
+      icon: editing ? 'close-outline' : 'create-outline',
+      onPress: () => setEditing((e) => !e),
+    },
+    {
+      key: 'active',
+      label: user.is_active ? 'Nonaktifkan akun' : 'Aktifkan akun',
+      icon: user.is_active ? 'pause-circle-outline' : 'play-circle-outline',
+      onPress: toggleActive,
+    },
+  ];
+  if (!isSelf) {
+    menuItems.push({
+      key: 'delete',
+      label: 'Hapus akun',
+      icon: 'trash-outline',
+      danger: true,
+      separated: true,
+      onPress: () => confirmAsk(
+        'Hapus akun pengguna',
+        `Hapus akun "${user.display_name}"? Akun tanpa riwayat order/foto akan dihapus permanen.`,
+        () => remove(),
+        { okLabel: 'Hapus', danger: true },
+      ),
     });
-  };
+  }
 
   return (
     <View style={styles.userRow}>
@@ -162,32 +183,7 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
           </View>
         )}
       </View>
-      <Pressable onPress={openMenu} hitSlop={8} style={styles.moreBtn} accessibilityLabel={`Aksi ${user.display_name}`}>
-        <Text style={styles.moreBtnText}>⋯</Text>
-      </Pressable>
-
-      {menuOpen && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-          <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
-            <View style={[styles.menu, { left: menuPos.x, top: menuPos.y }]}>
-              <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={() => { setMenuOpen(false); setEditing((e) => !e); }}>
-                <Text style={styles.menuText}>{editing ? 'Tutup edit' : 'Edit'}</Text>
-              </Pressable>
-              <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={() => { setMenuOpen(false); toggleActive(); }}>
-                <Text style={styles.menuText}>{user.is_active ? 'Nonaktifkan' : 'Aktifkan'}</Text>
-              </Pressable>
-              {!isSelf && (
-                <>
-                  <View style={styles.menuDivider} />
-                  <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={() => { setMenuOpen(false); confirmAsk('Hapus akun pengguna', `Hapus akun "${user.display_name}"? Akun tanpa riwayat order/foto akan dihapus permanen.`, () => remove(), { okLabel: 'Hapus', danger: true }); }}>
-                    <Text style={styles.menuDangerText}>Hapus</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          </Pressable>
-        </Modal>
-      )}
+      <ActionMenu label={`Aksi akun ${user.display_name}`} items={menuItems} />
     </View>
   );
 }
@@ -237,14 +233,5 @@ const styles = StyleSheet.create({
   userName: { fontSize: 13, fontWeight: '700', color: colors.text },
   selfTag: { fontSize: 9, color: colors.primary },
   userMeta: { fontSize: 10, color: colors.faint, marginTop: 2 },
-  moreBtn: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  moreBtnText: { fontSize: 16, color: colors.muted, lineHeight: 18 },
-  menuBackdrop: { flex: 1 },
-  menu: { position: 'absolute', minWidth: 160, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.line, paddingVertical: 4, shadowColor: '#0F162A', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 8 },
-  menuItem: { paddingVertical: 9, paddingHorizontal: 14, flexDirection: 'row' },
-  menuItemPressed: { backgroundColor: colors.surfaceAlt },
-  menuText: { fontSize: 13, color: colors.text, fontWeight: '600' },
-  menuDangerText: { fontSize: 13, color: '#C1433A', fontWeight: '700' },
-  menuDivider: { height: 1, backgroundColor: colors.line, marginVertical: 4 },
   editBox: { marginTop: 10 },
 });

@@ -37,8 +37,6 @@ export default function MasterData() {
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
 
   const [editingItem, setEditingItem] = useState<ProductRow | null>(null);
-  const [actionItem, setActionItem] = useState<ProductRow | null>(null);
-  const [actionPosition, setActionPosition] = useState({ x: 0, y: 0 });
   const [resetConfirm, setResetConfirm] = useState(false);
   const [additionalQuota, setAdditionalQuota] = useState('');
 
@@ -220,7 +218,27 @@ export default function MasterData() {
           wide={wide}
           items={filteredItems}
           loading={loading}
-          onMore={(item, pos) => { setActionPosition(pos); setActionItem(item); }}
+          actionsFor={(item) => [
+            { key: 'quota', label: 'Tambah kuota', icon: 'add-circle-outline', onPress: () => startEdit(item) },
+            {
+              key: 'status',
+              label: item.is_active ? 'Nonaktifkan produk' : 'Aktifkan produk',
+              icon: item.is_active ? 'pause-circle-outline' : 'play-circle-outline',
+              onPress: () => confirmAsk(
+                item.is_active ? 'Nonaktifkan produk' : 'Aktifkan produk',
+                `Ubah status "${item.name}"?`,
+                () => toggleStatus(item),
+              ),
+            },
+            {
+              key: 'delete',
+              label: 'Hapus produk',
+              icon: 'trash-outline',
+              danger: true,
+              separated: true,
+              onPress: () => confirmAsk('Hapus produk', `Hapus "${item.name}"?`, () => deleteItem(item), { okLabel: 'Hapus', danger: true }),
+            },
+          ]}
         />
 
         <StoreTable
@@ -230,26 +248,6 @@ export default function MasterData() {
           onAdd={() => setShowStoreForm(true)}
         />
       </ScrollView>
-
-      <Modal visible={!!actionItem} transparent animationType="fade" onRequestClose={() => setActionItem(null)}>
-        <Pressable style={styles.actionBackdrop} onPress={() => setActionItem(null)}>
-          <View style={[styles.actionPopup, { left: actionPosition.x, top: actionPosition.y }]}>
-            {actionItem && (
-              <>
-                <Pressable style={styles.popupItem} onPress={() => { const item = actionItem; setActionItem(null); startEdit(item); }}>
-                  <Text style={styles.popupText}>Tambah kuota</Text>
-                </Pressable>
-                <Pressable style={styles.popupItem} onPress={() => { const item = actionItem; setActionItem(null); confirmAsk(item.is_active ? 'Nonaktifkan Produk' : 'Aktifkan Produk', `Ubah status "${item.name}"?`, () => toggleStatus(item)); }}>
-                  <Text style={styles.popupText}>{actionItem.is_active ? 'Nonaktifkan' : 'Aktifkan'}</Text>
-                </Pressable>
-                <Pressable style={[styles.popupItem, styles.popupDanger]} onPress={() => { const item = actionItem; setActionItem(null); confirmAsk('Hapus produk', `Hapus "${item.name}"?`, () => deleteItem(item)); }}>
-                  <Text style={styles.popupDangerText}>Hapus</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        </Pressable>
-      </Modal>
 
       {/* Modal Tambah Produk */}
       <Sheet open={showNew} onClose={() => setShowNew(false)} title="Tambah Produk">
@@ -377,12 +375,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  actionBackdrop: { flex: 1, backgroundColor: 'transparent' },
-  actionPopup: { position: 'absolute', width: 148, padding: 4, borderRadius: radius.sm, borderWidth: 1, borderColor: '#D8DEE6', backgroundColor: '#FFFFFF', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, elevation: 8 },
-  popupItem: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 5 },
-  popupText: { fontSize: 11, fontWeight: '700', color: '#334155' },
-  popupDanger: { backgroundColor: '#FFF7F7' },
-  popupDangerText: { fontSize: 11, fontWeight: '700', color: '#991B1B' },
 
   // Modal styling
   formContainer: {

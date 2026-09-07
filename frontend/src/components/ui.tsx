@@ -181,24 +181,131 @@ export function FlagBadge({ kind }: { kind: 'problem' | 'pending' }) {
 }
 
 /** Tombol aksi ikon berbentuk kotak — dipakai semua tabel agar seragam. */
-export function IconAction({ icon, onPress, variant = 'default', label }: {
-  icon: string;
-  onPress: (event?: GestureResponderEvent) => void;
-  variant?: 'default' | 'primary' | 'danger';
+/* ---------- ActionMenu (dropdown aksi ⋯) ---------- */
+
+export interface ActionMenuItem {
+  key: string;
   label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  onPress: () => void;
+  danger?: boolean;
+  /** Beri garis pemisah di atas item ini (mis. sebelum aksi merusak). */
+  separated?: boolean;
+}
+
+const MENU_W = 208;
+const MENU_ITEM_H = 40;
+
+/**
+ * Satu-satunya dropdown aksi aplikasi: tombol ⋯ + menu ter-anchor pada tombolnya.
+ * Dipakai baris tabel order, produk master data, dan akun pengguna agar posisi,
+ * tipografi, dan warna aksi identik di seluruh aplikasi.
+ */
+export function ActionMenu({ items, label, tone = 'muted' }: {
+  items: ActionMenuItem[];
+  /** Label aksesibilitas tombol, mis. "Aksi order TRK-01". */
+  label: string;
+  tone?: 'muted' | 'primary';
 }) {
-  const color = variant === 'primary' ? colors.primary : variant === 'danger' ? colors.red : colors.muted;
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const { width: winW, height: winH } = useWindowDimensions();
+
+  const menuH = items.length * MENU_ITEM_H + 8 + items.filter((i) => i.separated).length * 9;
+
+  const openMenu = (event: GestureResponderEvent) => {
+    const target = event.currentTarget as unknown as {
+      measureInWindow?: (cb: (x: number, y: number, w: number, h: number) => void) => void;
+    };
+    if (!target?.measureInWindow) {
+      setPos({ left: Math.max(12, winW - MENU_W - 12), top: 80 });
+      setOpen(true);
+      return;
+    }
+    target.measureInWindow((x, y, w, h) => {
+      // Rata kanan tombol, lalu jaga tetap di dalam layar.
+      const left = Math.max(12, Math.min(x + w - MENU_W, winW - MENU_W - 12));
+      // Buka ke bawah; bila mentok, balik ke atas tombol.
+      const below = y + h + 6;
+      const top = below + menuH > winH - 12 ? Math.max(12, y - menuH - 6) : below;
+      setPos({ left, top });
+      setOpen(true);
+    });
+  };
+
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={6}
-      accessibilityLabel={label}
-      style={({ pressed }) => [styles.iconAction, { opacity: pressed ? 0.7 : 1 }]}
-    >
-      <Text style={[styles.iconActionGlyph, { color }]}>{icon}</Text>
-    </Pressable>
+    <>
+      <Pressable
+        onPress={openMenu}
+        hitSlop={6}
+        accessibilityLabel={label}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        style={({ pressed }) => [
+          amStyles.trigger,
+          open && amStyles.triggerOpen,
+          pressed && amStyles.triggerPressed,
+        ]}
+      >
+        <Ionicons
+          name="ellipsis-horizontal"
+          size={17}
+          color={open || tone === 'primary' ? colors.primary : colors.muted}
+        />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={amStyles.backdrop} onPress={() => setOpen(false)} accessibilityLabel="Tutup menu aksi" />
+        <View style={[amStyles.menu, { left: pos.left, top: pos.top, width: MENU_W }]}>
+          {items.map((item) => (
+            <View key={item.key}>
+              {item.separated && <View style={amStyles.divider} />}
+              <HoverItem
+                onPress={() => { setOpen(false); item.onPress(); }}
+                style={amStyles.item}
+                hoverStyle={item.danger ? amStyles.itemHoverDanger : amStyles.itemHover}
+                pressedStyle={item.danger ? amStyles.itemHoverDanger : amStyles.itemHover}
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={16}
+                  color={item.danger ? colors.red : colors.muted}
+                  style={amStyles.itemIcon}
+                />
+                <Text style={[amStyles.itemText, item.danger && amStyles.itemTextDanger]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </HoverItem>
+            </View>
+          ))}
+        </View>
+      </Modal>
+    </>
   );
 }
+
+const amStyles = StyleSheet.create({
+  trigger: {
+    width: 30, height: 30, borderRadius: radius.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  triggerOpen: { backgroundColor: colors.primarySoft },
+  triggerPressed: { backgroundColor: colors.surfaceAlt },
+  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  menu: {
+    position: 'absolute',
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.line, paddingVertical: 4, overflow: 'hidden',
+    shadowColor: '#0F162A', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 12,
+  },
+  item: { flexDirection: 'row', alignItems: 'center', height: MENU_ITEM_H, paddingHorizontal: 12, gap: 10 },
+  itemHover: { backgroundColor: colors.surfaceAlt },
+  itemHoverDanger: { backgroundColor: problemPalette.bg },
+  itemIcon: { width: 18, textAlign: 'center' },
+  itemText: { fontSize: 13, fontWeight: '600', color: colors.text, flexShrink: 1 },
+  itemTextDanger: { color: colors.red, fontWeight: '700' },
+  divider: { height: 1, backgroundColor: colors.line, marginVertical: 4 },
+});
 
 export function SelectField({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
   return (
@@ -267,7 +374,7 @@ function useHover() {
 }
 
 export function Select({
-  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel, block = false, compact = false,
+  label, value, options, onChange, placeholder = 'Pilih…', clearLabel, onAdd, addLabel, block = false, compact = false, field = false,
 }: {
   label: string;
   value: string;
@@ -279,6 +386,8 @@ export function Select({
   addLabel?: string;
   block?: boolean;
   compact?: boolean;
+  /** Mode formulir: label di luar kotak & tinggi 42 — sebaris dengan <Field>. */
+  field?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0 });
@@ -320,21 +429,31 @@ export function Select({
 
   return (
     <View ref={ref} style={block ? { width: '100%' } : undefined}>
+      {/* Mode formulir: label sejajar <Field> agar kolom kiri & kanan seragam. */}
+      {field && <Text style={selStyles.fieldLabel}>{label}</Text>}
       <Pressable
         onPress={toggle}
         {...triggerHover.handlers}
         style={({ pressed }) => [
           selStyles.trigger,
           compact && selStyles.triggerCompact,
+          field && selStyles.triggerField,
           block && selStyles.triggerBlock,
           webTransition('background-color, border-color, opacity'),
           triggerHover.hovered && !open && selStyles.triggerHover,
           open && selStyles.triggerOpen,
-          !!value && selStyles.triggerActive,
+          !!value && !field && selStyles.triggerActive,
           pressed && { opacity: 0.9 },
         ]}
       >
-        {!!value ? (
+        {field ? (
+          <Text
+            style={[selStyles.fieldValue, !value && selStyles.fieldPlaceholder]}
+            numberOfLines={1}
+          >
+            {selected ? selected.label : placeholder}
+          </Text>
+        ) : !!value ? (
           <>
             <Text style={[selStyles.caption, compact && selStyles.captionCompact, !!value && selStyles.captionActive]}>{label}</Text>
             <Text style={[selStyles.value, compact && selStyles.valueCompact, !!value && selStyles.valueActive]} numberOfLines={1}>{selected ? selected.label : placeholder}</Text>
@@ -622,40 +741,63 @@ export function EmptyState({ icon, text }: { icon: string; text: string }) {
 /* ---------- Order card ---------- */
 
 export function OrderCard({
-  order, onPress, actions,
+  order, onPress, actions, menu, style,
 }: {
   order: OrderView;
   onPress: () => void;
+  /** Blok aksi utama di kaki kartu, mis. tombol "Selesaikan order". */
   actions?: React.ReactNode;
+  /** Slot ikon di kanan baris identitas, mis. ActionMenu ⋯. */
+  menu?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }) {
   const pal = statusPalette(order.status);
+  // Pita tepi kiri menandai order yang butuh perhatian — terbaca saat kartu berjajar.
+  const accent = order.is_problem ? problemPalette.fg : order.is_pending ? pendingPalette.fg : null;
   return (
-    <Pressable style={({ pressed }) => [styles.orderCard, order.is_problem && styles.orderCardProblem, pressed && { opacity: 0.92 }]} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.orderCard,
+        !!accent && { borderLeftWidth: 3, borderLeftColor: accent },
+        pressed && { opacity: 0.92 },
+        style,
+      ]}
+      onPress={onPress}
+    >
+      {/* Identitas: nomor pesanan memimpin; status & menu terkunci di kanan. */}
       <View style={styles.orderTop}>
-        <Text style={styles.orderNumber}>{order.order_number}</Text>
-        {order.is_problem ? (
-          <FlagBadge kind="problem" />
-        ) : order.is_pending ? (
-          <FlagBadge kind="pending" />
-        ) : (
-          <Text style={[styles.tag, { color: pal.color, backgroundColor: pal.bg }]}>{statusLabel[order.status]}</Text>
-        )}
+        <View style={styles.orderIdent}>
+          <Text style={styles.orderNumber} numberOfLines={1}>{order.order_number}</Text>
+          <Text style={styles.orderMeta} numberOfLines={1}>
+            {order.store_name} · {order.recipient_name} · {pickupMethodLabel[order.pickup_method]}
+          </Text>
+        </View>
+        <View style={styles.orderTopRight}>
+          {order.is_problem ? (
+            <FlagBadge kind="problem" />
+          ) : order.is_pending ? (
+            <FlagBadge kind="pending" />
+          ) : (
+            <Text style={[styles.tag, { color: pal.color, backgroundColor: pal.bg }]}>{statusLabel[order.status]}</Text>
+          )}
+          {menu}
+        </View>
       </View>
+
       <Text style={styles.orderProduct} numberOfLines={2}>{order.product_name}</Text>
-      <Text style={styles.orderMeta} numberOfLines={1}>
-        {order.store_name} · {order.recipient_name} · {pickupMethodLabel[order.pickup_method]}
-      </Text>
+
       <View style={styles.orderFoot}>
         <View style={styles.person}>
           <Avatar name={order.trader_name} size={18} />
-          <Text style={styles.personName}>{order.trader_name}</Text>
+          <Text style={styles.personName} numberOfLines={1}>{order.trader_name}</Text>
         </View>
         <View style={styles.orderFootRight}>
-          {order.status === 'selesai' && <Text style={styles.proof}>▣ {order.photo_count}</Text>}
+          {order.photo_count > 0 && <Text style={styles.proof}>▣ {order.photo_count}</Text>}
           <Text style={styles.orderTime}>{durationLabel(order.updated_at)}</Text>
         </View>
       </View>
-      {actions}
+
+      {!!actions && <View style={styles.orderActions}>{actions}</View>}
     </Pressable>
   );
 }
@@ -820,6 +962,11 @@ const selStyles = StyleSheet.create({
   },
   triggerBlock: { alignSelf: 'stretch', width: '100%' },
   triggerCompact: { height: 34, minWidth: 150, paddingHorizontal: 10 },
+  // Mode formulir: setinggi & sejajar <Field> (label di luar, input 42 + marginTop 6).
+  triggerField: { height: 42, minWidth: 0, marginTop: 6 },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  fieldValue: { flex: 1, fontSize: 13, color: colors.text },
+  fieldPlaceholder: { color: colors.faint },
   captionCompact: { fontSize: 8 },
   valueCompact: { fontSize: 11 },
   placeholderCompact: { fontSize: 11 },
@@ -934,12 +1081,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 13, color: colors.text, paddingVertical: 0 },
   searchClear: { color: colors.faint, fontSize: 14, paddingHorizontal: 2 },
   flagBadge: { fontSize: 11, lineHeight: 16, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden', alignSelf: 'flex-start' },
-  iconAction: {
-    width: 30, height: 30, borderRadius: radius.sm,
-    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  iconActionGlyph: { fontSize: 14, lineHeight: 16, fontWeight: '700', textAlign: 'center' },
   input: {
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
@@ -967,21 +1108,33 @@ const styles = StyleSheet.create({
   emptyIconBox: { width: 56, height: 56, borderRadius: radius.lg, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   emptyIcon: { fontSize: 24, color: colors.primaryMuted },
   emptyText: { fontSize: 12, color: colors.muted, paddingHorizontal: 32, textAlign: 'center', lineHeight: 18 },
-  // Order card
+  // Order card — tiga zona: identitas, isi, kaki. Elevasi satu deklarasi
+  // (border 1px + bayangan lembut); lebar dibatasi agar tidak meregang.
   orderCard: {
-    backgroundColor: colors.surface, borderRadius: radius.lg, padding: 14, borderWidth: 1,
+    backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, borderWidth: 1,
     borderColor: colors.line, shadowColor: '#0F162A', shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 2,
+    maxWidth: 720, width: '100%',
   },
-  orderCardProblem: { borderTopWidth: 3, borderTopColor: colors.red },
-  orderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  orderNumber: { fontSize: 10, fontWeight: '800', color: colors.primaryMuted },
-  orderProduct: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: 8 },
-  orderMeta: { fontSize: 11, color: colors.muted, marginTop: 3 },
-  orderFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
-  person: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  personName: { fontSize: 10, color: colors.muted },
-  orderFootRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  proof: { fontSize: 9, fontWeight: '700', color: '#1F7A4D' },
-  orderTime: { fontSize: 9, color: colors.faint },
+  orderTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  orderIdent: { flex: 1, minWidth: 0 },
+  orderTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  // Nomor pesanan marketplace (18 digit) memimpin hirarki: dipakai saat
+  // mencocokkan resi fisik. Angka tabular agar berbaris antar-kartu.
+  orderNumber: {
+    fontSize: 15, fontWeight: '800', color: colors.text,
+    fontVariant: ['tabular-nums'], letterSpacing: -0.1,
+  },
+  orderMeta: { fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 16 },
+  orderProduct: { fontSize: 13, fontWeight: '600', color: colors.muted, marginTop: 12, lineHeight: 18 },
+  orderFoot: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+    marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.surfaceAlt,
+  },
+  person: { flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 1, minWidth: 0 },
+  personName: { fontSize: 11, color: colors.muted, fontWeight: '600', flexShrink: 1 },
+  orderFootRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
+  proof: { fontSize: 10, fontWeight: '700', color: '#1F7A4D' },
+  orderTime: { fontSize: 10, color: colors.faint, fontVariant: ['tabular-nums'] },
+  orderActions: { marginTop: 12 },
 });
