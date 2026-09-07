@@ -85,7 +85,8 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // Aturan bukti ganda: order baru wajib barcode pick up + foto bukti order.
   const dualRequired = !!order.requires_dual_evidence && status === 'data_masuk';
   const hasBarcode = !!order.barcode_path;
-  const hasOrderProof = !!detail?.photos.some((p) => p.source === 'order');
+  const orderProof = detail?.photos.find((p) => p.source === 'order') ?? null;
+  const hasOrderProof = !!orderProof;
   const dualReady = hasBarcode && hasOrderProof;
 
   const attachOrderProof = async () => {
@@ -121,15 +122,6 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           <DetailItem label="Produk" value={`${order.product_name} · ${order.store_name}`} />
         </View>
 
-        {typeof order.barcode_path === 'string' && order.barcode_path.length > 0 && (
-          <>
-            <Text style={styles.section}>Barcode pengambilan</Text>
-            <View style={styles.photoRow}>
-              <PhotoThumb filePath={order.barcode_path} caption="Barcode" onPress={() => setPreview(order.barcode_path!)} />
-            </View>
-          </>
-        )}
-
         {isAdmin && (
           <>
             <Text style={styles.section}>Catatan penyelesaian</Text>
@@ -143,87 +135,27 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
         {(isAdmin || isOwner) && detail && (
           <>
-            <Text style={styles.section}>
-              Foto bukti (minimal 1) · {detail.photo_count} terunggah{status === 'selesai' ? ' — order terkunci' : ''}
-            </Text>
-            <View style={styles.photoRow}>
-              {detail.photos.map((p) => (
-                <PhotoThumb
-                  key={p.id}
-                  filePath={p.file_path}
-                  caption={p.source === 'pickup' ? 'Barcode' : p.source === 'kamera' ? 'Kamera' : 'Berkas'}
-                  onPress={() => setPreview(p.file_path)}
-                  onDelete={status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, p.id)) : undefined}
-                />
-              ))}
-              {status !== 'selesai' && detail.photo_count < settings.max_photos ? (
-                <Pressable
-                  style={styles.photoAdd}
-                  onPress={async () => {
-                    const photo = await pickPhoto('Ambil foto bukti');
-                    if (!photo) return;
-                    mutate(() => api.uploadPhoto(order.id, photo));
-                  }}
-                  disabled={busy}
-                >
-                  <Text style={styles.photoAddPlus}>+</Text>
-                  <Text style={styles.photoAddLabel}>Ambil dari Kamera / Pilih dari Berkas</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {status !== 'selesai' && <Text style={styles.hint}>Foto dikompresi otomatis sebelum diunggah. Maksimal {settings.max_photos} foto, {settings.max_file_mb} MB per berkas.</Text>}
-          </>
-        )}
-
-        {isAdmin && detail && (
-          <View style={styles.problemBox}>
-            <Pressable onPress={() => setProblem((p) => !p)} style={styles.problemToggle} disabled={busy}>
-              <Text style={styles.problemCheckbox}>{problem ? '☑' : '☐'}</Text>
-              <Text style={styles.problemLabel}>Tandai order ini bermasalah</Text>
-            </Pressable>
-            {problem && (
-              <>
-                <TextInput style={styles.textarea} placeholder="Alasan kendala..." value={reason} onChangeText={setReason} />
-                <Button label="Simpan tanda bermasalah" variant="secondary" fullWidth disabled={busy} onPress={saveProblem} />
-              </>
-            )}
-          </View>
-        )}
-
-        <Text style={styles.section}>Riwayat status</Text>
-        {!detail && <Text style={styles.loadingText}>Memuat detail order…</Text>}
-        {detail?.events.map((e) => (
-          <View key={e.id} style={styles.eventRow}>
-            <View style={[styles.eventDot, e.event_type === 'completed' && { backgroundColor: colors.green }, e.event_type === 'problem' && { backgroundColor: colors.red }]} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.eventTitle}>
-                {eventLabel(e.event_type)} <Text style={styles.eventActor}>· {e.actor_name}</Text>
-              </Text>
-              {!!e.note && <Text style={styles.eventNote}>{e.note}</Text>}
-            </View>
-            <Text style={styles.eventTime}>{dateTime(e.created_at)}</Text>
-          </View>
-        ))}
-
-        {dualRequired && detail && (isAdmin || isOwner) && (
-          <>
-            <Text style={styles.section}>Kelengkapan pick up</Text>
-            <View style={styles.checklist}>
-              <ChecklistRow
+            <Text style={styles.section}>Lampiran pick up</Text>
+            <View style={styles.slotRow}>
+              <PhotoSlot
                 label="Foto bukti order"
-                done={hasOrderProof}
+                filePath={orderProof?.file_path ?? null}
+                locked={status === 'selesai'}
                 busy={busy}
-                onAttach={attachOrderProof}
+                onPreview={(fp) => setPreview(fp)}
+                onPick={attachOrderProof}
+                onDelete={orderProof && status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, orderProof.id)) : undefined}
               />
-              <View style={styles.checklistDivider} />
-              <ChecklistRow
+              <PhotoSlot
                 label="Barcode pick up"
-                done={hasBarcode}
+                filePath={order.barcode_path}
+                locked={status !== 'data_masuk'}
                 busy={busy}
-                onAttach={attachBarcode}
+                onPreview={(fp) => setPreview(fp)}
+                onPick={attachBarcode}
               />
             </View>
-            {!dualReady && (
+            {dualRequired && !dualReady && (
               <View style={styles.dualNote}>
                 <Text style={styles.dualNoteText}>
                   Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lengkapi keduanya
@@ -273,6 +205,36 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           </View>
         )}
 
+        <Text style={styles.section}>Riwayat status</Text>
+        {!detail && <Text style={styles.loadingText}>Memuat detail order…</Text>}
+        {detail?.events.map((e) => (
+          <View key={e.id} style={styles.eventRow}>
+            <View style={[styles.eventDot, e.event_type === 'completed' && { backgroundColor: colors.green }, e.event_type === 'problem' && { backgroundColor: colors.red }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.eventTitle}>
+                {eventLabel(e.event_type)} <Text style={styles.eventActor}>· {e.actor_name}</Text>
+              </Text>
+              {!!e.note && <Text style={styles.eventNote}>{e.note}</Text>}
+            </View>
+            <Text style={styles.eventTime}>{dateTime(e.created_at)}</Text>
+          </View>
+        ))}
+
+        {isAdmin && detail && (
+          <View style={styles.problemBox}>
+            <Pressable onPress={() => setProblem((p) => !p)} style={styles.problemToggle} disabled={busy}>
+              <Text style={styles.problemCheckbox}>{problem ? '☑' : '☐'}</Text>
+              <Text style={styles.problemLabel}>Tandai order ini bermasalah</Text>
+            </Pressable>
+            {problem && (
+              <>
+                <TextInput style={styles.textarea} placeholder="Alasan kendala..." value={reason} onChangeText={setReason} />
+                <Button label="Simpan tanda bermasalah" variant="secondary" fullWidth disabled={busy} onPress={saveProblem} />
+              </>
+            )}
+          </View>
+        )}
+
         {!isAdmin && canEdit && (
           <View style={styles.actions}>
             <Button label="Hapus order" variant="danger" onPress={() => confirmAsk('Hapus', 'Hapus order ini?', async () => { try { await api.deleteOwnOrder(order.id); onChanged?.(); onClose(); } catch (e) { notify('Gagal', (e as Error).message); } })} />
@@ -287,30 +249,63 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   );
 }
 
-/** Satu syarat kelengkapan pick up: status terpenuhi + aksi melampirkan. */
-function ChecklistRow({ label, done, busy, onAttach }: {
+/** Satu slot lampiran pick up: kosong → kotak tambah; terisi → pratinjau foto
+ *  yang bisa diketuk untuk diperbesar, dengan aksi ganti/hapus. */
+function PhotoSlot({ label, filePath, locked, busy, onPreview, onPick, onDelete }: {
   label: string;
-  done: boolean;
+  filePath: string | null;
+  locked: boolean;
   busy: boolean;
-  onAttach: () => void;
+  onPreview: (filePath: string) => void;
+  onPick: () => void;
+  onDelete?: () => void;
 }) {
+  const uri = useFileUrl(filePath);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+
   return (
-    <View style={styles.checkRow}>
-      <View style={[styles.checkMark, done ? styles.checkMarkDone : styles.checkMarkTodo]}>
-        <Text style={[styles.checkGlyph, done ? styles.checkGlyphDone : styles.checkGlyphTodo]}>
-          {done ? '✓' : '!'}
-        </Text>
-      </View>
-      <Text style={[styles.checkLabel, done && styles.checkLabelDone]} numberOfLines={1}>{label}</Text>
-      {/* Slot aksi berlebar & bertinggi tetap: baris terlampir dan belum
-          terlampir punya tinggi sama, tidak ada lompatan saat status berubah. */}
-      <View style={styles.checkAction}>
-        {done ? (
-          <Text style={styles.checkStatus}>Terlampir</Text>
-        ) : (
-          <Button label="Lampirkan" variant="secondary" size="sm" disabled={busy} onPress={onAttach} />
-        )}
-      </View>
+    <View style={styles.slot}>
+      <Text style={styles.slotLabel} numberOfLines={1}>{label}</Text>
+      {filePath ? (
+        <View style={styles.slotFilled}>
+          <Pressable
+            style={styles.slotImageWrap}
+            onPress={() => onPreview(filePath)}
+            accessibilityLabel={`Perbesar ${label}`}
+          >
+            {uri && !failed ? (
+              <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" onError={() => setFailed(true)} />
+            ) : (
+              <View style={styles.slotFallback}><Text style={styles.slotFallbackGlyph}>▣</Text></View>
+            )}
+          </Pressable>
+          {!locked && (
+            <View style={styles.slotActions}>
+              <Pressable onPress={onPick} disabled={busy} hitSlop={6}>
+                <Text style={styles.slotAction}>Ganti</Text>
+              </Pressable>
+              {!!onDelete && (
+                <Pressable onPress={onDelete} disabled={busy} hitSlop={6}>
+                  <Text style={styles.slotActionDanger}>Hapus</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
+      ) : (
+        <Pressable
+          style={({ pressed }) => [styles.slotEmpty, pressed && { opacity: 0.85 }]}
+          onPress={onPick}
+          disabled={busy || locked}
+          accessibilityLabel={`Lampirkan ${label}`}
+        >
+          <Text style={styles.slotPlus}>+</Text>
+          <Text style={styles.slotHint} numberOfLines={2}>
+            {locked ? 'Terkunci' : 'Kamera / Berkas'}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -333,27 +328,6 @@ function eventLabel(type: string) {
     case 'reopened': return 'Dibuka kembali';
     default: return type;
   }
-}
-
-function PhotoThumb({ filePath, caption, onPress, onDelete }: { filePath: string; caption: string; onPress?: () => void; onDelete?: () => void }) {
-  const uri = useFileUrl(filePath);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [uri]);
-  return (
-    <Pressable style={styles.thumb} onPress={onPress}>
-      {uri && !failed ? <Image source={{ uri }} style={styles.thumbImg} resizeMode="cover" onError={() => setFailed(true)} /> : (
-        <View style={styles.thumbInner}>
-          <Text style={styles.thumbGlyph}>▣</Text>
-          <Text style={styles.thumbCaption}>{caption}</Text>
-        </View>
-      )}
-      {onDelete && (
-        <Pressable style={styles.thumbDelete} onPress={onDelete}>
-          <Text style={styles.thumbDeleteText}>×</Text>
-        </Pressable>
-      )}
-    </Pressable>
-  );
 }
 
 function PhotoPreview({ filePath }: { filePath: string | null }) {
@@ -473,18 +447,6 @@ const styles = StyleSheet.create({
   itemValue: { fontSize: 12, color: colors.text, marginTop: 4 },
   section: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, color: colors.muted, textTransform: 'uppercase', marginTop: 18, marginBottom: 8 },
   textarea: { borderWidth: 1, borderColor: colors.line, borderRadius: 9, minHeight: 68, padding: 11, fontSize: 12, color: colors.text, textAlignVertical: 'top', backgroundColor: '#fff' },
-  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  thumb: { width: 88, height: 88, borderRadius: 10, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', position: 'relative', backgroundColor: '#F4F8FD' },
-  thumbImg: { width: 86, height: 86 },
-  thumbInner: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  thumbGlyph: { fontSize: 26, color: colors.primaryMuted },
-  thumbCaption: { fontSize: 8, color: colors.muted },
-  thumbDelete: { position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 6, backgroundColor: 'rgba(255,255,255,.9)', alignItems: 'center', justifyContent: 'center' },
-  thumbDeleteText: { color: '#42536B', fontSize: 14, lineHeight: 16 },
-  photoAdd: { width: 88, height: 88, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#B9C8DA', backgroundColor: '#F4F8FD', alignItems: 'center', justifyContent: 'center', padding: 6, gap: 3 },
-  photoAddPlus: { fontSize: 22, color: colors.primaryMuted, lineHeight: 24 },
-  photoAddLabel: { fontSize: 8, color: colors.muted, textAlign: 'center' },
-  hint: { fontSize: 9, color: colors.faint, marginTop: 8 },
   problemBox: { marginTop: 14, backgroundColor: '#FFF9F2', borderRadius: 9, padding: 12, gap: 10, borderWidth: 1, borderColor: '#F3E2CF' },
   problemToggle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   problemCheckbox: { fontSize: 16, color: colors.red },
@@ -498,20 +460,32 @@ const styles = StyleSheet.create({
   // Placeholder saat detail order belum tiba (mencegah data order lain terlihat).
   skeletonBox: { minHeight: 68, borderRadius: 9, backgroundColor: colors.surfaceAlt, marginTop: 2 },
   loadingText: { fontSize: 11, color: colors.faint, paddingVertical: 10 },
-  // Kelengkapan pick up
-  checklist: { borderWidth: 1, borderColor: colors.line, borderRadius: 10, overflow: 'hidden' },
-  checklistDivider: { height: 1, backgroundColor: colors.surfaceAlt },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, height: 52 },
-  checkAction: { width: 92, alignItems: 'flex-end', justifyContent: 'center' },
-  checkMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  checkMarkDone: { backgroundColor: '#E3F5EC' },
-  checkMarkTodo: { backgroundColor: '#FCF1DE' },
-  checkGlyph: { fontSize: 12, fontWeight: '800' },
-  checkGlyphDone: { color: '#1F7A4D' },
-  checkGlyphTodo: { color: '#A8610F' },
-  checkLabel: { flex: 1, fontSize: 12, color: colors.muted, fontWeight: '600' },
-  checkLabelDone: { color: colors.text },
-  checkStatus: { fontSize: 10, fontWeight: '800', color: '#1F7A4D' },
+  // Lampiran pick up: dua slot foto berlabel, ukuran identik.
+  slotRow: { flexDirection: 'row', gap: 10 },
+  slot: { flex: 1, minWidth: 0 },
+  slotLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, marginBottom: 6 },
+  slotEmpty: {
+    height: 108, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed',
+    borderColor: '#B9C8DA', backgroundColor: '#F4F8FD',
+    alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 8,
+  },
+  slotPlus: { fontSize: 24, color: colors.primaryMuted, lineHeight: 26 },
+  slotHint: { fontSize: 9, color: colors.muted, textAlign: 'center' },
+  slotFilled: {
+    height: 108, borderRadius: 10, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: '#F4F8FD', overflow: 'hidden',
+  },
+  slotImageWrap: { flex: 1 },
+  slotImage: { width: '100%', height: '100%' },
+  slotFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  slotFallbackGlyph: { fontSize: 26, color: colors.primaryMuted },
+  slotActions: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 5, backgroundColor: 'rgba(255,255,255,.94)',
+    borderTopWidth: 1, borderTopColor: colors.line,
+  },
+  slotAction: { fontSize: 10, fontWeight: '700', color: colors.primary },
+  slotActionDanger: { fontSize: 10, fontWeight: '700', color: colors.red },
   dualNote: {
     marginTop: 10, backgroundColor: '#FCF3E3', borderRadius: 8,
     borderLeftWidth: 3, borderLeftColor: '#A8610F', paddingVertical: 9, paddingHorizontal: 11,
