@@ -356,9 +356,10 @@ export default (pool) => {
       if (usedRows[0].used >= p.quota) {
         throw new Error(`Kuota produk ${p.name} sudah habis!`);
       }
+      // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
       const { rows } = await client.query(
-        `INSERT INTO orders (order_number, product_name, store_name, recipient_name, pickup_method, trader_id, product_id, store_id, order_amount)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        `INSERT INTO orders (order_number, product_name, store_name, recipient_name, pickup_method, trader_id, product_id, store_id, order_amount, requires_dual_evidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true) RETURNING id`,
         [input.order_number, p.name, st.name, input.recipient_name, input.pickup_method, input.trader_id ?? actorId, p.id, st.id, input.order_amount ?? null],
       );
       id = rows[0].id;
@@ -411,8 +412,17 @@ export default (pool) => {
   // Transisi data_masuk → proses_pick_up + simpan foto barcode pengambilan (atomik).
   // Foto baru opsional bila order sudah punya barcode terpasang ATAU sudah ada minimal
   // satu foto bukti (diupload lewat mana pun).
-  const applyPickup = async (orderId, actorId, file, note, hasEvidence = false) => {
-    if (!file && !hasEvidence) {
+  const applyPickup = async (orderId, actorId, file, note, hasEvidence = false, dual = null) => {
+    if (dual?.required) {
+      // Aturan bukti ganda (order sejak perubahan alur): barcode pick up DAN
+      // foto bukti order harus ada. File di request dihitung sebagai bukti order.
+      if (!dual.hasBarcode) {
+        throw new Error('Barcode pick up belum dilampirkan. Pesanan tanpa barcode tidak akan diproses.');
+      }
+      if (!file && !dual.hasOrderProof) {
+        throw new Error('Foto bukti order belum dilampirkan. Lengkapi bukti order sebelum memproses pick up.');
+      }
+    } else if (!file && !hasEvidence) {
       throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
     }
     const client = await pool.connect();
@@ -437,13 +447,23 @@ export default (pool) => {
     }
   };
 
+  // Status bukti untuk aturan ganda: barcode terpasang + ada foto source 'order'.
+  const dualState = async (o) => {
+    if (!o.requires_dual_evidence) return null;
+    const { rows } = await pool.query(
+      `SELECT 1 FROM order_photos WHERE order_id = $1 AND source = 'order' LIMIT 1`,
+      [o.id],
+    );
+    return { required: true, hasBarcode: !!o.barcode_path, hasOrderProof: !!rows[0] };
+  };
+
   const scan = async (code, actorId, file = null) => {
     const normalized = String(code).trim();
     const { rows } = await pool.query(`SELECT * FROM orders WHERE order_number = $1`, [normalized]);
     const o = rows[0];
     if (!o) return null;
     if (o.status !== 'data_masuk') return getOrder(o.id);
-    await applyPickup(o.id, actorId, file, 'Scan nomor pesanan', !!o.barcode_path || o.photo_count >= 1);
+    await applyPickup(o.id, actorId, file, 'Scan nomor pesanan', !!o.barcode_path || o.photo_count >= 1, await dualState(o));
     return getOrder(o.id);
   };
 
@@ -452,7 +472,7 @@ export default (pool) => {
     const o = rows[0];
     if (!o) throw new Error('Order tidak ditemukan');
     if (o.status !== 'data_masuk') throw new Error('Order ini sudah diproses sebelumnya.');
-    await applyPickup(id, actorId, file, 'Proses pick up', !!o.barcode_path || o.photo_count >= 1);
+    await applyPickup(id, actorId, file, 'Proses pick up', !!o.barcode_path || o.photo_count >= 1, await dualState(o));
     return getOrder(id);
   };
 
@@ -477,7 +497,7 @@ export default (pool) => {
     };
   };
 
-  const uploadPhoto = async (orderId, actorId, file = null) => {
+  const uploadPhoto = async (orderId, actorId, file = null, source = null) => {
     const s = await S();
     const o = await getOrder(orderId);
     if (o.photo_count >= s.max_photos) throw new Error(`Maksimal ${s.max_photos} foto per order.`);
@@ -491,7 +511,7 @@ export default (pool) => {
     );
     await pool.query(
       `INSERT INTO order_photos (order_id, file_path, file_name, mime_type, file_size, source, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [orderId, path, name, mime, size, file ? 'berkas' : 'kamera', actorId],
+      [orderId, path, name, mime, size, source ?? (file ? 'berkas' : 'kamera'), actorId],
     );
     return getOrder(orderId);
   };

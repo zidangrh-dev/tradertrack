@@ -83,6 +83,33 @@ const order = (over = {}) => ({
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
 const jpegBlob = (name = 'foto.jpg') => new Blob([JPEG], { type: 'image/jpeg' });
 
+// Order baru wajib bukti ganda: barcode pick up + foto bukti order.
+// Helper ini melengkapinya agar tes yang menguji hal lain tidak terhalang.
+async function attachBarcode(token, orderId, name = 'barcode.jpg') {
+  const fd = new FormData();
+  fd.append('photo', jpegBlob(name), name);
+  const res = await fetch(`${BASE}/api/orders/${orderId}/barcode`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+  });
+  return res.status;
+}
+async function attachOrderProof(token, orderId, name = 'bukti-order.jpg') {
+  const fd = new FormData();
+  fd.append('photo', jpegBlob(name), name);
+  fd.append('source', 'order');
+  const res = await fetch(`${BASE}/api/orders/${orderId}/photos`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+  });
+  return res.status;
+}
+/** Buat order lalu lengkapi kedua bukti — siap diproses pick up. */
+async function orderReadyForPickup(token, over = {}) {
+  const { data: o } = await client(token).post('/api/orders', order(over));
+  await attachBarcode(token, o.id);
+  await attachOrderProof(token, o.id);
+  return o;
+}
+
 async function postMultipart(token, url, { code, file, raw } = {}) {
   const fd = new FormData();
   if (code !== undefined) fd.append('code', code);
@@ -388,7 +415,7 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
   before(async () => { admin = await login('admin', 'admin'); trader = await login('nabila', 'trader'); });
 
   test('scan cocok + foto barcode → proses_pick_up + event + foto tersimpan', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
+    const o = await orderReadyForPickup(admin);
     const { status, data: r } = await postMultipart(admin, '/api/orders/scan', { code: o.order_number, file: 'scan.jpg' });
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
@@ -397,26 +424,24 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     assert.ok(d.events.some((e) => e.event_type === 'picked_up'));
     assert.ok(d.photos.some((p) => p.source === 'pickup'), 'foto barcode pengambilan tersimpan');
   });
-  test('scan tanpa foto pada order data_masuk → 400 (foto wajib)', async () => {
+  test('scan order tanpa barcode → 400 (pesanan tanpa barcode tidak diproses)', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
+    await attachOrderProof(admin, o.id); // bukti order ada, barcode belum
     const { status, data: r } = await client(admin).post('/api/orders/scan', { code: o.order_number });
     assert.equal(status, 400);
-    assert.match(r.error, /Foto barcode/);
-    // order tidak berubah status
+    assert.match(r.error, /barcode/i);
     const { data: after } = await client(admin).get(`/api/orders/${o.id}/detail`);
     assert.equal(after.status, 'data_masuk');
   });
-  test('scan tanpa foto pada order yang sudah punya barcode → izinkan', async () => {
+  test('scan order berbarcode tapi tanpa foto bukti order → 400', async () => {
     const { data: o } = await client(trader).post('/api/orders', order());
-    // attach barcode
-    const fd = new FormData();
-    fd.append('photo', jpegBlob('barcode.jpg'));
-    await fetch(`${BASE}/api/orders/${o.id}/barcode`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${trader}` },
-      body: fd,
-    });
-    // scan tanpa foto — barcode_path sudah ada → izinkan
+    await attachBarcode(trader, o.id);
+    const { status, data: r } = await client(admin).post('/api/orders/scan', { code: o.order_number });
+    assert.equal(status, 400);
+    assert.match(r.error, /bukti order/i);
+  });
+  test('scan tanpa foto saat kedua bukti lengkap → izinkan', async () => {
+    const o = await orderReadyForPickup(trader);
     const { status, data: r } = await client(admin).post('/api/orders/scan', { code: o.order_number });
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
@@ -453,32 +478,24 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     assert.equal(status, 403);
   });
 
-  test('POST /orders/:id/pickup tanpa foto → 400', async () => {
+  test('POST /orders/:id/pickup tanpa bukti apa pun → 400', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
     const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 400);
-    assert.match(r.error, /Foto barcode/);
+    assert.match(r.error, /barcode/i);
   });
-  test('POST /orders/:id/pickup tanpa foto saat barcode sudah terpasang → izinkan', async () => {
-    const { data: o } = await client(trader).post('/api/orders', order());
-    // lampirkan barcode pengambilan dulu
-    const fd = new FormData();
-    fd.append('photo', jpegBlob('barcode.jpg'));
-    await fetch(`${BASE}/api/orders/${o.id}/barcode`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${trader}` },
-      body: fd,
-    });
-    // pickup tanpa foto baru — barcode_path sudah ada
+  test('POST /orders/:id/pickup tanpa foto saat kedua bukti lengkap → izinkan', async () => {
+    const o = await orderReadyForPickup(trader);
+    // pickup tanpa foto baru — barcode & bukti order sudah ada
     const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     assert.ok(d.events.some((e) => e.event_type === 'picked_up'));
-    assert.equal(d.photos.length, 0, 'tidak ada foto baru ditambahkan');
+    assert.ok(!d.photos.some((p) => p.source === 'pickup'), 'tidak ada foto pickup baru ditambahkan');
   });
   test('POST /orders/:id/pickup dengan foto → proses_pick_up + event + foto pickup', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
+    const o = await orderReadyForPickup(admin);
     const { status, data: r } = await postMultipart(admin, `/api/orders/${o.id}/pickup`, { file: 'barcode-ambil.jpg' });
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
@@ -487,11 +504,17 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     assert.ok(d.photos.some((p) => p.source === 'pickup'));
     assert.ok(d.events.some((e) => e.event_type === 'picked_up' && e.note === 'Proses pick up'));
   });
-  test('POST /orders/:id/pickup tanpa foto saat ada foto bukti sudah diupload → izinkan', async () => {
+  test('POST /orders/:id/pickup dengan barcode saja (tanpa bukti order) → 400', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
-    // upload foto bukti (via /photos) dulu
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    // pickup tanpa foto baru — sudah ada 1 foto bukti
+    await attachBarcode(admin, o.id);
+    const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 400);
+    assert.match(r.error, /bukti order/i);
+    const { data: after } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.equal(after.status, 'data_masuk', 'status tidak berubah');
+  });
+  test('POST /orders/:id/pickup tanpa foto saat kedua bukti sudah diupload → izinkan', async () => {
+    const o = await orderReadyForPickup(admin);
     const { status, data: r } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
@@ -511,7 +534,7 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     assert.equal(status, 403);
   });
   test('trader proses pick up order miliknya + foto → 200', async () => {
-    const { data: o } = await client(trader).post('/api/orders', order());
+    const o = await orderReadyForPickup(trader);
     const { status, data: r } = await postMultipart(trader, `/api/orders/${o.id}/pickup`, { file: 'bukti-trader.jpg' });
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');
@@ -523,17 +546,10 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     const { data: o } = await client(trader).post('/api/orders', order());
     const { status, data: r } = await client(trader).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 400);
-    assert.match(r.error, /Foto barcode/);
+    assert.match(r.error, /barcode/i);
   });
-  test('trader proses pick up tanpa foto saat barcode sudah terpasang → izinkan', async () => {
-    const { data: o } = await client(trader).post('/api/orders', order());
-    const fd = new FormData();
-    fd.append('photo', jpegBlob('barcode.jpg'));
-    await fetch(`${BASE}/api/orders/${o.id}/barcode`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${trader}` },
-      body: fd,
-    });
+  test('trader proses pick up tanpa foto saat kedua bukti lengkap → izinkan', async () => {
+    const o = await orderReadyForPickup(trader);
     const { status, data: r } = await client(trader).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(status, 200);
     assert.equal(r.status, 'proses_pick_up');

@@ -102,6 +102,25 @@ assert.equal(both2.total, 2, 'dua toko terpilih memuat kedua order');
 const onlyA = await repo.listOrders({ store: [stores[0].id], q: 'TRK-ML-' });
 assert.equal(onlyA.total, 1, 'satu toko hanya memuat order toko itu');
 
+// Aturan bukti ganda di jalur SQL: barcode + foto bukti order wajib untuk order baru.
+const dualProduct = (await repo.listProducts()).find((x) => x.remaining_quota >= 3);
+const mkOrder = async (suffix) => repo.createOrder(
+  { order_number: `TRK-DUAL-${suffix}-${Date.now()}`, recipient_name: 'A', pickup_method: 'self_pick_up', product_id: dualProduct.id, store_id: stores[0].id },
+  actorId,
+);
+const noneYet = await mkOrder('A');
+await assert.rejects(() => repo.pickupOrder(noneYet.id, actorId), /barcode/i, 'tanpa bukti apa pun ditolak');
+
+const barcodeOnly = await mkOrder('B');
+await repo.attachBarcode(barcodeOnly.id, '/uploads/dual-barcode.jpg');
+await assert.rejects(() => repo.pickupOrder(barcodeOnly.id, actorId), /bukti order/i, 'barcode saja belum cukup');
+
+const complete = await mkOrder('C');
+await repo.attachBarcode(complete.id, '/uploads/dual-barcode2.jpg');
+await repo.uploadPhoto(complete.id, actorId, null, 'order');
+const picked = await repo.pickupOrder(complete.id, actorId);
+assert.equal(picked.status, 'proses_pick_up', 'kedua bukti lengkap → pick up jalan');
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');

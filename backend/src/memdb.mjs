@@ -246,6 +246,8 @@ export function createOrder(input, actorId) {
     product_id: p.id, store_id: st.id, status: 'data_masuk',
     order_amount: input.order_amount ?? null, note: null, is_problem: false,
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: now(),
+    // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
+    requires_dual_evidence: true,
     picked_up_at: null, completed_at: null, updated_at: now(),
   };
   db.orders.unshift(o);
@@ -256,9 +258,18 @@ export function createOrder(input, actorId) {
 export const getOrder = (id) => withMeta(findOrder(id));
 
 function applyPickup(o, actorId, file, note) {
-  // Foto baru opsional bila order sudah punya barcode pengambilan terpasang ATAU
-  // sudah ada minimal satu foto bukti (diupload lewat mana pun).
-  if (!file && !o.barcode_path && o.photo_count < 1) {
+  if (o.requires_dual_evidence) {
+    // Aturan bukti ganda (order sejak perubahan alur): barcode pick up DAN foto
+    // bukti order harus ada. File di request dihitung sebagai bukti order.
+    if (!o.barcode_path) {
+      throw new Error('Barcode pick up belum dilampirkan. Pesanan tanpa barcode tidak akan diproses.');
+    }
+    const hasOrderProof = file || db.photos.some((p) => p.order_id === o.id && p.source === 'order');
+    if (!hasOrderProof) {
+      throw new Error('Foto bukti order belum dilampirkan. Lengkapi bukti order sebelum memproses pick up.');
+    }
+  } else if (!file && !o.barcode_path && o.photo_count < 1) {
+    // Order lama: foto baru opsional bila sudah ada barcode ATAU minimal satu foto.
     throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
   }
   o.status = 'proses_pick_up';
@@ -329,7 +340,7 @@ export function detail(id) {
   return { ...withMeta(o), photos: photos.map((p) => ({ id: p.id, file_path: p.file_path, source: p.source })), events };
 }
 
-export function uploadPhoto(orderId, actorId, file = null) {
+export function uploadPhoto(orderId, actorId, file = null, source = null) {
   const o = findOrder(orderId);
   if (o.photo_count >= db.settings.max_photos) throw new Error(`Maksimal ${db.settings.max_photos} foto per order.`);
   o.photo_count += 1;
@@ -340,7 +351,7 @@ export function uploadPhoto(orderId, actorId, file = null) {
     file_name: file ? file.originalname : `bukti-${o.photo_count}.jpg`,
     mime_type: file ? file.mimetype : 'image/jpeg',
     file_size: file ? file.size : 1024,
-    source: file ? 'berkas' : 'kamera', uploaded_by: actorId, created_at: now(),
+    source: source ?? (file ? 'berkas' : 'kamera'), uploaded_by: actorId, created_at: now(),
   });
   return withMeta(o);
 }

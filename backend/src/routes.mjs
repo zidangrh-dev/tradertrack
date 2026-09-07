@@ -9,6 +9,8 @@ import { getRepo } from './repo.mjs';
 
 const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
 const STATUS_WHITELIST = ['data_masuk', 'selesai'];
+// 'order' menandai foto bukti order — syarat pick up bersama barcode.
+const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas'];
 
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/bmp']);
 const MAX_MULTER_MB = 50; // pagar keras DoS; batas bisnis diambil dari setting max_file_mb.
@@ -250,7 +252,9 @@ const upload = multer({
     // Foto bukti wajib benar-benar diunggah — larang pemalsuan catatan (vuln-0002).
     if (!req.file) return res.status(400).json({ error: 'Berkas gambar wajib diunggah.' });
     await validateImage(req.file, uploadDir);
-    const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file);
+    // 'order' = foto bukti order (syarat pick up); selain itu bukti penyelesaian.
+    const source = PHOTO_SOURCE_WHITELIST.includes(req.body?.source) ? req.body.source : null;
+    const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file, source);
     emit();
     ok(res, updated);
   }));

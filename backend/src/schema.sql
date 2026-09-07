@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS orders (
   problem_reason text,
   barcode_path text,
   photo_count integer NOT NULL DEFAULT 0,
+  -- Order yang dibuat sejak aturan bukti ganda berlaku: wajib barcode pick up
+  -- DAN foto bukti order sebelum bisa diproses. Order lama tetap false.
+  requires_dual_evidence boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   picked_up_at timestamptz,
   completed_at timestamptz,
@@ -60,6 +63,9 @@ CREATE TABLE IF NOT EXISTS orders (
 
 -- Bersihkan warisan tabel lama (skema sebelumnya).
 DROP TABLE IF EXISTS master_data CASCADE;
+
+-- Kolom menyusul untuk database yang dibuat sebelum aturan bukti ganda.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS requires_dual_evidence boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
