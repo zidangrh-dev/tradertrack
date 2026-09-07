@@ -49,6 +49,8 @@ export interface Order {
   problem_reason: string | null;
   barcode_path: string | null;
   photo_count: number;
+  /** Order sejak aturan alur baru: wajib barcode pick up + foto bukti order. */
+  requires_dual_evidence?: boolean;
   created_at: string;
   picked_up_at: string | null;
   completed_at: string | null;

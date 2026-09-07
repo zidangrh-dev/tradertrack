@@ -50,11 +50,15 @@ export interface UserRow extends Omit<User, 'password'> {
 /* ---------- Konfigurasi ---------- */
 
 // URL API bertingkat:
+// 0. EXPO_PUBLIC_API_URL (mis. frontend/.env.local) — menang atas semuanya.
+//    Dipakai agar web dev tidak nyasar ke server produksi.
 // 1. Expo Go / dev di perangkat native — turunkan dari host dev server
 //    (hostUri, mis. "192.168.10.77:8081" atau "10.0.2.2:8081") → port 4000.
 //    Otomatis mengikuti IP laptop yang sedang dipakai, tanpa edit manual.
 // 2. Web & build produksi — pakai extra.apiUrl dari app.json, fallback localhost.
 function resolveApiUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL;
+  if (fromEnv) return fromEnv.replace(/\/+$/, '');
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri && Platform.OS !== 'web') {
     const host = hostUri.split(':')[0];
@@ -230,9 +234,13 @@ const remote = {
     return http<OrderView>(`/api/orders/${id}/barcode`, { method: 'POST', form: await photoForm(file) });
   },
   detail: (id: string) => http<OrderDetail>(`/api/orders/${id}/detail`),
-  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }) => {
+  /** source 'order' menandai foto bukti order (syarat pick up bersama barcode). */
+  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order') => {
     if (!file) return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST' });
-    return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST', form: await photoForm(file) });
+    return http<OrderView>(`/api/orders/${id}/photos`, {
+      method: 'POST',
+      form: await photoForm(file, source ? { source } : undefined),
+    });
   },
   deletePhoto: (orderId: string, photoId: string) => http<OrderView>(`/api/orders/${orderId}/photos/${photoId}`, { method: 'DELETE' }),
   completeOrder: (id: string, note: string) => http<OrderView>(`/api/orders/${id}/complete`, { method: 'PATCH', body: { note } }),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '../lib/api';
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
@@ -18,25 +18,32 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
   const [storeId, setStoreId] = useState('');
   const [amount, setAmount] = useState('');
+  const [orderImg, setOrderImg] = useState<PickedPhoto | null>(null);
   const [barcodeImg, setBarcodeImg] = useState<PickedPhoto | null>(null);
   const [busy, setBusy] = useState(false);
   const [showTrader, setShowTrader] = useState(false);
-  // Isi sheet maksimal ±408px: dua kolom hanya muat jika jendela ≥ ±480px.
-  // Di HP susun satu kolom agar trigger Select (min-width 180px) tidak meluber.
-  const isNarrow = useWindowDimensions().width < 480;
+  // Dua kolom juga di HP (sama seperti web) — Select mode field tidak lagi
+  // memaksa lebar minimum 180px. Hanya layar sangat kecil yang ditumpuk.
+  const isNarrow = useWindowDimensions().width < 360;
 
   useEffect(() => {
     if (!open || !user) return;
     setOrderNumber(''); setRecipient('');
-    setMethod('self_pick_up'); setAmount(''); setProductId(''); setStoreId(''); setBarcodeImg(null);
+    setMethod('self_pick_up'); setAmount(''); setProductId(''); setStoreId('');
+    setOrderImg(null); setBarcodeImg(null);
     setTraderId(user.id);
     if (isAdmin) api.listUsers().then((us) => setTraders(us.filter((u) => u.is_active)));
     api.listProducts().then(setProducts).catch(() => setProducts([]));
     api.listMarketplaceStores().then(setStores).catch(() => setStores([]));
   }, [open, user, isAdmin]);
 
+  const pickOrderProof = async () => {
+    const photo = await pickPhoto('Lampirkan foto bukti order');
+    if (photo) setOrderImg(photo);
+  };
   const pickBarcode = async () => {
-    setBarcodeImg(await pickPhoto('Lampirkan barcode'));
+    const photo = await pickPhoto('Lampirkan barcode pick up');
+    if (photo) setBarcodeImg(photo);
   };
 
   if (!user) return null;
@@ -72,8 +79,19 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
         store_id: storeId,
         order_amount: amount ? Number(amount) : null,
       });
+      // Order tetap tersimpan bila lampiran gagal — trader diberi tahu mana yang
+      // perlu diulang lewat modal detail, tidak ada order hantu.
+      const failed: string[] = [];
+      if (orderImg) {
+        try { await api.uploadPhoto(order.id, orderImg, 'order'); } catch { failed.push('foto bukti order'); }
+      }
       if (barcodeImg) {
-        await api.attachBarcode(order.id, barcodeImg);
+        try { await api.attachBarcode(order.id, barcodeImg); } catch { failed.push('barcode pick up'); }
+      }
+      if (failed.length) {
+        notify('Order tersimpan, lampiran gagal', `Gagal mengunggah ${failed.join(' dan ')}. Lampirkan ulang dari detail order sebelum pick up.`);
+      } else if (!orderImg || !barcodeImg) {
+        notify('Order tersimpan', 'Lengkapi foto bukti order dan barcode pick up agar pesanan bisa diproses.');
       }
       onCreated();
       onClose();
@@ -103,23 +121,31 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
             <View style={styles.column}>
               <Select
                 block
+                field
                 label="Pilih produk"
                 value={productId}
                 options={productOptions}
                 onChange={setProductId}
                 placeholder="Pilih produk"
               />
-              {selectedProduct && <Text style={styles.locked}>{selectedProduct.name} · Sisa {selectedProduct.remaining_quota}</Text>}
+              {/* Ruang info sisa kuota selalu disediakan agar tinggi kolom tidak
+                  berubah saat produk dipilih (nama produk sudah tampil di trigger). */}
+              <Text style={styles.quotaHint} numberOfLines={1}>
+                {selectedProduct ? `Sisa kuota ${selectedProduct.remaining_quota} dari ${selectedProduct.quota}` : ' '}
+              </Text>
             </View>
             <View style={styles.column}>
               <Select
                 block
+                field
                 label="Pilih toko"
                 value={storeId}
                 options={storeOptions}
                 onChange={setStoreId}
                 placeholder="Pilih toko"
               />
+              {/* Penyeimbang tinggi terhadap info kuota di kolom kiri. */}
+              <Text style={styles.quotaHint}> </Text>
             </View>
           </View>
 
@@ -134,13 +160,19 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
 
           <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
             <View style={styles.column}>
-              <Select block label="Metode pengambilan" value={method} options={pickupMethodOptions} onChange={(v) => setMethod(v as 'zaydan_ambilan_gjm' | 'self_pick_up')} placeholder="Pilih metode" />
+              <Select block field label="Metode pengambilan" value={method} options={pickupMethodOptions} onChange={(v) => setMethod(v as 'zaydan_ambilan_gjm' | 'self_pick_up')} placeholder="Pilih metode" />
             </View>
             <View style={styles.column}>
               {isAdmin ? (
-                <Select block label="Nama trader" value={traderId} options={traderOptions} onChange={setTraderId} placeholder="Pilih trader" onAdd={addTrader} addLabel="Tambah trader baru" />
+                <Select block field label="Nama trader" value={traderId} options={traderOptions} onChange={setTraderId} placeholder="Pilih trader" onAdd={addTrader} addLabel="Tambah trader baru" />
               ) : (
-                <Text style={styles.locked}>{user.display_name}</Text>
+                // Trader terkunci ke dirinya sendiri — bentuknya tetap sebaris kolom lain.
+                <>
+                  <Text style={styles.readonlyLabel}>Nama trader</Text>
+                  <View style={styles.readonlyBox}>
+                    <Text style={styles.readonlyText} numberOfLines={1}>{user.display_name}</Text>
+                  </View>
+                </>
               )}
             </View>
           </View>
@@ -150,26 +182,35 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
           </View>
 
           <View style={styles.formBlock}>
-        {barcodeImg ? (
-          <View style={styles.barcodeBox}>
-            <Pressable onPress={pickBarcode} style={styles.barcodePreview}>
-              <Text style={styles.barcodeGlyph}>▣</Text>
-              <View>
-                <Text style={styles.barcodeLabel}>Barcode terpasang</Text>
-                <Text style={styles.barcodeHint}>Ketuk untuk mengganti gambar</Text>
+            <Text style={styles.attachTitle}>Lampiran pick up</Text>
+            <View style={[styles.twoColumn, isNarrow && styles.twoColumnStacked]}>
+              <View style={styles.column}>
+                <AttachSlot
+                  label="Foto bukti order"
+                  hint="Tangkapan layar pesanan marketplace"
+                  photo={orderImg}
+                  onPick={pickOrderProof}
+                  onClear={() => setOrderImg(null)}
+                />
               </View>
-            </Pressable>
-            <Pressable onPress={() => setBarcodeImg(null)} hitSlop={6}>
-              <Text style={styles.barcodeRemove}>✕ Hapus</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Pressable onPress={pickBarcode} style={({ pressed }) => [styles.barcodeAdd, pressed && { opacity: 0.85 }]}>
-            <Text style={styles.barcodeAddIcon}>＋</Text>
-            <Text style={styles.barcodeAddLabel}>Lampirkan gambar barcode pengambilan</Text>
-            <Text style={styles.barcodeAddHint}>Ambil dari Kamera / Pilih dari Galeri</Text>
-          </Pressable>
-          )}
+              <View style={styles.column}>
+                <AttachSlot
+                  label="Barcode pick up"
+                  hint="Barcode/resi untuk pengambilan paket"
+                  photo={barcodeImg}
+                  onPick={pickBarcode}
+                  onClear={() => setBarcodeImg(null)}
+                />
+              </View>
+            </View>
+            {(!orderImg || !barcodeImg) && (
+              <View style={styles.attachNote}>
+                <Text style={styles.attachNoteText}>
+                  Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lampiran bisa dilengkapi
+                  nanti dari detail order, tetapi harus lengkap sebelum masuk proses pick up.
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -180,6 +221,41 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
 
       <TraderForm open={showTrader} onClose={() => setShowTrader(false)} onSave={async (u, n, p) => { await createTrader(u, n, p); setShowTrader(false); }} />
     </Sheet>
+  );
+}
+
+/** Satu slot lampiran: kosong → area unggah; terisi → pratinjau + ganti/hapus. */
+function AttachSlot({ label, hint, photo, onPick, onClear }: {
+  label: string;
+  hint: string;
+  photo: PickedPhoto | null;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <View>
+      <Text style={styles.attachLabel}>{label}</Text>
+      {photo ? (
+        <View style={styles.attachFilled}>
+          <Pressable onPress={onPick} style={styles.attachPreview} accessibilityLabel={`Ganti ${label}`}>
+            <Image source={{ uri: photo.uri }} style={styles.attachThumb} resizeMode="cover" />
+            <View style={styles.attachInfo}>
+              <Text style={styles.attachOk} numberOfLines={1}>Terlampir</Text>
+              <Text style={styles.attachSub} numberOfLines={1}>Ketuk untuk mengganti</Text>
+            </View>
+          </Pressable>
+          <Pressable onPress={onClear} hitSlop={8} accessibilityLabel={`Hapus ${label}`}>
+            <Text style={styles.attachRemove}>✕</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable onPress={onPick} style={({ pressed }) => [styles.attachEmpty, pressed && { opacity: 0.85 }]}>
+          <Text style={styles.attachIcon}>＋</Text>
+          <Text style={styles.attachAdd}>Lampirkan foto</Text>
+          <Text style={styles.attachSub} numberOfLines={2}>{hint}</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -219,26 +295,48 @@ function TraderForm({ open, onClose, onSave }: { open: boolean; onClose: () => v
 const styles = StyleSheet.create({
   formStack: { gap: 20 },
   formBlock: { width: '100%' },
-  twoColumn: { flexDirection: 'row', gap: 14 },
+  // Kolom rapat (10) supaya pasangan kiri-kanan terbaca satu kesatuan; saat
+  // ditumpuk di HP jaraknya sedikit lebih lega karena jadi baris terpisah.
+  twoColumn: { flexDirection: 'row', gap: 10 },
   twoColumnStacked: { flexDirection: 'column', gap: 14 },
   column: { flex: 1, minWidth: 0 },
   formActions: { marginTop: 26, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   locked: { fontSize: 11, color: colors.muted, marginTop: 6, backgroundColor: '#F4F6F8', borderRadius: 8, padding: 11, borderWidth: 1, borderColor: '#E2E8F0' },
-  barcodeAdd: {
-    borderWidth: 1, borderStyle: 'dashed', borderColor: '#AAB7C5', backgroundColor: '#F8FAFC',
-    borderRadius: radius.md, paddingVertical: 18, alignItems: 'center', gap: 3,
+  // Kolom hanya-baca: setinggi Field/Select agar baris tetap seragam.
+  readonlyLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  readonlyBox: {
+    height: 42, marginTop: 6, justifyContent: 'center', paddingHorizontal: 12,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: '#F7F9FB',
   },
-  barcodeAddIcon: { fontSize: 22, color: colors.primaryMuted, lineHeight: 24 },
-  barcodeAddLabel: { fontSize: 11, fontWeight: '700', color: colors.primary },
-  barcodeAddHint: { fontSize: 9, color: colors.muted },
-  barcodeBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2,
-    backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#D8DEE6', borderRadius: radius.md, padding: 12,
+  readonlyText: { fontSize: 13, color: colors.muted },
+  // Tinggi tetap: ruang tersedia baik saat kosong maupun terisi.
+  quotaHint: { fontSize: 10, color: colors.muted, marginTop: 6, height: 14, lineHeight: 14 },
+  attachTitle: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 },
+  attachLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, marginBottom: 6 },
+  // Tinggi dipatok (bukan minHeight): kedua kotak identik, baik kosong maupun
+  // terisi, dan panjang teks hint tidak lagi mengubah ukuran.
+  attachEmpty: {
+    height: 96,
+    borderWidth: 1, borderStyle: 'dashed', borderColor: '#B9C8DA', borderRadius: radius.md,
+    backgroundColor: '#F7FAFD', paddingHorizontal: 12, alignItems: 'center', gap: 3, justifyContent: 'center',
   },
-  barcodePreview: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  barcodeGlyph: { fontSize: 26, color: colors.primaryMuted },
-  barcodeLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
-  barcodeHint: { fontSize: 9, color: colors.faint, marginTop: 2 },
-  barcodeRemove: { fontSize: 11, color: colors.red, fontWeight: '700' },
+  attachIcon: { fontSize: 20, color: colors.primaryMuted, lineHeight: 22 },
+  attachAdd: { fontSize: 11, fontWeight: '700', color: colors.primary },
+  attachSub: { fontSize: 9, color: colors.faint, textAlign: 'center', lineHeight: 13 },
+  attachFilled: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, height: 96,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    backgroundColor: colors.surface, padding: 10,
+  },
+  attachPreview: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
+  attachThumb: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
+  attachInfo: { flex: 1, minWidth: 0 },
+  attachOk: { fontSize: 11, fontWeight: '800', color: '#1F7A4D' },
+  attachRemove: { fontSize: 13, color: colors.red, fontWeight: '800', paddingHorizontal: 4 },
+  attachNote: {
+    marginTop: 10, backgroundColor: '#FCF3E3', borderRadius: radius.sm,
+    borderLeftWidth: 3, borderLeftColor: '#A8610F', paddingVertical: 9, paddingHorizontal: 11,
+  },
+  attachNoteText: { fontSize: 10, color: '#8A5310', lineHeight: 15 },
 });

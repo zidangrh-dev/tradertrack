@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
@@ -25,29 +25,54 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (order) api.detail(order.id).then(setDetail);
-  }, [order]);
+  // Modal ini tidak pernah di-unmount (selalu dirender dengan prop order), jadi
+  // state HARUS dibersihkan saat order berganti — kalau tidak, detail order
+  // sebelumnya (foto, catatan, riwayat) sempat tampil di order berikutnya.
+  // Kunci pada order?.id: objek order berganti identitas tiap refresh realtime.
+  const orderId = order?.id ?? null;
+  // Selalu menunjuk order yang sedang dibuka — dipakai menolak respons basi.
+  const orderIdRef = useRef<string | null>(orderId);
+  useEffect(() => { orderIdRef.current = orderId; }, [orderId]);
 
   useEffect(() => {
-    setProblem(detail?.is_problem ?? false);
-    setReason(detail?.problem_reason ?? '');
-    setNote(detail?.note ?? '');
+    // Buang detail lama lebih dulu; jangan pernah menampilkan data order lain.
+    setDetail(null);
+    setPreview(null);
+    setNote('');
+    setProblem(false);
+    setReason('');
+    if (!orderId) return;
+    let cancelled = false;
+    api.detail(orderId)
+      .then((d) => { if (!cancelled) setDetail(d); })
+      .catch((e) => { if (!cancelled) notify('Gagal memuat detail', (e as Error).message); });
+    // Respons yang datang terlambat diabaikan — cegah detail order lama
+    // menimpa order yang sedang dibuka (race saat berpindah cepat).
+    return () => { cancelled = true; };
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!detail) return;
+    setProblem(detail.is_problem ?? false);
+    setReason(detail.problem_reason ?? '');
+    setNote(detail.note ?? '');
   }, [detail]);
 
   const mutate = useCallback(async (fn: () => Promise<unknown>) => {
+    if (!orderId) return;
     setBusy(true);
     try {
       await fn();
-      const fresh = order ? await api.detail(order.id) : null;
-      setDetail(fresh);
+      const fresh = await api.detail(orderId);
+      // Order mungkin sudah berganti saat mutasi berjalan — jangan menimpa.
+      setDetail((prev) => (orderId === orderIdRef.current ? fresh : prev));
       onChanged?.();
     } catch (e) {
       notify('Gagal', (e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [order, onChanged]);
+  }, [orderId, onChanged]);
 
   const settings = useSettings();
 
@@ -56,6 +81,23 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // agar modal otomatis berubah ke step selanjutnya tanpa tutup-buka.
   const status = detail?.status ?? order.status;
   const canComplete = !!detail && detail.photo_count >= settings.min_photos && isAdmin;
+
+  // Aturan bukti ganda: order baru wajib barcode pick up + foto bukti order.
+  const dualRequired = !!order.requires_dual_evidence && status === 'data_masuk';
+  const hasBarcode = !!order.barcode_path;
+  const hasOrderProof = !!detail?.photos.some((p) => p.source === 'order');
+  const dualReady = hasBarcode && hasOrderProof;
+
+  const attachOrderProof = async () => {
+    const photo = await pickPhoto('Foto bukti order');
+    if (!photo) return;
+    mutate(() => api.uploadPhoto(order.id, photo, 'order'));
+  };
+  const attachBarcode = async () => {
+    const photo = await pickPhoto('Foto barcode pick up');
+    if (!photo) return;
+    mutate(() => api.attachBarcode(order.id, photo));
+  };
 
   const finish = () => mutate(() => api.completeOrder(order.id, note.trim()));
   const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()));
@@ -91,7 +133,11 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
         {isAdmin && (
           <>
             <Text style={styles.section}>Catatan penyelesaian</Text>
-            <TextInput style={styles.textarea} multiline placeholder="Tulis catatan kondisi barang atau kendala..." value={note} onChangeText={setNote} />
+            {detail ? (
+              <TextInput style={styles.textarea} multiline placeholder="Tulis catatan kondisi barang atau kendala..." value={note} onChangeText={setNote} />
+            ) : (
+              <View style={styles.skeletonBox} />
+            )}
           </>
         )}
 
@@ -129,22 +175,23 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           </>
         )}
 
-        {isAdmin && (
+        {isAdmin && detail && (
           <View style={styles.problemBox}>
-            <Pressable onPress={() => setProblem((p) => !p)} style={styles.problemToggle}>
+            <Pressable onPress={() => setProblem((p) => !p)} style={styles.problemToggle} disabled={busy}>
               <Text style={styles.problemCheckbox}>{problem ? '☑' : '☐'}</Text>
               <Text style={styles.problemLabel}>Tandai order ini bermasalah</Text>
             </Pressable>
             {problem && (
               <>
                 <TextInput style={styles.textarea} placeholder="Alasan kendala..." value={reason} onChangeText={setReason} />
-                <Button label="Simpan tanda bermasalah" variant="secondary" fullWidth onPress={saveProblem} />
+                <Button label="Simpan tanda bermasalah" variant="secondary" fullWidth disabled={busy} onPress={saveProblem} />
               </>
             )}
           </View>
         )}
 
         <Text style={styles.section}>Riwayat status</Text>
+        {!detail && <Text style={styles.loadingText}>Memuat detail order…</Text>}
         {detail?.events.map((e) => (
           <View key={e.id} style={styles.eventRow}>
             <View style={[styles.eventDot, e.event_type === 'completed' && { backgroundColor: colors.green }, e.event_type === 'problem' && { backgroundColor: colors.red }]} />
@@ -158,21 +205,58 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           </View>
         ))}
 
+        {dualRequired && detail && (isAdmin || isOwner) && (
+          <>
+            <Text style={styles.section}>Kelengkapan pick up</Text>
+            <View style={styles.checklist}>
+              <ChecklistRow
+                label="Foto bukti order"
+                done={hasOrderProof}
+                busy={busy}
+                onAttach={attachOrderProof}
+              />
+              <View style={styles.checklistDivider} />
+              <ChecklistRow
+                label="Barcode pick up"
+                done={hasBarcode}
+                busy={busy}
+                onAttach={attachBarcode}
+              />
+            </View>
+            {!dualReady && (
+              <View style={styles.dualNote}>
+                <Text style={styles.dualNoteText}>
+                  Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lengkapi keduanya
+                  agar order bisa masuk proses pick up.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
         {(isAdmin || (isOwner && status === 'data_masuk')) && (
           <View style={styles.actions}>
             {status === 'selesai' && isAdmin ? (
               <Button label="Buka kembali order" variant="secondary" onPress={reopen} />
             ) : status === 'data_masuk' ? (
               <>
-                <Button label="Proses pick up" variant="soft" style={{ flex: 1 }} onPress={async () => {
-                  if (order.barcode_path || (detail?.photo_count ?? 0) > 0) {
-                    mutate(() => api.pickup(order.id));
-                    return;
-                  }
-                  const photo = await pickPhoto('Foto barcode pengambilan');
-                  if (!photo) return notify('Foto wajib', 'Foto barcode pengambilan wajib dilampirkan sebelum memproses pick up.');
-                  mutate(() => api.pickup(order.id, photo));
-                }} />
+                <Button
+                  label={!detail ? 'Memuat…' : dualRequired && !dualReady ? 'Lengkapi bukti untuk pick up' : 'Proses pick up'}
+                  variant="soft"
+                  style={{ flex: 1 }}
+                  // Aksi terkunci sampai detail order yang benar tiba — cegah
+                  // aksi terkirim ke order yang salah saat berpindah cepat.
+                  disabled={busy || !detail || (dualRequired && !dualReady)}
+                  onPress={async () => {
+                    if (order.barcode_path || (detail?.photo_count ?? 0) > 0) {
+                      mutate(() => api.pickup(order.id));
+                      return;
+                    }
+                    const photo = await pickPhoto('Foto barcode pengambilan');
+                    if (!photo) return notify('Foto wajib', 'Foto barcode pengambilan wajib dilampirkan sebelum memproses pick up.');
+                    mutate(() => api.pickup(order.id, photo));
+                  }}
+                />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
               </>
             ) : (
@@ -200,6 +284,34 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
         <PhotoPreview filePath={preview} />
       </Sheet>
     </Sheet>
+  );
+}
+
+/** Satu syarat kelengkapan pick up: status terpenuhi + aksi melampirkan. */
+function ChecklistRow({ label, done, busy, onAttach }: {
+  label: string;
+  done: boolean;
+  busy: boolean;
+  onAttach: () => void;
+}) {
+  return (
+    <View style={styles.checkRow}>
+      <View style={[styles.checkMark, done ? styles.checkMarkDone : styles.checkMarkTodo]}>
+        <Text style={[styles.checkGlyph, done ? styles.checkGlyphDone : styles.checkGlyphTodo]}>
+          {done ? '✓' : '!'}
+        </Text>
+      </View>
+      <Text style={[styles.checkLabel, done && styles.checkLabelDone]} numberOfLines={1}>{label}</Text>
+      {/* Slot aksi berlebar & bertinggi tetap: baris terlampir dan belum
+          terlampir punya tinggi sama, tidak ada lompatan saat status berubah. */}
+      <View style={styles.checkAction}>
+        {done ? (
+          <Text style={styles.checkStatus}>Terlampir</Text>
+        ) : (
+          <Button label="Lampirkan" variant="secondary" size="sm" disabled={busy} onPress={onAttach} />
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -383,6 +495,28 @@ const styles = StyleSheet.create({
   eventActor: { color: colors.muted, fontWeight: '400' },
   eventNote: { fontSize: 10, color: '#7E8B98', marginTop: 2 },
   eventTime: { fontSize: 9, color: colors.faint },
+  // Placeholder saat detail order belum tiba (mencegah data order lain terlihat).
+  skeletonBox: { minHeight: 68, borderRadius: 9, backgroundColor: colors.surfaceAlt, marginTop: 2 },
+  loadingText: { fontSize: 11, color: colors.faint, paddingVertical: 10 },
+  // Kelengkapan pick up
+  checklist: { borderWidth: 1, borderColor: colors.line, borderRadius: 10, overflow: 'hidden' },
+  checklistDivider: { height: 1, backgroundColor: colors.surfaceAlt },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, height: 52 },
+  checkAction: { width: 92, alignItems: 'flex-end', justifyContent: 'center' },
+  checkMark: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  checkMarkDone: { backgroundColor: '#E3F5EC' },
+  checkMarkTodo: { backgroundColor: '#FCF1DE' },
+  checkGlyph: { fontSize: 12, fontWeight: '800' },
+  checkGlyphDone: { color: '#1F7A4D' },
+  checkGlyphTodo: { color: '#A8610F' },
+  checkLabel: { flex: 1, fontSize: 12, color: colors.muted, fontWeight: '600' },
+  checkLabelDone: { color: colors.text },
+  checkStatus: { fontSize: 10, fontWeight: '800', color: '#1F7A4D' },
+  dualNote: {
+    marginTop: 10, backgroundColor: '#FCF3E3', borderRadius: 8,
+    borderLeftWidth: 3, borderLeftColor: '#A8610F', paddingVertical: 9, paddingHorizontal: 11,
+  },
+  dualNoteText: { fontSize: 10, color: '#8A5310', lineHeight: 15 },
   actions: { flexDirection: 'row', gap: 9, marginTop: 18 },
   actionsChild: { flex: 1 },
   previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 8 },
