@@ -120,7 +120,7 @@ export function PasswordField({ label, hint, style, ...rest }: TextInputProps & 
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
       <View style={styles.pwWrap}>
         <TextInput
-          style={[styles.input, styles.pwInput, webNoOutline, style]}
+          style={[styles.input, styles.pwInput, webNoOutline, style, { marginTop: 0 }]}
           placeholderTextColor={colors.faint}
           secureTextEntry={!show}
           {...rest}
@@ -795,10 +795,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
   },
-  // Field kata sandi: wrapper + tombol mata di sisi kanan
-  pwWrap: { position: 'relative', justifyContent: 'center' },
-  pwInput: { paddingRight: 42 },
-  pwToggle: { position: 'absolute', right: 6, top: 6, width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  // Field kata sandi: wrapper + tombol mata di sisi kanan.
+  // Margin pindah ke wrapper supaya toggle (top:0/bottom:0) pas di tengah input.
+  pwWrap: { position: 'relative', marginTop: 6 },
+  pwInput: { paddingRight: 44 },
+  pwToggle: { position: 'absolute', right: 4, top: 0, bottom: 0, width: 38, alignItems: 'center', justifyContent: 'center' },
   selectRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   // Sheet
   modalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
