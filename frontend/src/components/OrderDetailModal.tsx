@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { api, type OrderDetail, type OrderView } from '../lib/api';
 import { notify, confirmAsk } from '../lib/notify';
 import { pickPhoto } from '../lib/photo';
@@ -244,15 +246,106 @@ function PhotoThumb({ filePath, caption, onPress, onDelete }: { filePath: string
 
 function PhotoPreview({ filePath }: { filePath: string | null }) {
   const uri = useFileUrl(filePath);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [uri]);
   if (!filePath) return null;
   return (
     <View style={styles.previewBox}>
-      {uri && !failed ? <Image source={{ uri }} style={styles.previewImg} resizeMode="contain" onError={() => setFailed(true)} /> : (
-        <Text style={styles.previewPlaceholder}>▣</Text>
-      )}
+      <ZoomableImage uri={uri} />
       <Text style={styles.previewCaption}>{filePath.split('/').pop()}</Text>
+      <Text style={styles.previewHint}>Cubit untuk zoom · seret untuk geser · ketuk dua kali untuk kembali</Text>
+    </View>
+  );
+}
+
+// Foto bisa dicubit (pinch) untuk zoom 1×–3×, digeser saat membesar, dan
+// ketuk dua kali untuk kembali ke ukuran semula (RNGH + Reanimated 4).
+function ZoomableImage({ uri }: { uri: string | null }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const savedTx = useSharedValue(0);
+  const savedTy = useSharedValue(0);
+  const areaW = useSharedValue(1);
+  const areaH = useSharedValue(1);
+  const MAX = 3;
+
+  // Reset zoom saat foto berganti (Sheet pratinjau dipakai ulang).
+  useEffect(() => {
+    scale.value = 1; savedScale.value = 1;
+    tx.value = 0; ty.value = 0; savedTx.value = 0; savedTy.value = 0;
+  }, [uri, scale, savedScale, tx, ty, savedTx, savedTy]);
+
+  const clamp = (v: number, lo: number, hi: number) => {
+    'worklet';
+    return Math.min(hi, Math.max(lo, v));
+  };
+
+  // Jaga agar foto membesar tidak digeser keluar dari area tampil.
+  const clampPan = () => {
+    'worklet';
+    if (scale.value <= 1.01) { tx.value = 0; ty.value = 0; return; }
+    const mx = Math.max(0, (areaW.value * (scale.value - 1)) / 2);
+    const my = Math.max(0, (areaH.value * (scale.value - 1)) / 2);
+    tx.value = clamp(tx.value, -mx, mx);
+    ty.value = clamp(ty.value, -my, my);
+  };
+
+  const pinch = Gesture.Pinch()
+    .onStart(() => { savedScale.value = scale.value; })
+    .onUpdate((e) => { scale.value = clamp(savedScale.value * e.scale, 1, MAX); })
+    .onEnd(() => { savedScale.value = scale.value; clampPan(); });
+
+  const pan = Gesture.Pan()
+    .onStart(() => { savedTx.value = tx.value; savedTy.value = ty.value; })
+    .onUpdate((e) => {
+      if (scale.value <= 1.01) return;
+      tx.value = savedTx.value + e.translationX;
+      ty.value = savedTy.value + e.translationY;
+    })
+    .onEnd(() => clampPan());
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1.01) {
+        scale.value = 1; savedScale.value = 1; tx.value = 0; ty.value = 0;
+      } else {
+        scale.value = 2.5; savedScale.value = 2.5;
+      }
+      clampPan();
+    });
+
+  const gesture = Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: tx.value },
+      { translateY: ty.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <View
+      style={styles.previewStage}
+      onLayout={(e) => {
+        areaW.value = e.nativeEvent.layout.width || 1;
+        areaH.value = e.nativeEvent.layout.height || 1;
+      }}
+    >
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[{ width: '100%', height: '100%' }, contentStyle]}>
+          {uri && !failed ? (
+            <Image source={{ uri }} style={styles.previewImg} resizeMode="contain" onError={() => setFailed(true)} />
+          ) : (
+            <View style={styles.previewEmpty}>
+              <Text style={styles.previewPlaceholder}>▣</Text>
+            </View>
+          )}
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 }
@@ -292,8 +385,11 @@ const styles = StyleSheet.create({
   eventTime: { fontSize: 9, color: colors.faint },
   actions: { flexDirection: 'row', gap: 9, marginTop: 18 },
   actionsChild: { flex: 1 },
-  previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20, backgroundColor: '#F4F6F7', borderRadius: 10, gap: 8 },
-  previewImg: { width: '100%', height: 320, borderRadius: 8 },
-  previewPlaceholder: { fontSize: 60, color: colors.primaryMuted },
+  previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 8 },
+  previewStage: { width: '100%', height: 340, overflow: 'hidden', borderRadius: 10, backgroundColor: '#1B2432', alignItems: 'center', justifyContent: 'center' },
+  previewEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  previewImg: { width: '100%', height: '100%' },
+  previewPlaceholder: { fontSize: 60, color: '#5A6B82' },
   previewCaption: { fontSize: 11, color: colors.muted },
+  previewHint: { fontSize: 9, color: colors.faint },
 });

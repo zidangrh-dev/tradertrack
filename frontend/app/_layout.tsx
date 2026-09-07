@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Stack, Redirect, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../src/hooks/useAuth';
 import { colors } from '../src/theme';
 import { NotifyHost } from '../src/components/NotifyHost';
@@ -37,10 +38,12 @@ function Gate() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <StatusBar style="light" />
-      <Gate />
-      <NotifyHost />
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <Gate />
+        <NotifyHost />
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
