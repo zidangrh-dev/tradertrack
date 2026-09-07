@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { api } from '../lib/api';
 import { notify } from '../lib/notify';
 import { colors, radius, webNoOutline } from '../theme';
-import { Button, Field, Sheet } from './ui';
+import { Button, Field, PasswordField, Sheet } from './ui';
 
 export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [current, setCurrent] = useState('');
@@ -46,9 +46,9 @@ export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose:
       <Text style={styles.hint}>
         Gunakan kata sandi baru untuk login berikutnya. Minimal 6 karakter dan berbeda dari kata sandi lama.
       </Text>
-      <Field style={webNoOutline} label="Kata sandi lama" value={current} onChangeText={setCurrent} secureTextEntry autoCapitalize="none" placeholder="Kata sandi saat ini" />
-      <Field style={webNoOutline} label="Kata sandi baru" value={next} onChangeText={setNext} secureTextEntry autoCapitalize="none" placeholder="Minimal 6 karakter" />
-      <Field style={webNoOutline} label="Ulangi kata sandi baru" value={confirm} onChangeText={setConfirm} secureTextEntry autoCapitalize="none" placeholder="Ketik ulang kata sandi baru" />
+      <PasswordField style={webNoOutline} label="Kata sandi lama" value={current} onChangeText={setCurrent} autoCapitalize="none" placeholder="Kata sandi saat ini" />
+      <PasswordField style={webNoOutline} label="Kata sandi baru" value={next} onChangeText={setNext} autoCapitalize="none" placeholder="Minimal 6 karakter" />
+      <PasswordField style={webNoOutline} label="Ulangi kata sandi baru" value={confirm} onChangeText={setConfirm} autoCapitalize="none" placeholder="Ketik ulang kata sandi baru" />
       <View style={styles.actions}>
         <Button label="Batal" variant="secondary" onPress={onClose} disabled={busy} />
         <Button label={busy ? 'Menyimpan…' : 'Simpan kata sandi'} onPress={save} disabled={busy} style={{ flex: 1 }} />

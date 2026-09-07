@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, radius, space, statusLabel, webNoOutline, type Status } from '../theme';
 import { durationLabel, statusPalette } from '../lib/format';
 import type { OrderView } from '../lib/api';
@@ -105,6 +106,39 @@ export function Field({ label, hint, style, ...rest }: TextInputProps & { label:
       <Text style={styles.fieldLabel}>{label}</Text>
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
       <TextInput style={[styles.input, webNoOutline, style]} placeholderTextColor={colors.faint} {...rest} />
+    </View>
+  );
+}
+
+/** Field kata sandi dengan toggle ikon mata (lihat/sembunyikan isi).
+ *  Dipakai di login, ganti kata sandi, dan tambah trader. */
+export function PasswordField({ label, hint, style, ...rest }: TextInputProps & { label: string; hint?: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
+      <View style={styles.pwWrap}>
+        <TextInput
+          style={[styles.input, styles.pwInput, webNoOutline, style]}
+          placeholderTextColor={colors.faint}
+          secureTextEntry={!show}
+          {...rest}
+        />
+        <Pressable
+          onPress={() => setShow((v) => !v)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={show ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+          style={styles.pwToggle}
+        >
+          <Ionicons
+            name={show ? 'eye-off' : 'eye'}
+            size={19}
+            color={colors.muted}
+          />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -761,6 +795,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
   },
+  // Field kata sandi: wrapper + tombol mata di sisi kanan
+  pwWrap: { position: 'relative', justifyContent: 'center' },
+  pwInput: { paddingRight: 42 },
+  pwToggle: { position: 'absolute', right: 6, top: 6, width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   selectRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   // Sheet
   modalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },

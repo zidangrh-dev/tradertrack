@@ -4,7 +4,7 @@ import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '.
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
 import { colors, radius, pickupMethodOptions, webNoOutline } from '../theme';
-import { Button, Field, Select, Sheet, type SelectOption } from './ui';
+import { Button, Field, PasswordField, Select, Sheet, type SelectOption } from './ui';
 
 export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolean; onClose: () => void; user: SessionUser | null; onCreated: () => void }) {
   const isAdmin = user?.role === 'admin';
@@ -207,7 +207,7 @@ function TraderForm({ open, onClose, onSave }: { open: boolean; onClose: () => v
     <Sheet open={open} onClose={onClose} title="Tambah trader baru">
       <Field style={webNoOutline} label="Username" value={username} onChangeText={setUsername} placeholder="mis. trader-budi" autoCapitalize="none" />
       <Field style={webNoOutline} label="Nama lengkap" value={name} onChangeText={setName} placeholder="Nama lengkap trader" />
-      <Field style={webNoOutline} label="Kata sandi awal" value={password} onChangeText={setPassword} secureTextEntry placeholder="Kata sandi untuk login" />
+      <PasswordField style={webNoOutline} label="Kata sandi awal" value={password} onChangeText={setPassword} placeholder="Kata sandi untuk login" />
       <View style={styles.modalActions}>
         <Button label="Batal" variant="secondary" onPress={onClose} disabled={busy} />
         <Button label={busy ? 'Menyimpan…' : 'Simpan trader'} onPress={save} disabled={busy} style={{ flex: 1 }} />

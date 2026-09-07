@@ -3,6 +3,7 @@ import {
   Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useAuth } from '../src/hooks/useAuth';
+import { PasswordField } from '../src/components/ui';
 import { colors, radius } from '../src/theme';
 
 export default function Login() {
@@ -40,8 +41,7 @@ export default function Login() {
           <Text style={styles.label}>Username</Text>
           <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} placeholder="username Anda" placeholderTextColor={colors.faint} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
 
-          <Text style={styles.label}>Kata sandi</Text>
-          <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={colors.faint} returnKeyType="go" onSubmitEditing={submit} />
+          <PasswordField style={styles.input} label="Kata sandi" value={password} onChangeText={setPassword} placeholder="••••••••" returnKeyType="go" onSubmitEditing={submit} />
 
           {!!error && <Text style={styles.error}>{error}</Text>}
 
