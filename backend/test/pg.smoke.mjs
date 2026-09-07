@@ -93,6 +93,15 @@ assert.ok(scoped.totals.total >= 1, 'laporan trader memuat order miliknya');
 assert.ok(scoped.perTrader.length === 1 && scoped.perTrader[0].trader === nabila.display_name, 'laporan trader tidak memuat nama trader lain');
 assert.ok(scoped.delayed.every((d) => d.trader === nabila.display_name), 'daftar tertunda trader tidak memuat trader lain');
 
+// listOrders multi-toko (jalur SQL ANY): gabungan dua toko = OR dalam filter.
+const avail2 = (await repo.listProducts()).find((x) => x.remaining_quota >= 2);
+await repo.createOrder({ order_number: `TRK-ML-A-${Date.now()}`, recipient_name: 'A', pickup_method: 'zaydan_ambilan_gjm', product_id: avail2.id, store_id: stores[0].id }, actorId);
+await repo.createOrder({ order_number: `TRK-ML-B-${Date.now()}`, recipient_name: 'B', pickup_method: 'zaydan_ambilan_gjm', product_id: avail2.id, store_id: stores[1].id }, actorId);
+const both2 = await repo.listOrders({ store: [stores[0].id, stores[1].id], q: 'TRK-ML-' });
+assert.equal(both2.total, 2, 'dua toko terpilih memuat kedua order');
+const onlyA = await repo.listOrders({ store: [stores[0].id], q: 'TRK-ML-' });
+assert.equal(onlyA.total, 1, 'satu toko hanya memuat order toko itu');
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');

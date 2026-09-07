@@ -308,6 +308,14 @@ describe('CF3 Daftar order', () => {
     const st = await client(admin).get('/api/orders?store=st-shopee');
     assert.ok(st.data.items.length >= 1);
     assert.ok(st.data.items.every((o) => o.store_id === 'st-shopee'));
+    // Multi-toko: koma → beberapa toko; hasil hanya dari toko yang dipilih.
+    const two = await client(admin).get('/api/orders?store=st-shopee,st-lazada');
+    assert.ok(two.data.items.length >= 1);
+    assert.ok(two.data.items.every((o) => ['st-shopee', 'st-lazada'].includes(o.store_id)));
+    const countTwo = two.data.total;
+    const countShopee = st.data.total;
+    const lazada = await client(admin).get('/api/orders?store=st-lazada');
+    assert.equal(countTwo, countShopee + lazada.data.total, 'gabungan dua toko = jumlah masing-masing (OR)');
   });
   test('filter rentang tanggal from/to', async () => {
     const now = new Date();
