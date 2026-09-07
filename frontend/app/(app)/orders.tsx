@@ -16,14 +16,13 @@ import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 
 const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
 const PER_PAGE = 50;
-const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima', 'Trader'];
+const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima'];
 
 function orderCopyRow(o: OrderView) {
   return [
     o.order_number,
     `${o.product_name} · ${o.store_name}`,
     o.recipient_name,
-    o.trader_name,
   ];
 }
 
