@@ -1,19 +1,63 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, Platform } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View, Platform, useWindowDimensions } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useSettings } from '../../src/hooks/useSettings';
-import { colors, radius, space } from '../../src/theme';
-import { Button, EmptyState, Field, OrderCard, PageHeader, Sheet } from '../../src/components/ui';
+import { colors, radius, pickupMethodOptions, space } from '../../src/theme';
+import { Button, EmptyState, Field, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, type SelectOption } from '../../src/components/ui';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 import { BarcodeScanner } from '../../src/components/BarcodeScanner';
 
+const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
+
 export default function Pickup() {
   useAdminOnly();
-  const { orders, refresh } = useOrders();
-  const pending = useMemo(() => orders.filter((o) => o.status === 'proses_pick_up'), [orders]);
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 700;
+  // Layar lebar: kartu disusun dua kolom agar padat & terbaca, bukan pita panjang.
+  const wide = width >= 900;
+
+  const [search, setSearch] = useState('');
+  const [method, setMethod] = useState('');
+  const [store, setStore] = useState<string[]>([]);
+  const [trader, setTrader] = useState('');
+  const [period, setPeriod] = useState('');
+  const [flagged, setFlagged] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [traders, setTraders] = useState<SelectOption[]>([]);
+  const [stores, setStores] = useState<SelectOption[]>([]);
+
+  useEffect(() => {
+    api.listUsers().then((users) =>
+      setTraders(users.filter((u) => u.is_active).map((u) => ({ value: u.id, label: u.display_name, sub: `@${u.username}` }))),
+    ).catch(() => setTraders([]));
+    api.listMarketplaceStores().then((ss) =>
+      setStores(ss.map((s) => ({ value: s.id, label: s.name }))),
+    ).catch(() => setStores([]));
+  }, []);
+
+  // Selalu status proses_pick_up dikirim ke server (bukan filter klien) agar
+  // akurat walau order harian > 200. Filter lain menyusul sebagai parameter.
+  const query = useMemo(() => {
+    const q: Record<string, string> = { status: 'proses_pick_up', per_page: '200' };
+    if (search.trim()) q.q = search.trim();
+    if (method) q.pickup_method = method;
+    if (store.length) q.store = store.join(',');
+    if (trader) q.trader = trader;
+    const d = new Date();
+    if (period === 'hari_ini') q.from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+    if (period === '7_hari') q.from = new Date(Date.now() - 7 * 864e5).toISOString();
+    if (period === 'bulan_ini') q.from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    return q;
+  }, [search, method, store, trader, period]);
+
+  const { orders, refresh, loading } = useOrders(query);
+  const pending = useMemo(
+    () => orders.filter((o) => !flagged || o.is_problem || o.is_pending),
+    [orders, flagged],
+  );
   const scannedToday = useMemo(
     () => pending.filter((o) => o.picked_up_at && new Date(o.picked_up_at).toDateString() === new Date().toDateString()).length,
     [pending],
@@ -27,6 +71,12 @@ export default function Pickup() {
   const [scanOrder, setScanOrder] = useState<OrderView | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const settings = useSettings();
+
+  const activeFilters = [search.trim(), method, trader, period].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (flagged ? 1 : 0);
+
+  const resetFilters = () => {
+    setSearch(''); setMethod(''); setStore([]); setTrader(''); setPeriod(''); setFlagged(false);
+  };
 
   const completePickup = async (o: OrderView) => {
     // Foto bukti cukup → selesaikan langsung; kurang → buka modal untuk tambah foto.
@@ -74,13 +124,91 @@ export default function Pickup() {
 
   return (
     <View style={styles.wrap}>
+      {/* Header & filter ikut di dalam ScrollView: bila di luar, scrollbar web
+          memangkas lebar konten di dalamnya sehingga tepi kanan kartu tidak
+          sejajar dengan tombol Scan/Filter. */}
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
       <PageHeader
         title="Pick up"
         subtitle="Kelola verifikasi paket dan pindahkan order dengan bukti yang tepat."
         action={<Button label="Scan nomor pesanan" icon="⌗" onPress={openScan} />}
       />
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+      <View style={styles.filterBar}>
+        <View style={styles.searchBox}>
+          <SearchInput compact value={search} onChangeText={setSearch} placeholder="Cari nomor order, produk, atau penerima..." />
+        </View>
+        <Pressable
+          onPress={() => setShowFilters((v) => !v)}
+          style={[styles.filterBtn, activeFilters > 0 && styles.filterBtnActive]}
+          accessibilityLabel={showFilters ? 'Sembunyikan filter' : 'Tampilkan filter'}
+        >
+          <Text style={[styles.filterIcon, activeFilters > 0 && styles.filterIconActive]}>⚙</Text>
+          <Text style={[styles.filterText, activeFilters > 0 && styles.filterTextActive]}>Filter</Text>
+          {activeFilters > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilters}</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
+      {showFilters && (
+        <View style={[styles.filterBar, styles.filterPanel, isNarrow && styles.filterBarNarrow]}>
+          <Select
+            label="Metode"
+            value={method}
+            options={pickupMethodOptions}
+            onChange={(v) => setMethod(v)}
+            placeholder="Semua metode"
+            clearLabel="Semua"
+            compact
+            block={isNarrow}
+          />
+          <MultiSelect
+            label="Toko"
+            value={store}
+            options={stores}
+            onChange={setStore}
+            placeholder="Semua toko"
+            clearLabel="Semua"
+            compact
+            block={isNarrow}
+          />
+          <Select
+            label="Trader"
+            value={trader}
+            options={traders}
+            onChange={setTrader}
+            placeholder="Semua trader"
+            clearLabel="Semua"
+            compact
+            block={isNarrow}
+          />
+          <Select
+            label="Periode"
+            value={period}
+            options={Object.entries(PERIOD_OPTIONS).map(([value, label]) => ({ value, label }))}
+            onChange={setPeriod}
+            placeholder="Semua periode"
+            clearLabel="Semua"
+            compact
+            block={isNarrow}
+          />
+          <Pressable onPress={() => setFlagged((v) => !v)} style={[styles.flagChip, flagged && styles.flagChipActive, isNarrow && { alignSelf: 'flex-start' }]}>
+            <Text style={[styles.flagChipText, flagged && styles.flagChipTextActive]}>
+              {flagged ? '☑ Bermasalah & tertunda' : '☐ Bermasalah & tertunda'}
+            </Text>
+          </Pressable>
+          {activeFilters > 0 && (
+            <Pressable onPress={resetFilters} style={[styles.resetBtn, isNarrow && styles.resetBtnNarrow]}>
+              <Text style={styles.resetIcon}>↻</Text>
+              <Text style={styles.resetText}>Reset{activeFilters > 1 ? ` (${activeFilters})` : ''}</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
         <View style={styles.controlBar}>
           <View style={styles.controlIntro}>
             <Text style={styles.controlTitle}>Workspace pick up</Text>
@@ -101,22 +229,40 @@ export default function Pickup() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Order siap pickup</Text>
-            <Text style={styles.sectionSub}>Order berstatus pickup yang menunggu penyelesaian.</Text>
+            <Text style={styles.sectionSub}>
+              {activeFilters > 0 ? 'Hasil filter pada order berstatus pickup.' : 'Order berstatus pickup yang menunggu penyelesaian.'}
+            </Text>
           </View>
           <Text style={styles.count}>{pending.length}</Text>
         </View>
-        <View style={styles.listWrap}>
-          {pending.length === 0 ? (
-            <EmptyState icon="→" text="Tidak ada order dalam proses." />
+        <View style={[styles.listWrap, wide && styles.listWrapGrid]}>
+          {loading ? (
+            <Text style={styles.emptyNote}>Memuat…</Text>
+          ) : pending.length === 0 ? (
+            activeFilters > 0 ? (
+              <View style={styles.emptyFiltered}>
+                <EmptyState icon="⌕" text="Tidak ada order pickup yang cocok dengan filter." />
+                <Button label="Reset filter" variant="secondary" size="sm" onPress={resetFilters} />
+              </View>
+            ) : (
+              <EmptyState icon="→" text="Tidak ada order dalam proses." />
+            )
           ) : pending.map((o) => (
             <OrderCard
               key={o.id}
               order={o}
+              style={wide ? styles.cardGridItem : undefined}
               onPress={() => setSelected(o)}
               actions={
-                <Button label={busy === o.id ? 'Menyelesaikan…' : 'Selesaikan order'} icon="✓" variant="soft" size="sm" fullWidth style={{ marginTop: 12 }}
+                <Button
+                  label={busy === o.id ? 'Menyelesaikan…' : 'Selesaikan order'}
+                  icon="✓"
+                  variant="soft"
+                  size="sm"
+                  fullWidth
                   disabled={busy !== null}
-                  onPress={() => completePickup(o)} />
+                  onPress={() => completePickup(o)}
+                />
               }
             />
           ))}
@@ -155,6 +301,48 @@ export default function Pickup() {
 }
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
+  // Baris filter: kolom cari + tombol Filter (kriteria di panel yang bisa dibuka).
+  filterBar: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6,
+    marginHorizontal: 16, marginBottom: 6,
+  },
+  filterPanel: { marginBottom: 12 },
+  filterBarNarrow: { flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'stretch', gap: 8, marginBottom: 12 },
+  searchBox: { flex: 1, minWidth: 0 },
+
+  filterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    height: 34, paddingHorizontal: 10, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  },
+  filterBtnActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  filterIcon: { fontSize: 13, color: colors.muted },
+  filterIconActive: { color: colors.primary },
+  filterText: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  filterTextActive: { color: colors.primary },
+  filterBadge: {
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  filterBadgeText: { fontSize: 10, fontWeight: '800', color: colors.onPrimary },
+
+  flagChip: {
+    height: 34, justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 12, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  },
+  flagChipActive: { borderColor: colors.amber, backgroundColor: '#FCF3E3' },
+  flagChipText: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  flagChipTextActive: { color: '#A8610F' },
+
+  resetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    height: 34, paddingHorizontal: 8, borderRadius: radius.sm,
+  },
+  resetBtnNarrow: { alignSelf: 'flex-start' },
+  resetIcon: { fontSize: 13, color: colors.primary },
+  resetText: { fontSize: 11, fontWeight: '700', color: colors.primary },
+
   controlBar: {
     marginHorizontal: 16, padding: 16, backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
@@ -173,6 +361,11 @@ const styles = StyleSheet.create({
   info: { backgroundColor: '#E3F5EC', borderRadius: radius.sm, padding: 12, marginTop: 12, marginHorizontal: 16 },
   infoText: { color: '#1F7A4D', fontSize: 11, fontWeight: '700' },
   sectionTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  listWrap: { gap: 10, paddingHorizontal: 16 },
+  listWrap: { gap: 12, paddingHorizontal: 16 },
+  listWrapGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
+  // Lebar kolom dikunci: kartu tunggal tidak memuai mengisi baris.
+  cardGridItem: { width: '48.6%', flexGrow: 0, minWidth: 340, maxWidth: 720 },
+  emptyFiltered: { alignItems: 'center', gap: 12 },
+  emptyNote: { color: colors.faint, fontSize: 12, textAlign: 'center', marginVertical: 24 },
   note: { fontSize: 11, color: colors.muted, lineHeight: 17, marginBottom: space.lg },
 });

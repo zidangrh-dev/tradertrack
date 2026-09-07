@@ -10,7 +10,7 @@ import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
-import { Avatar, Button, DataTable, EmptyState, Field, FlagBadge, IconAction, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
+import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 
@@ -136,29 +136,42 @@ export default function Orders() {
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
   const rangeEnd = Math.min(visiblePage * PER_PAGE, total);
 
-  // Baris aksi order milik sendiri yang masih Data masuk — dipakai kolom aksi
-  // tabel (desktop) dan footer kartu (HP) agar tidak ada duplikasi handler.
-  const renderActions = (o: OrderView) => (
-    <View style={dtStyles.rowActions}>
-      <IconAction icon="⧉" label="Salin data order" onPress={async () => {
-        try {
-          await copyText(orderCopyRow(o).join('\t'));
-          notify('Berhasil', 'Data order disalin.');
-        } catch (e) {
-          notify('Gagal menyalin', (e as Error).message);
-        }
-      }} />
-      <IconAction icon="→" variant="primary" label={`Proses pick up ${o.order_number}`} onPress={() => processPickup(o, refresh)} />
-      <IconAction icon="✎" label={`Edit ${o.order_number}`} onPress={() => setEditing(o)} />
-      <IconAction icon="✕" variant="danger" label={`Hapus ${o.order_number}`} onPress={() => removeOrder(o, refresh)} />
-    </View>
-  );
+  // Item dropdown aksi — dipakai kolom aksi tabel (desktop) dan footer kartu (HP)
+  // agar tidak ada duplikasi handler maupun perbedaan hak akses.
+  const actionItems = (o: OrderView): ActionMenuItem[] => {
+    const own = o.trader_id === user?.id && o.status === 'data_masuk';
+    const items: ActionMenuItem[] = [
+      { key: 'detail', label: 'Buka detail', icon: 'open-outline', onPress: () => setSelected(o) },
+      {
+        key: 'copy',
+        label: 'Salin data order',
+        icon: 'copy-outline',
+        onPress: async () => {
+          try {
+            await copyText(orderCopyRow(o).join('\t'));
+            notify('Berhasil', 'Data order disalin.');
+          } catch (e) {
+            notify('Gagal menyalin', (e as Error).message);
+          }
+        },
+      },
+    ];
+    if (own) {
+      items.push(
+        { key: 'pickup', label: 'Proses pick up', icon: 'arrow-forward-circle-outline', onPress: () => processPickup(o, refresh) },
+        { key: 'edit', label: 'Edit order', icon: 'create-outline', onPress: () => setEditing(o) },
+        { key: 'delete', label: 'Hapus order', icon: 'trash-outline', danger: true, separated: true, onPress: () => removeOrder(o, refresh) },
+      );
+    }
+    return items;
+  };
 
   const columns: DataTableColumn<OrderView>[] = [
     {
-      // Proporsi: 2 unit dari sisa lebar tabel (setelah kolom fixed).
-      key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 2,
-      render: (o) => <Text style={dtStyles.orderCode} numberOfLines={1}>{o.order_number}</Text>,
+      // Lebar tetap: nomor pesanan marketplace 18 digit harus terbaca utuh,
+      // tidak boleh menyusut karena kolom lain. Angka tabular agar rata.
+      key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 172, fixed: true,
+      render: (o) => <Text style={dtStyles.orderCode}>{o.order_number}</Text>,
     },
     {
       key: 'product', label: 'Produk & toko', sortKey: 'product' as keyof OrderView, width: 2.5,
@@ -207,17 +220,13 @@ export default function Orders() {
       render: (o) => <Text style={dtStyles.timeText} numberOfLines={1}>{durationLabel(o.updated_at)}</Text>,
     },
     {
-      // Lebar tetap: 4 tombol aksi 30px + gap tidak boleh terjepit.
-      key: 'actions', label: '', width: 158, fixed: true,
-      render: (o) => {
-        const editable = o.trader_id === user?.id && o.status === 'data_masuk';
-        if (!editable) {
-          return (
-            <IconAction icon="›" label={`Buka detail ${o.order_number}`} onPress={() => setSelected(o)} />
-          );
-        }
-        return renderActions(o);
-      },
+      // Satu tombol ⋯: aksi pindah ke dropdown agar baris tetap tenang.
+      key: 'actions', label: '', width: 52, fixed: true,
+      render: (o) => (
+        <View style={dtStyles.actionCell}>
+          <ActionMenu label={`Aksi order ${o.order_number}`} items={actionItems(o)} />
+        </View>
+      ),
     },
   ];
 
@@ -343,11 +352,7 @@ export default function Orders() {
                     key={o.id}
                     order={o}
                     onPress={() => setSelected(o)}
-                    actions={
-                      o.trader_id === user?.id && o.status === 'data_masuk'
-                        ? <View style={styles.cardActions}>{renderActions(o)}</View>
-                        : undefined
-                    }
+                    menu={<ActionMenu label={`Aksi order ${o.order_number}`} items={actionItems(o)} />}
                   />
                 ))}
               </View>
@@ -446,7 +451,12 @@ function EditOrderModal({ order, onClose, onSaved }: { order: OrderView | null; 
 }
 
 const dtStyles = StyleSheet.create({
-  orderCode: { fontSize: 13, fontWeight: '800', color: colors.primaryMuted },
+  // Angka tabular: 18 digit nomor pesanan berbaris rapi antar-baris tabel.
+  orderCode: {
+    fontSize: 13, fontWeight: '800', color: colors.primaryMuted,
+    fontVariant: ['tabular-nums'], letterSpacing: 0.2,
+  },
+  actionCell: { alignItems: 'flex-end' },
   productName: { fontSize: 14, fontWeight: '700', color: colors.text },
   storeName: { fontSize: 12, color: colors.muted, marginTop: 3 },
   cellText: { fontSize: 14, color: colors.muted },
