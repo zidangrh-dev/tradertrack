@@ -10,7 +10,7 @@ import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
-import { Avatar, Button, DataTable, EmptyState, Field, FlagBadge, IconAction, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
+import { Avatar, Button, DataTable, EmptyState, Field, FlagBadge, IconAction, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 
@@ -42,7 +42,7 @@ export default function Orders() {
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
-  const [store, setStore] = useState('');
+  const [store, setStore] = useState<string[]>([]);
   const [period, setPeriod] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [sortKey, setSortKey] = useState('created_at');
@@ -72,7 +72,7 @@ export default function Orders() {
     if (search.trim()) q.q = search.trim();
     if (status) q.status = status;
     if (method) q.pickup_method = method;
-    if (store) q.store = store;
+    if (store.length) q.store = store.join(',');
     if (trader) q.trader = trader;
     q.page = String(page);
     q.per_page = String(PER_PAGE);
@@ -120,10 +120,10 @@ export default function Orders() {
   };
 
   const resetFilters = () => {
-    setStatus(''); setMethod(''); setStore(''); setTrader(''); setPeriod(''); setPage(1);
+    setStatus(''); setMethod(''); setStore([]); setTrader(''); setPeriod(''); setPage(1);
   };
 
-  const activeFilters = [status, method, store, trader, period].filter(Boolean).length;
+  const activeFilters = [status, method, trader, period].filter(Boolean).length + (store.length > 0 ? 1 : 0);
   const copyFiltered = async () => {
     try {
       const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
@@ -270,7 +270,7 @@ export default function Orders() {
           compact
           block={isNarrow}
         />
-        <Select
+        <MultiSelect
           label="Toko"
           value={store}
           options={stores}

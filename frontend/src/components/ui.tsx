@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, radius, space, statusLabel, webNoOutline, type Status } from '../theme';
 import { durationLabel, statusPalette } from '../lib/format';
@@ -217,21 +218,25 @@ export function SelectField({ label, value, options, onChange }: { label: string
 export function Sheet({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      {/* Kotak sheet View polos: ScrollView di dalamnya menjadi responder langsung.
-          Pembungkus Pressable membuat negosiasi responder di Android tidak pasti —
-          scroll modal kadang kena kadang tidak. */}
-      <View style={styles.modalRoot}>
-        <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onClose} />
-        <View style={[styles.sheet, wide && styles.sheetWide]}>
-          <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={10}>
-              <Text style={styles.close}>×</Text>
-            </Pressable>
+      {/* Konten Modal react-native tampil di jendela native terpisah — gesture
+          (RNGH) hanya aktif bila ada GestureHandlerRootView di jendela yang sama. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        {/* Kotak sheet View polos: ScrollView di dalamnya menjadi responder langsung.
+            Pembungkus Pressable membuat negosiasi responder di Android tidak pasti —
+            scroll modal kadang kena kadang tidak. */}
+        <View style={styles.modalRoot}>
+          <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onClose} />
+          <View style={[styles.sheet, wide && styles.sheetWide]}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>{title}</Text>
+              <Pressable onPress={onClose} hitSlop={10}>
+                <Text style={styles.close}>×</Text>
+              </Pressable>
+            </View>
+            {children}
           </View>
-          {children}
         </View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -412,6 +417,150 @@ export function Select({
                 </HoverItem>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// Dropdown multi-pilih: item dicentang/dicentang-ulang tanpa menu tertutup
+// (dipakai filter Toko — beberapa toko bisa dipilih sekaligus).
+export function MultiSelect({
+  label, value, options, onChange, placeholder = 'Pilih…', clearLabel = 'Semua', block = false, compact = false,
+}: {
+  label: string;
+  value: string[];
+  options: SelectOption[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+  clearLabel?: string;
+  block?: boolean;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState({ x: 0, y: 0, w: 0 });
+  const [query, setQuery] = useState('');
+  const ref = useRef<View>(null);
+  const { width: winW, height: winH } = useWindowDimensions();
+  const triggerHover = useHover();
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setQuery('');
+    ref.current?.measureInWindow((x, y, w) => {
+      setAnchor({ x, y: y + 50, w });
+      setOpen(true);
+    });
+  };
+
+  const toggleValue = (v: string) => {
+    onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
+  };
+
+  const selectedLabels = value
+    .map((v) => options.find((o) => o.value === v)?.label)
+    .filter((l): l is string => !!l);
+
+  const menuW = Math.min(Math.max(anchor.w, 260), 360);
+  const left = Math.max(12, Math.min(anchor.x, winW - menuW - 12));
+  const showSearch = options.length >= 8;
+  const q = query.trim().toLowerCase();
+  const filtered = showSearch && q ? options.filter((o) => `${o.label} ${o.sub ?? ''}`.toLowerCase().includes(q)) : options;
+  const searchH = showSearch ? 50 : 0;
+  const menuMaxH = Math.min(320, Math.round(winH * 0.55));
+  const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - searchH - 24));
+
+  return (
+    <View ref={ref} style={block ? { width: '100%' } : undefined}>
+      <Pressable
+        onPress={toggle}
+        {...triggerHover.handlers}
+        style={({ pressed }) => [
+          selStyles.trigger,
+          compact && selStyles.triggerCompact,
+          block && selStyles.triggerBlock,
+          webTransition('background-color, border-color, opacity'),
+          triggerHover.hovered && !open && selStyles.triggerHover,
+          open && selStyles.triggerOpen,
+          value.length > 0 && selStyles.triggerActive,
+          pressed && { opacity: 0.9 },
+        ]}
+      >
+        {value.length > 0 ? (
+          <>
+            <Text style={[selStyles.caption, compact && selStyles.captionCompact, selStyles.captionActive]}>{label}</Text>
+            <Text style={[selStyles.value, compact && selStyles.valueCompact, selStyles.valueActive]} numberOfLines={1}>
+              {selectedLabels.join(', ')}
+            </Text>
+          </>
+        ) : (
+          <Text style={[selStyles.placeholder, compact && selStyles.placeholderCompact]} numberOfLines={1}>{placeholder}</Text>
+        )}
+        <Text style={[selStyles.caret, compact && selStyles.caretCompact]}>▾</Text>
+      </Pressable>
+
+      <Modal transparent visible={open} onRequestClose={() => setOpen(false)} animationType="fade">
+        <View style={selStyles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          <View style={[selStyles.menu, { left, top, width: menuW }]}>
+            {showSearch && (
+              <View style={[styles.searchBox, selStyles.searchRow]}>
+                <Text style={styles.searchIcon}>⌕</Text>
+                <TextInput
+                  style={[styles.searchInput, webNoOutline]}
+                  placeholder={`Cari ${label.toLowerCase()}…`}
+                  placeholderTextColor={colors.faint}
+                  value={query}
+                  onChangeText={setQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+                {!!query && (
+                  <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                    <Text style={styles.searchClear}>✕</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+            {!!clearLabel && (
+              <HoverItem
+                onPress={() => { onChange([]); setOpen(false); }}
+                style={[selStyles.item, value.length === 0 && selStyles.itemActive]}
+                hoverStyle={selStyles.itemHover}
+              >
+                <Text style={[selStyles.itemLabel, value.length === 0 && selStyles.itemLabelActive]} numberOfLines={1}>{clearLabel}</Text>
+                {value.length === 0 && <Text style={selStyles.check}>✓</Text>}
+              </HoverItem>
+            )}
+            <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
+              {filtered.length === 0 ? (
+                <View style={selStyles.noResult}>
+                  <Text style={selStyles.noResultText}>Tidak ada hasil untuk “{query.trim()}”</Text>
+                </View>
+              ) : (
+                filtered.map((opt) => {
+                  const sel = value.includes(opt.value);
+                  return (
+                    <HoverItem
+                      key={opt.value}
+                      onPress={opt.disabled ? undefined : () => toggleValue(opt.value)}
+                      style={[selStyles.item, selStyles.itemPick, sel && selStyles.itemActive, opt.disabled && { opacity: 0.5 }]}
+                      hoverStyle={sel || opt.disabled ? undefined : selStyles.itemHover}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[selStyles.itemLabel, sel && selStyles.itemLabelActive]} numberOfLines={1}>{opt.label}</Text>
+                        {!!opt.sub && <Text style={selStyles.itemSub} numberOfLines={1}>{opt.sub}</Text>}
+                      </View>
+                      {sel && <Text style={selStyles.check}>✓</Text>}
+                    </HoverItem>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
