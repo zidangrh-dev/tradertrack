@@ -35,9 +35,25 @@ export async function requireAuth(req, res, next) {
   }
 }
 
+// Superadmin adalah superset admin: semua kemampuan admin, ditambah setelan
+// versi aplikasi & pengangkatan superadmin. Perbandingan role SELALU lewat
+// helper ini — literal `role === 'admin'` mudah terlewat dan diam-diam
+// mencabut akses superadmin.
+export const isAdminLevel = (role) => role === 'admin' || role === 'superadmin';
+export const isSuperadmin = (role) => role === 'superadmin';
+
 export function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Hanya admin yang dapat melakukan aksi ini.' });
+    if (!isAdminLevel(req.user.role)) return res.status(403).json({ error: 'Hanya admin yang dapat melakukan aksi ini.' });
+    next();
+  });
+}
+
+export function requireSuperadmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat melakukan aksi ini.' });
+    }
     next();
   });
 }

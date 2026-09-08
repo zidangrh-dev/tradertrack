@@ -152,7 +152,8 @@ describe('CF1 Autentikasi & role', () => {
   test('session valid', async () => {
     const { status, data } = await client(admin).get('/api/session');
     assert.equal(status, 200);
-    assert.equal(data.role, 'admin');
+    // Akun 'admin' bawaan dinaikkan jadi superadmin oleh migrasi.
+    assert.equal(data.role, 'superadmin');
   });
   test('trader akses endpoint admin → 403', async () => {
     for (const p of ['/api/users']) {
@@ -1129,5 +1130,137 @@ describe('CF9 Gerbang versi aplikasi', () => {
   test('trader tidak bisa mengubah versi wajib', async () => {
     const { status } = await client(trader).patch('/api/settings', { required_app_version: '1.0.0' });
     assert.equal(status, 403);
+  });
+});
+
+describe('CF10 Superadmin', () => {
+  let sa, adminBiasa, trader, adminId;
+  before(async () => {
+    sa = await login('admin', 'admin'); // akun bawaan → superadmin
+    trader = await login('nabila', 'trader');
+    // Admin biasa dibuat oleh superadmin untuk menguji batas hak akses.
+    const u = `adm_${Date.now()}`;
+    const { data } = await client(sa).post('/api/users', { username: u, password: 'pw', display_name: 'Admin Biasa', role: 'admin' });
+    adminId = data.id;
+    adminBiasa = await login(u, 'pw');
+  });
+  after(async () => {
+    await client(sa).patch('/api/settings', { required_app_version: '', app_update_url: '' });
+  });
+
+  test('superadmin punya semua akses admin', async () => {
+    assert.equal((await client(sa).get('/api/users')).status, 200);
+    assert.equal((await client(sa).get('/api/orders')).status, 200);
+    assert.equal((await client(sa).get('/api/products')).status, 200);
+    assert.equal((await client(sa).get('/api/reports')).status, 200);
+    const { status } = await client(sa).post('/api/products', { name: `P-SA-${Date.now()}`, quota: 3 });
+    assert.equal(status, 201, 'superadmin bisa membuat produk seperti admin');
+  });
+
+  test('hanya superadmin yang bisa mengubah setelan versi', async () => {
+    const okSa = await client(sa).patch('/api/settings', { required_app_version: '3.3.3' });
+    assert.equal(okSa.status, 200);
+    assert.equal(okSa.data.required_app_version, '3.3.3');
+
+    const ditolak = await client(adminBiasa).patch('/api/settings', { required_app_version: '4.4.4' });
+    assert.equal(ditolak.status, 403);
+    assert.match(ditolak.data.error, /superadmin/i);
+
+    const linkDitolak = await client(adminBiasa).patch('/api/settings', { app_update_url: 'https://x.test/a.apk' });
+    assert.equal(linkDitolak.status, 403);
+
+    assert.equal((await client(trader).patch('/api/settings', { required_app_version: '5.5.5' })).status, 403);
+    // nilai tidak berubah oleh percobaan yang ditolak
+    assert.equal((await client(sa).get('/api/settings')).data.required_app_version, '3.3.3');
+  });
+
+  test('admin biasa tetap bisa mengubah setelan operasional', async () => {
+    const { status, data } = await client(adminBiasa).patch('/api/settings', { pending_threshold_hours: 4 });
+    assert.equal(status, 200, 'pembatasan hanya untuk setelan versi');
+    assert.equal(data.pending_threshold_hours, 4);
+    await client(adminBiasa).patch('/api/settings', { pending_threshold_hours: 3 });
+  });
+
+  test('setelan versi tersembunyi dari non-superadmin', async () => {
+    await client(sa).patch('/api/settings', { required_app_version: '3.3.3', app_update_url: 'https://x.test/a.apk' });
+    const s1 = (await client(sa).get('/api/settings')).data;
+    assert.ok('required_app_version' in s1 && 'app_update_url' in s1, 'superadmin melihat setelan versi');
+
+    const s2 = (await client(adminBiasa).get('/api/settings')).data;
+    assert.ok(!('required_app_version' in s2), 'admin biasa tidak melihat versi wajib');
+    assert.ok(!('app_update_url' in s2), 'admin biasa tidak melihat link unduhan');
+
+    const s3 = (await client(trader).get('/api/settings')).data;
+    assert.ok(!('required_app_version' in s3) && !('app_update_url' in s3), 'trader tidak melihat setelan versi');
+    // Setelan operasional tetap terbaca semua role.
+    assert.ok(typeof s3.min_photos === 'number');
+  });
+
+  test('popup pembaruan tetap dapat data lewat endpoint publik', async () => {
+    await client(sa).patch('/api/settings', { required_app_version: '3.3.3', app_update_url: 'https://x.test/a.apk' });
+    const res = await fetch(`${BASE}/api/app-version`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.required_version, '3.3.3');
+    assert.equal(body.update_url, 'https://x.test/a.apk', 'link tetap terkirim walau tanpa login');
+  });
+
+  test('admin biasa tidak bisa membuat atau mengangkat superadmin', async () => {
+    const buat = await client(adminBiasa).post('/api/users', {
+      username: `sa_${Date.now()}`, password: 'pw', display_name: 'Coba SA', role: 'superadmin',
+    });
+    assert.equal(buat.status, 403);
+    assert.match(buat.data.error, /superadmin/i);
+
+    const { data: target } = await client(sa).post('/api/users', {
+      username: `t_${Date.now()}`, password: 'pw', display_name: 'Target', role: 'trader',
+    });
+    const angkat = await client(adminBiasa).patch(`/api/users/${target.id}`, { role: 'superadmin' });
+    assert.equal(angkat.status, 403, 'admin tidak boleh mengangkat dirinya/orang lain jadi superadmin');
+    await client(sa).del(`/api/users/${target.id}`);
+  });
+
+  test('admin biasa tidak bisa menyentuh akun superadmin', async () => {
+    const { data: users } = await client(sa).get('/api/users');
+    const saUser = users.find((u) => u.role === 'superadmin');
+    assert.ok(saUser, 'akun superadmin ada');
+
+    const ubah = await client(adminBiasa).patch(`/api/users/${saUser.id}`, { display_name: 'Diretas' });
+    assert.equal(ubah.status, 403);
+    const nonaktif = await client(adminBiasa).patch(`/api/users/${saUser.id}`, { is_active: false });
+    assert.equal(nonaktif.status, 403);
+    const hapus = await client(adminBiasa).del(`/api/users/${saUser.id}`);
+    assert.equal(hapus.status, 403);
+  });
+
+  test('superadmin terakhir tidak bisa diturunkan, dinonaktifkan, atau dihapus', async () => {
+    const { data: users } = await client(sa).get('/api/users');
+    const saUser = users.find((u) => u.role === 'superadmin');
+    // Diri sendiri: role ditolak lebih dulu oleh aturan "ubah role sendiri".
+    const turun = await client(sa).patch(`/api/users/${saUser.id}`, { role: 'admin' });
+    assert.equal(turun.status, 400);
+    const hapus = await client(sa).del(`/api/users/${saUser.id}`);
+    assert.equal(hapus.status, 400, 'tanpa proteksi ini setelan versi terkunci selamanya');
+  });
+
+  test('superadmin bisa mengangkat & menurunkan superadmin lain', async () => {
+    const u = `sa2_${Date.now()}`;
+    const { status: s1, data: baru } = await client(sa).post('/api/users', {
+      username: u, password: 'pw', display_name: 'SA Kedua', role: 'superadmin',
+    });
+    assert.equal(s1, 201);
+
+    // Superadmin kedua ini juga bisa mengubah setelan versi.
+    const sa2 = await login(u, 'pw');
+    assert.equal((await client(sa2).patch('/api/settings', { required_app_version: '3.3.3' })).status, 200);
+
+    // Karena bukan yang terakhir, boleh diturunkan lalu dibersihkan.
+    assert.equal((await client(sa).patch(`/api/users/${baru.id}`, { role: 'trader' })).status, 204);
+    assert.equal((await client(sa).del(`/api/users/${baru.id}`)).status, 204);
+  });
+
+  test('admin biasa tetap tunduk aturan admin terakhir', async () => {
+    const { status } = await client(sa).del(`/api/users/${adminId}`);
+    assert.equal(status, 204, 'admin biasa boleh dihapus selagi masih ada superadmin');
   });
 });

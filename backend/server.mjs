@@ -58,7 +58,7 @@ app.get('/uploads/:name', async (req, res) => {
   }
   const { getRepo } = await import('./src/repo.mjs');
   const owner = await getRepo().photoOwner(path.basename(p));
-  const isAdmin = payload.role === 'admin';
+  const isAdmin = payload.role === 'admin' || payload.role === 'superadmin';
   if (!owner || (owner.trader_id !== payload.id && !isAdmin)) {
     return res.status(403).json({ error: 'Hanya order milik Anda yang dapat diakses.' });
   }

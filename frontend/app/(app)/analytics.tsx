@@ -6,6 +6,7 @@ import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
 import { Button, EmptyState, PageHeader, Sheet } from '../../src/components/ui';
+import { isAdminLevel } from '../../src/lib/roles';
 
 const STATUS_META: { key: Status; label: string; color: string }[] = [
   { key: 'data_masuk', label: 'Data masuk', color: colors.amber },
@@ -221,7 +222,7 @@ function Panel({ title, subtitle, children, wide }: { title: string; subtitle?: 
 
 export default function Analytics() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   const { width } = useWindowDimensions();
   const wide = width >= 900;
   // Satu-satunya filter: rentang tanggal lewat kalender. Bawaan = bulan berjalan.

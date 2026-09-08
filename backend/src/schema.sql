@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   username text NOT NULL UNIQUE,
   password_hash text NOT NULL,
   display_name text NOT NULL,
-  role text NOT NULL CHECK (role IN ('admin', 'trader')),
+  role text NOT NULL CHECK (role IN ('superadmin', 'admin', 'trader')),
   is_active boolean NOT NULL DEFAULT true,
   last_login_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -66,6 +66,11 @@ DROP TABLE IF EXISTS master_data CASCADE;
 
 -- Kolom menyusul untuk database yang dibuat sebelum aturan bukti ganda.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS requires_dual_evidence boolean NOT NULL DEFAULT false;
+
+-- Role superadmin: constraint lama hanya mengizinkan admin/trader, jadi harus
+-- diganti sebelum ada baris ber-role superadmin.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('superadmin', 'admin', 'trader'));
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);

@@ -24,4 +24,11 @@ export async function migrate(pool) {
       ('app_update_url', '', 'Link unduhan APK untuk popup pembaruan')
      ON CONFLICT (setting_key) DO NOTHING`,
   );
+  // Superadmin pertama: naikkan akun 'admin' bawaan, hanya bila belum ada
+  // superadmin sama sekali — agar keputusan role berikutnya tidak tertimpa.
+  await pool.query(
+    `UPDATE users SET role = 'superadmin', updated_at = now()
+     WHERE username = 'admin'
+       AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'superadmin')`,
+  );
 }

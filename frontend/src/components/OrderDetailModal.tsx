@@ -11,10 +11,11 @@ import { colors, pickupMethodLabel } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { Avatar, Button, Sheet, StatusTag } from './ui';
+import { isAdminLevel } from '../lib/roles';
 
 export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderView | null; onClose: () => void; onChanged?: () => void }) {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   const isOwner = order?.trader_id === user?.id;
   const canEdit = !!order && (isAdmin || (isOwner && order.status === 'data_masuk'));
 

@@ -11,6 +11,7 @@ import { durationLabel, isToday, statusColor } from '../../src/lib/format';
 import { Avatar, Button, EmptyState, FlagBadge, PageHeader, SearchInput } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
+import { isAdminLevel } from '../../src/lib/roles';
 
 const COLUMNS: Status[] = ['data_masuk', 'proses_pick_up', 'selesai'];
 const DRAG_THRESHOLD = 60;
@@ -188,7 +189,7 @@ export default function Kanban() {
         title="Papan kerja"
         subtitle={wide ? 'Seret kartu untuk mengubah status · ketuk untuk buka detail.' : 'Ketuk kartu untuk buka detail.'}
         action={
-          user?.role === 'admin' ? (
+          isAdminLevel(user?.role) ? (
             <Button label="Input order baru" icon="+" onPress={() => setShowNew(true)} />
           ) : undefined
         }

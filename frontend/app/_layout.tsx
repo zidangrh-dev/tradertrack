@@ -7,6 +7,7 @@ import { VersionGateProvider, useVersionGate } from '../src/hooks/useVersionGate
 import { UpdateGate } from '../src/components/UpdateGate';
 import { colors } from '../src/theme';
 import { NotifyHost } from '../src/components/NotifyHost';
+import { isAdminLevel } from '../src/lib/roles';
 
 function Gate() {
   const { user, loading } = useAuth();
@@ -18,7 +19,7 @@ function Gate() {
     if (loading) return;
     if (user && inAuth) {
       // Sudah login tapi masih di /login -> arahkan sesuai role.
-      router.replace(user.role === 'admin' ? '/(app)' : '/(app)/orders');
+      router.replace(isAdminLevel(user.role) ? '/(app)' : '/(app)/orders');
     }
   }, [user, loading, inAuth, router]);
 

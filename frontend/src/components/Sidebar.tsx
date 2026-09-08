@@ -6,6 +6,7 @@ import { useOrders } from '../hooks/useOrders';
 import { confirmAsk } from '../lib/notify';
 import { colors, radius } from '../theme';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { isAdminLevel, roleLabel } from '../lib/roles';
 
 interface Item {
   href: string;
@@ -20,7 +21,7 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   const { orders } = useOrders();
   // Dropdown profil: menu bawah (Ganti kata sandi / Keluar) + modal ganti sandi.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -98,7 +99,7 @@ export function Sidebar() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.profileName}>{user?.display_name}</Text>
-              <Text style={styles.profileRole}>{user?.role === 'admin' ? 'Administrator' : 'Trader'}</Text>
+              <Text style={styles.profileRole}>{roleLabel(user?.role)}</Text>
             </View>
             <Text style={[styles.profileCaret, menuOpen && styles.profileCaretOpen]}>▲</Text>
           </Pressable>

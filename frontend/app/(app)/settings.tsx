@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { api, APP_VERSION, type AppSettings, type UserRow } from '../../src/lib/api';
+import { api, APP_VERSION, type AppSettings, type Role, type UserRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space } from '../../src/theme';
 import { ActionMenu, Avatar, Button, Field, PageHeader, SelectField, Sheet, type ActionMenuItem } from '../../src/components/ui';
+import { isAdminLevel, isSuperadmin, roleLabel } from '../../src/lib/roles';
 
 export default function Settings() {
   useAdminOnly();
@@ -15,6 +16,7 @@ export default function Settings() {
   const [showUsers, setShowUsers] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const superadmin = isSuperadmin(user?.role);
   const [requiredVersion, setRequiredVersion] = useState('');
   const [updateUrl, setUpdateUrl] = useState('');
 
@@ -59,6 +61,7 @@ export default function Settings() {
         <Text style={styles.rule}>Aturan: jumlah minimal foto tidak boleh disetel nol.</Text>
       </Panel>
 
+      {superadmin && (
       <Panel
         title="Versi aplikasi"
         note="Kunci aplikasi HP pada versi tertentu. Isi versi wajib HANYA setelah APK baru siap diunduh — begitu disimpan, semua pengguna HP dengan versi lain langsung terkunci sampai memperbarui. Kosongkan untuk mematikan penguncian. Versi web tidak pernah terkunci."
@@ -82,6 +85,7 @@ export default function Settings() {
           onPress={() => save({ required_app_version: requiredVersion.trim(), app_update_url: updateUrl.trim() })}
         />
       </Panel>
+      )}
 
       <Panel title="Akun pengguna" note="Admin membuat akun trader/admin. Tidak ada registrasi mandiri.">
         <Button label={`Kelola ${users.length} akun`} icon="→" variant="secondary" onPress={() => setShowUsers(true)} />
@@ -89,8 +93,8 @@ export default function Settings() {
 
       {!!saved && <Text style={styles.saved}>{saved}</Text>}
 
-      <UsersSheet open={showUsers} onClose={() => setShowUsers(false)} users={users} meId={user?.id ?? ''} onChanged={async () => { await load(); await refreshUser(); }} onCreate={() => setShowCreate(true)} />
-      <CreateUserSheet open={showCreate} onClose={() => setShowCreate(false)} onCreated={async () => { await load(); setShowCreate(false); }} />
+      <UsersSheet open={showUsers} onClose={() => setShowUsers(false)} users={users} meId={user?.id ?? ''} onChanged={async () => { await load(); await refreshUser(); }} onCreate={() => setShowCreate(true)} viewerIsSuperadmin={superadmin} />
+      <CreateUserSheet open={showCreate} onClose={() => setShowCreate(false)} onCreated={async () => { await load(); setShowCreate(false); }} viewerIsSuperadmin={superadmin} />
     </ScrollView>
   );
 }
@@ -131,13 +135,13 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
   );
 }
 
-function UsersSheet({ open, onClose, users, meId, onChanged, onCreate }: { open: boolean; onClose: () => void; users: UserRow[]; meId: string; onChanged: () => void; onCreate: () => void }) {
+function UsersSheet({ open, onClose, users, meId, onChanged, onCreate, viewerIsSuperadmin }: { open: boolean; onClose: () => void; users: UserRow[]; meId: string; onChanged: () => void; onCreate: () => void; viewerIsSuperadmin: boolean }) {
   const { height: winH } = useWindowDimensions();
   return (
     <Sheet open={open} onClose={onClose} title="Kelola akun pengguna" wide>
       <ScrollView style={{ maxHeight: Math.round(winH * 0.52) }} bounces={false} showsVerticalScrollIndicator>
         {users.map((u) => (
-          <UserRow key={u.id} user={u} isSelf={u.id === meId} onChanged={onChanged} />
+          <UserRow key={u.id} user={u} isSelf={u.id === meId} onChanged={onChanged} viewerIsSuperadmin={viewerIsSuperadmin} />
         ))}
       </ScrollView>
       <View style={{ marginTop: space.md }}>
@@ -147,7 +151,16 @@ function UsersSheet({ open, onClose, users, meId, onChanged, onCreate }: { open:
   );
 }
 
-function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; onChanged: () => void }) {
+// Opsi role: hanya superadmin yang boleh mengangkat superadmin, sejalan
+// dengan aturan server (403 bila dilanggar).
+const roleOptionsFor = (viewerIsSuperadmin: boolean) => [
+  { value: 'trader', label: 'Trader' },
+  { value: 'admin', label: 'Admin' },
+  ...(viewerIsSuperadmin ? [{ value: 'superadmin', label: 'Superadmin' }] : []),
+];
+
+function UserRow({ user, isSelf, onChanged, viewerIsSuperadmin }: { user: UserRow; isSelf: boolean; onChanged: () => void; viewerIsSuperadmin: boolean }) {
+  const roleOptions = roleOptionsFor(viewerIsSuperadmin);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.display_name);
   const [role, setRole] = useState(user.role);
@@ -221,12 +234,12 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
       <Avatar name={user.display_name} size={30} />
       <View style={{ flex: 1 }}>
         <Text style={styles.userName}>{user.display_name} {isSelf && <Text style={styles.selfTag}>(Anda)</Text>}</Text>
-        <Text style={styles.userMeta}>@{user.username} · {user.role === 'admin' ? 'Administrator' : 'Trader'} · {user.order_count} order</Text>
+        <Text style={styles.userMeta}>@{user.username} · {roleLabel(user.role)} · {user.order_count} order</Text>
         <Text style={styles.userMeta}>Status: {user.is_active ? 'Aktif' : 'Nonaktif'}</Text>
         {editing && (
           <View style={styles.editBox}>
             <Field label="Nama lengkap" value={name} onChangeText={setName} />
-            <SelectField label="Role" value={role} onChange={(v) => setRole(v as 'admin' | 'trader')} options={[{ value: 'trader', label: 'Trader' }, { value: 'admin', label: 'Admin' }]} />
+            <SelectField label="Role" value={role} onChange={(v) => setRole(v as Role)} options={roleOptions} />
             <Field label="Reset kata sandi (kosongkan bila tidak diubah)" value={password} onChangeText={setPassword} secureTextEntry />
             <Button label="Simpan" fullWidth onPress={save} />
           </View>
@@ -237,11 +250,12 @@ function UserRow({ user, isSelf, onChanged }: { user: UserRow; isSelf: boolean; 
   );
 }
 
-function CreateUserSheet({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+function CreateUserSheet({ open, onClose, onCreated, viewerIsSuperadmin }: { open: boolean; onClose: () => void; onCreated: () => void; viewerIsSuperadmin: boolean }) {
+  const roleOptions = roleOptionsFor(viewerIsSuperadmin);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'trader' | 'admin'>('trader');
+  const [role, setRole] = useState<Role>('trader');
 
   const create = async () => {
     if (!username.trim() || !password.trim() || !name.trim()) {
@@ -262,7 +276,7 @@ function CreateUserSheet({ open, onClose, onCreated }: { open: boolean; onClose:
       <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
       <Field label="Nama lengkap" value={name} onChangeText={setName} />
       <Field label="Kata sandi" value={password} onChangeText={setPassword} secureTextEntry />
-      <SelectField label="Role" value={role} onChange={(v) => setRole(v as 'trader' | 'admin')} options={[{ value: 'trader', label: 'Trader' }, { value: 'admin', label: 'Admin' }]} />
+      <SelectField label="Role" value={role} onChange={(v) => setRole(v as Role)} options={roleOptions} />
       <Button label="Buat akun" fullWidth onPress={create} />
     </Sheet>
   );

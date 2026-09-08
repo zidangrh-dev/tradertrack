@@ -144,3 +144,23 @@ await assert.rejects(() => repo.settingsPatch({ required_app_version: 'terbaru' 
 await assert.rejects(() => repo.settingsPatch({ app_update_url: 'ftp://x/a.apk' }), /http/, 'skema URL divalidasi');
 const s2 = await repo.settingsPatch({ required_app_version: '' });
 assert.equal(s2.required_app_version, '', 'dikosongkan → gerbang mati');
+
+// Role superadmin di jalur SQL: migrasi menaikkan akun 'admin' dan hitungan
+// admin ikut mencakup superadmin.
+const saUser = await repo.userByUsername('admin');
+assert.equal(saUser.role, 'superadmin', 'akun admin bawaan dinaikkan jadi superadmin');
+assert.ok((await repo.activeSuperadminCount()) >= 1, 'ada superadmin aktif');
+assert.ok((await repo.activeAdminCount()) >= 1, 'superadmin ikut dihitung sebagai admin');
+
+// CHECK constraint menerima role baru, menolak yang tidak dikenal.
+const saBaru = await repo.createUser({
+  username: `sa_smoke_${Date.now()}`, password_hash: 'x', display_name: 'SA Smoke', role: 'superadmin',
+});
+assert.equal(saBaru.role, 'superadmin');
+assert.equal(await repo.activeSuperadminCount(), 2, 'superadmin bertambah');
+await assert.rejects(
+  () => repo.createUser({ username: `bad_${Date.now()}`, password_hash: 'x', display_name: 'X', role: 'dewa' }),
+  'role di luar daftar ditolak database',
+);
+await repo.deleteUser(saBaru.id);
+assert.equal(await repo.activeSuperadminCount(), 1, 'kembali satu superadmin');

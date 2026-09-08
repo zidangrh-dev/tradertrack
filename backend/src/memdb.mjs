@@ -65,7 +65,12 @@ export function setLastLogin(id) {
   if (u) u.last_login_at = now();
 }
 export function activeAdminCount() {
-  return db.users.filter((u) => u.role === 'admin' && u.is_active).length;
+  // Superadmin ikut dihitung: ia juga admin.
+  return db.users.filter((u) => (u.role === 'admin' || u.role === 'superadmin') && u.is_active).length;
+}
+
+export function activeSuperadminCount() {
+  return db.users.filter((u) => u.role === 'superadmin' && u.is_active).length;
 }
 export function createUser(input) {
   if (db.users.some((u) => u.username === input.username.toLowerCase())) throw new Error('Username sudah dipakai.');
@@ -483,7 +488,7 @@ export function reports(range, from, to, traderId) {
 
 function seed() {
   const users = [
-    { id: 'u-admin', username: 'admin', password_hash: hash('admin'), display_name: 'Dimas Arya', role: 'admin', is_active: true, last_login_at: null, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'u-admin', username: 'admin', password_hash: hash('admin'), display_name: 'Dimas Arya', role: 'superadmin', is_active: true, last_login_at: null, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
     { id: 'u-nabila', username: 'nabila', password_hash: hash('trader'), display_name: 'Nabila Putri', role: 'trader', is_active: true, last_login_at: null, created_at: hoursAgo(190), updated_at: hoursAgo(190) },
     { id: 'u-fajar', username: 'fajar', password_hash: hash('trader'), display_name: 'Fajar Rahman', role: 'trader', is_active: true, last_login_at: null, created_at: hoursAgo(180), updated_at: hoursAgo(180) },
   ];

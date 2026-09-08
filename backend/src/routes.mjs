@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { requireAuth, requireAdmin, signToken } from './auth.mjs';
+import { requireAuth, requireAdmin, signToken, isAdminLevel, isSuperadmin } from './auth.mjs';
 import { getRepo } from './repo.mjs';
 import { gateEnabled, isGatedPlatform, versionMatches } from './appVersion.mjs';
 
@@ -144,7 +144,7 @@ const upload = multer({
   const orderFor = async (req, id, { adminBypass = true } = {}) => {
     const order = await repo.getOrder(id);
     const isOwner = order.trader_id === req.user.id;
-    if (!isOwner && !(adminBypass && req.user.role === 'admin')) {
+    if (!isOwner && !(adminBypass && isAdminLevel(req.user.role))) {
       throw Object.assign(new Error('Hanya order milik Anda yang dapat diakses.'), { status: 403 });
     }
     return order;
@@ -204,7 +204,7 @@ const upload = multer({
     const { q, status, pickup_method, page, per_page, from, to } = req.query;
     // Toko boleh multi (koma): ?store=A,B → array. Tunggal tetap didukung.
     const store = req.query.store ? String(req.query.store).split(',').filter(Boolean) : undefined;
-    const trader = req.user.role === 'admin' ? req.query.trader : req.user.id;
+    const trader = isAdminLevel(req.user.role) ? req.query.trader : req.user.id;
     ok(res, await repo.listOrders({ q, status, pickup_method, store, trader, page, per_page, from, to }));
   }));
 
@@ -216,7 +216,7 @@ const upload = multer({
     if (!METHOD_WHITELIST.includes(b.pickup_method)) {
       return res.status(400).json({ error: 'Metode pengambilan tidak valid.' });
     }
-    const trader_id = req.user.role === 'admin' ? (b.trader_id ?? req.user.id) : req.user.id;
+    const trader_id = isAdminLevel(req.user.role) ? (b.trader_id ?? req.user.id) : req.user.id;
     const order = await repo.createOrder({
       order_number: String(b.order_number).trim(),
       recipient_name: String(b.recipient_name).trim(),
@@ -360,7 +360,7 @@ const upload = multer({
   // ---------- Reports ----------
   r.get('/reports', requireAuth, asyncH(async (req, res) => {
     // Admin: laporan semua trader. Trader: hanya order miliknya (scoping di repo).
-    const traderId = req.user.role === 'admin' ? undefined : req.user.id;
+    const traderId = isAdminLevel(req.user.role) ? undefined : req.user.id;
     ok(res, await repo.reports(
       String(req.query.range ?? ''),
       req.query.from ? String(req.query.from) : undefined,
@@ -418,11 +418,23 @@ const upload = multer({
   }));
 
   // ---------- Settings ----------
-  r.get('/settings', requireAuth, asyncH(async (_req, res) => {
-    ok(res, await repo.settings());
+  r.get('/settings', requireAuth, asyncH(async (req, res) => {
+    const s = await repo.settings();
+    // Setelan versi hanya untuk superadmin; popup pembaruan memakai
+    // /app-version yang publik, jadi tidak terganggu.
+    if (!isSuperadmin(req.user.role)) {
+      const { required_app_version: _v, app_update_url: _u, ...rest } = s;
+      return ok(res, rest);
+    }
+    ok(res, s);
   }));
   r.patch('/settings', requireAdmin, asyncH(async (req, res) => {
-    ok(res, await repo.settingsPatch(req.body ?? {}));
+    const b = req.body ?? {};
+    const menyentuhVersi = b.required_app_version !== undefined || b.app_update_url !== undefined;
+    if (menyentuhVersi && !isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat mengubah setelan versi aplikasi.' });
+    }
+    ok(res, await repo.settingsPatch(b));
   }));
 
   // ---------- Users ----------
@@ -434,7 +446,10 @@ const upload = multer({
     if (!b.username || !b.password || !b.display_name) {
       return res.status(400).json({ error: 'Username, kata sandi, dan nama lengkap wajib diisi.' });
     }
-    if (!['admin', 'trader'].includes(b.role)) return res.status(400).json({ error: 'Role tidak valid.' });
+    if (!['superadmin', 'admin', 'trader'].includes(b.role)) return res.status(400).json({ error: 'Role tidak valid.' });
+    if (b.role === 'superadmin' && !isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat membuat akun superadmin.' });
+    }
     const created = await repo.createUser({
       username: String(b.username),
       password_hash: await bcrypt.hash(String(b.password), 10),
@@ -450,7 +465,21 @@ const upload = multer({
     if (req.params.id === req.user.id && b.role && b.role !== target.role) {
       return res.status(400).json({ error: 'Anda tidak dapat mengubah role diri sendiri.' });
     }
-    if (b.is_active === false && target.role === 'admin' && (await repo.activeAdminCount()) <= 1) {
+    // Admin biasa tidak boleh menyentuh akun superadmin — tanpa ini ia bisa
+    // menonaktifkan superadmin lalu mengambil alih setelan versi.
+    if (isSuperadmin(target.role) && !isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat mengubah akun superadmin.' });
+    }
+    if (b.role === 'superadmin' && !isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat mengangkat akun superadmin.' });
+    }
+    // Superadmin terakhir wajib tetap ada, kalau tidak setelan versi terkunci selamanya.
+    const menurunkanSuperadmin = isSuperadmin(target.role) && b.role && b.role !== 'superadmin';
+    const menonaktifkanSuperadmin = isSuperadmin(target.role) && b.is_active === false;
+    if ((menurunkanSuperadmin || menonaktifkanSuperadmin) && (await repo.activeSuperadminCount()) <= 1) {
+      return res.status(400).json({ error: 'Akun superadmin terakhir tidak dapat diturunkan atau dinonaktifkan.' });
+    }
+    if (b.is_active === false && isAdminLevel(target.role) && (await repo.activeAdminCount()) <= 1) {
       return res.status(400).json({ error: 'Akun admin terakhir tidak dapat dinonaktifkan.' });
     }
     await repo.updateUser(req.params.id, {
@@ -468,7 +497,13 @@ const upload = multer({
     if (req.params.id === req.user.id) {
       return res.status(400).json({ error: 'Anda tidak dapat menghapus akun sendiri.' });
     }
-    if (target.role === 'admin' && (await repo.activeAdminCount()) <= 1) {
+    if (isSuperadmin(target.role) && !isSuperadmin(req.user.role)) {
+      return res.status(403).json({ error: 'Hanya superadmin yang dapat menghapus akun superadmin.' });
+    }
+    if (isSuperadmin(target.role) && (await repo.activeSuperadminCount()) <= 1) {
+      return res.status(400).json({ error: 'Akun superadmin terakhir tidak dapat dihapus.' });
+    }
+    if (isAdminLevel(target.role) && (await repo.activeAdminCount()) <= 1) {
       return res.status(400).json({ error: 'Akun admin terakhir tidak dapat dihapus.' });
     }
     await repo.deleteUser(req.params.id);

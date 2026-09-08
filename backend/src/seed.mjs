@@ -12,7 +12,7 @@ export async function seedDemoData(pool) {
   const hash = (pw) => bcrypt.hashSync(pw, 10);
   const { rows: admins } = await pool.query(
     `INSERT INTO users (username, password_hash, display_name, role) VALUES
-     ('admin', $1, 'Dimas Arya', 'admin'),
+     ('admin', $1, 'Dimas Arya', 'superadmin'),
      ('nabila', $2, 'Nabila Putri', 'trader'),
      ('fajar', $3, 'Fajar Rahman', 'trader')
      RETURNING id, username`,
@@ -81,5 +81,5 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
   await migrate(pool);
   const did = await seedDemoData(pool);
   await pool.end();
-  console.log(did ? 'Seed selesai. Demo: admin/admin, nabila/trader, fajar/trader.' : 'Seed dilewati — database sudah terisi.');
+  console.log(did ? 'Seed selesai. Demo: admin/admin (superadmin), nabila/trader, fajar/trader.' : 'Seed dilewati — database sudah terisi.');
 }

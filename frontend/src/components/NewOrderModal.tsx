@@ -5,9 +5,10 @@ import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
 import { colors, radius, pickupMethodOptions, webNoOutline } from '../theme';
 import { Button, Field, PasswordField, Select, Sheet, type SelectOption } from './ui';
+import { isAdminLevel } from '../lib/roles';
 
 export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolean; onClose: () => void; user: SessionUser | null; onCreated: () => void }) {
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   const [orderNumber, setOrderNumber] = useState('');
   const [recipient, setRecipient] = useState('');
   const [method, setMethod] = useState<'zaydan_ambilan_gjm' | 'self_pick_up'>('self_pick_up');

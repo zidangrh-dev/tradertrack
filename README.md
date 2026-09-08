@@ -38,16 +38,29 @@ data_masuk ──proses pick up──▶ proses_pick_up ──selesai──▶ s
 
 ### Akses per role
 
-| Aksi | Admin | Trader |
-|---|---|---|
-| Lihat daftar order | Semua | **Hanya miliknya** (dipaksa di server) |
-| Input order | Untuk siapa pun | Untuk dirinya sendiri |
-| Proses pick up order | Semua | Miliknya saja |
-| Unggah/hapus foto bukti | Semua (non-selesai) | Miliknya saja (non-selesai) |
-| Selesaikan order / tandai bermasalah / reopen | ✔ | ✗ |
-| Scan resi | ✔ | ✗ |
-| Kelola produk, toko, kuota | ✔ | ✗ |
-| Reports / analytics | ✔ | ✗ |
+Tiga role: **superadmin**, **admin**, **trader**. Superadmin adalah *superset*
+admin — semua yang bisa dilakukan admin, ditambah kewenangan khusus di bawah.
+
+| Aksi | Superadmin | Admin | Trader |
+|---|---|---|---|
+| Lihat daftar order | Semua | Semua | **Hanya miliknya** (dipaksa di server) |
+| Input order | Untuk siapa pun | Untuk siapa pun | Untuk dirinya sendiri |
+| Proses pick up order | Semua | Semua | Miliknya saja |
+| Unggah/hapus foto bukti | Semua (non-selesai) | Semua (non-selesai) | Miliknya saja (non-selesai) |
+| Selesaikan order / tandai bermasalah / reopen | ✔ | ✔ | ✗ |
+| Scan resi | ✔ | ✔ | ✗ |
+| Kelola produk, toko, kuota | ✔ | ✔ | ✗ |
+| Reports / analytics | ✔ | ✔ | ✗ (hanya datanya sendiri) |
+| Setelan operasional (ambang tertunda, aturan foto) | ✔ | ✔ | ✗ |
+| **Setelan versi aplikasi** (versi wajib + link unduhan) | ✔ | ✗ | ✗ |
+| **Melihat** setelan versi lewat `GET /settings` | ✔ | ✗ | ✗ |
+| **Membuat / mengangkat / menurunkan superadmin** | ✔ | ✗ | ✗ |
+| Mengubah, menonaktifkan, atau menghapus akun superadmin | ✔ | ✗ | ✗ |
+
+Pengaman: **superadmin terakhir** tidak bisa dihapus, dinonaktifkan, atau
+diturunkan rolenya — tanpa itu setelan versi bisa terkunci selamanya.
+Saat migrasi dijalankan, akun `admin` bawaan otomatis dinaikkan menjadi
+superadmin (hanya bila belum ada superadmin sama sekali).
 
 > Scoping dilakukan di **server** (route memaksa `trader_id = req.user.id`), sehingga filter `?trader=` dari client tidak bisa dipakai trader untuk membuka data orang lain. Detail order milik orang lain → 403.
 
@@ -225,7 +238,7 @@ setel.
 3. **Build APK** — `cd frontend && npm run build:apk`, lalu unduh hasilnya.
 4. **Taruh APK di tempat yang bisa diunduh** (VPS, Drive, dsb.) sampai
    menghasilkan link unduhan langsung.
-5. **Isi di aplikasi web** → Pengaturan → panel **Versi aplikasi**:
+5. **Isi di aplikasi web sebagai superadmin** → Pengaturan → panel **Versi aplikasi**:
    isi **Link unduhan APK** lalu **Versi wajib** (`0.2.0`), simpan.
    Sejak titik ini semua APK lama terkunci dan menampilkan popup.
 6. **Pengguna** menekan Unduh → pasang APK → buka aplikasi → normal kembali.
@@ -235,7 +248,7 @@ setel.
 
 ### Membatalkan blokir
 
-- **Cara biasa:** buka web di laptop → Pengaturan → **kosongkan** kolom versi
+- **Cara biasa:** buka web di laptop sebagai superadmin → Pengaturan → **kosongkan** kolom versi
   wajib → simpan. Blokir hilang seketika.
 - **Rem darurat (server):** tambahkan `APP_VERSION_GATE=off` di
   `/opt/zproject/.env`, lalu `docker compose -p zproject up -d api`.

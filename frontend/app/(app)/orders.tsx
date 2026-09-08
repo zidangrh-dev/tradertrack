@@ -13,6 +13,7 @@ import { durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
+import { isAdminLevel } from '../../src/lib/roles';
 
 const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
 const PER_PAGE = 50;
@@ -33,7 +34,7 @@ async function copyText(text: string) {
 
 export default function Orders() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   // Layar sempit (HP): filter ditumpuk & tabel diganti kartu — 9 kolom + kolom
   // aksi fixed 158px tidak mungkin muat di lebar HP (sisa ±20px per kolom).
   const { width } = useWindowDimensions();

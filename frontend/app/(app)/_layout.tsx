@@ -6,10 +6,11 @@ import { MobileProfileBar } from '../../src/components/MobileProfileBar';
 import { FloatingTabBar } from '../../src/components/FloatingTabBar';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors } from '../../src/theme';
+import { isAdminLevel } from '../../src/lib/roles';
 
 export default function AppLayout() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = isAdminLevel(user?.role);
   // Web desktop/tablet lebar memakai sidebar; layar sempit memakai kapsul bawah.
   const wide = useWindowDimensions().width >= 900;
   // Android edge-to-edge: konten digambar sampai ke belakang status bar, jadi

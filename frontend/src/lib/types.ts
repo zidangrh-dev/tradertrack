@@ -1,6 +1,6 @@
 // Tipe domain bersama — sumber kebenaran kontrak frontend ↔ backend.
 
-export type Role = 'admin' | 'trader';
+export type Role = 'superadmin' | 'admin' | 'trader';
 export type Status = 'data_masuk' | 'proses_pick_up' | 'selesai';
 export type PickupMethod = 'zaydan_ambilan_gjm' | 'self_pick_up';
 

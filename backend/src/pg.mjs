@@ -102,7 +102,14 @@ export default (pool) => {
   const setLastLogin = (id) => pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [id]);
 
   const activeAdminCount = async () => {
-    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'admin' AND is_active`);
+    // Superadmin ikut dihitung: ia juga admin, jadi sistem tidak boleh
+    // kehilangan seluruh akun tingkat admin.
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM users WHERE role IN ('admin', 'superadmin') AND is_active`);
+    return rows[0].n;
+  };
+
+  const activeSuperadminCount = async () => {
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'superadmin' AND is_active`);
     return rows[0].n;
   };
 
@@ -648,7 +655,7 @@ export default (pool) => {
 
   return {
     settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
-    activeAdminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
+    activeAdminCount, activeSuperadminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
     orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode, clearBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,
   };
