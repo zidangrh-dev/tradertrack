@@ -225,6 +225,7 @@ export function listOrders(query = {}) {
   if (query.status) out = out.filter((o) => o.status === query.status);
   if (query.pickup_method) out = out.filter((o) => o.pickup_method === query.pickup_method);
   if (query.store?.length) out = out.filter((o) => query.store.includes(o.store_id));
+  if (query.product?.length) out = out.filter((o) => query.product.includes(o.product_id));
   if (query.trader) out = out.filter((o) => o.trader_id === query.trader);
   if (query.from) out = out.filter((o) => o.created_at >= query.from);
   if (query.to) out = out.filter((o) => o.created_at <= query.to);

@@ -345,6 +345,43 @@ describe('CF3 Daftar order', () => {
     const lazada = await client(admin).get('/api/orders?store=st-lazada');
     assert.equal(countTwo, countShopee + lazada.data.total, 'gabungan dua toko = jumlah masing-masing (OR)');
   });
+  test('filter produk: tunggal, multi (OR), dan gabungan dengan toko (AND)', async () => {
+    const { data: produk } = await client(admin).get('/api/products');
+    const dipakai = [];
+    for (const p of produk) {
+      const r = await client(admin).get(`/api/orders?product=${p.id}`);
+      if (r.data.total > 0) dipakai.push({ id: p.id, total: r.data.total });
+      if (dipakai.length === 2) break;
+    }
+    assert.ok(dipakai.length >= 1, 'ada produk yang dipakai order');
+
+    // Tunggal: semua item memakai produk itu.
+    const satu = await client(admin).get(`/api/orders?product=${dipakai[0].id}`);
+    assert.equal(satu.status, 200);
+    assert.ok(satu.data.items.every((o) => o.product_id === dipakai[0].id));
+
+    if (dipakai.length === 2) {
+      // Multi: gabungan dua produk = jumlah masing-masing (OR di dalam filter).
+      const dua = await client(admin).get(`/api/orders?product=${dipakai[0].id},${dipakai[1].id}`);
+      assert.ok(dua.data.items.every((o) => [dipakai[0].id, dipakai[1].id].includes(o.product_id)));
+      assert.equal(dua.data.total, dipakai[0].total + dipakai[1].total, 'gabungan dua produk = jumlah masing-masing (OR)');
+    }
+
+    // AND antar-filter: produk + toko menyempit, tidak melebar.
+    const storeId = satu.data.items[0]?.store_id;
+    if (storeId) {
+      const kombinasi = await client(admin).get(`/api/orders?product=${dipakai[0].id}&store=${storeId}`);
+      assert.ok(kombinasi.data.items.every((o) => o.product_id === dipakai[0].id && o.store_id === storeId));
+      assert.ok(kombinasi.data.total <= satu.data.total, 'menambah filter tidak boleh menambah hasil');
+    }
+  });
+  test('filter produk tidak membocorkan order trader lain', async () => {
+    const { data: produk } = await client(admin).get('/api/products');
+    const semua = await client(admin).get(`/api/orders?product=${produk[0].id}`);
+    const milikTrader = await client(trader).get(`/api/orders?product=${produk[0].id}`);
+    assert.ok(milikTrader.data.items.every((o) => o.trader_id === 'u-nabila'), 'scoping trader tetap berlaku');
+    assert.ok(milikTrader.data.total <= semua.data.total);
+  });
   test('filter rentang tanggal from/to', async () => {
     const now = new Date();
     const from = new Date(now.getTime() - 60 * 60 * 1000).toISOString();

@@ -204,8 +204,10 @@ const upload = multer({
     const { q, status, pickup_method, page, per_page, from, to } = req.query;
     // Toko boleh multi (koma): ?store=A,B → array. Tunggal tetap didukung.
     const store = req.query.store ? String(req.query.store).split(',').filter(Boolean) : undefined;
+    // Produk juga multi (koma): ?product=A,B → array. Tunggal tetap didukung.
+    const product = req.query.product ? String(req.query.product).split(',').filter(Boolean) : undefined;
     const trader = isAdminLevel(req.user.role) ? req.query.trader : req.user.id;
-    ok(res, await repo.listOrders({ q, status, pickup_method, store, trader, page, per_page, from, to }));
+    ok(res, await repo.listOrders({ q, status, pickup_method, store, product, trader, page, per_page, from, to }));
   }));
 
   r.post('/orders', requireAuth, asyncH(async (req, res) => {

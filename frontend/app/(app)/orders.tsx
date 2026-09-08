@@ -44,6 +44,7 @@ export default function Orders() {
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
   const [store, setStore] = useState<string[]>([]);
+  const [product, setProduct] = useState<string[]>([]);
   // Rentang tanggal kosong = semua tanggal (tidak ada data yang tersembunyi diam-diam).
   const [fromKey, setFromKey] = useState<string | null>(null);
   const [toKey, setToKey] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export default function Orders() {
   const [editing, setEditing] = useState<OrderView | null>(null);
   const [traders, setTraders] = useState<SelectOption[]>([]);
   const [stores, setStores] = useState<SelectOption[]>([]);
+  const [products, setProducts] = useState<SelectOption[]>([]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -68,6 +70,14 @@ export default function Orders() {
     api.listMarketplaceStores().then((ss) =>
       setStores(ss.map((s) => ({ value: s.id, label: s.name }))),
     ).catch(() => setStores([]));
+    // Produk nonaktif ikut ditampilkan agar order lama tetap bisa disaring.
+    api.listProducts().then((ps) =>
+      setProducts(
+        [...ps]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((p) => ({ value: p.id, label: p.name, sub: p.is_active ? undefined : 'Nonaktif' })),
+      ),
+    ).catch(() => setProducts([]));
   }, []);
 
   const query = useMemo(() => {
@@ -76,6 +86,7 @@ export default function Orders() {
     if (status) q.status = status;
     if (method) q.pickup_method = method;
     if (store.length) q.store = store.join(',');
+    if (product.length) q.product = product.join(',');
     if (trader) q.trader = trader;
     q.page = String(page);
     q.per_page = String(PER_PAGE);
@@ -83,7 +94,7 @@ export default function Orders() {
     if (fromKey) q.from = startOfDayISO(fromKey);
     if (toKey) q.to = endOfDayISO(toKey);
     return q;
-  }, [search, status, method, store, trader, fromKey, toKey, page]);
+  }, [search, status, method, store, product, trader, fromKey, toKey, page]);
 
   const { orders, total, loading, error, refresh } = useOrders(query);
 
@@ -122,10 +133,10 @@ export default function Orders() {
   };
 
   const resetFilters = () => {
-    setStatus(''); setMethod(''); setStore([]); setTrader(''); setFromKey(null); setToKey(null); setPage(1);
+    setStatus(''); setMethod(''); setStore([]); setProduct([]); setTrader(''); setFromKey(null); setToKey(null); setPage(1);
   };
 
-  const activeFilters = [status, method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0);
+  const activeFilters = [status, method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (product.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0);
   const copyFiltered = async () => {
     try {
       const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
@@ -277,6 +288,16 @@ export default function Orders() {
           options={pickupMethodOptions}
           onChange={(v) => { setMethod(v); setPage(1); }}
           placeholder="Semua metode"
+          clearLabel="Semua"
+          compact
+          block={isNarrow}
+        />
+        <MultiSelect
+          label="Produk"
+          value={product}
+          options={products}
+          onChange={(v) => { setProduct(v); setPage(1); }}
+          placeholder="Semua produk"
           clearLabel="Semua"
           compact
           block={isNarrow}

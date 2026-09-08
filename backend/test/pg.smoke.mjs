@@ -164,3 +164,21 @@ await assert.rejects(
 );
 await repo.deleteUser(saBaru.id);
 assert.equal(await repo.activeSuperadminCount(), 1, 'kembali satu superadmin');
+
+// Filter produk (jalur SQL ANY): OR di dalam filter, AND dengan toko.
+const prodFilter = (await repo.listProducts()).find((x) => x.remaining_quota >= 2);
+await repo.createOrder(
+  { order_number: `TRK-PF-A-${Date.now()}`, recipient_name: 'A', pickup_method: 'self_pick_up', product_id: prodFilter.id, store_id: stores[0].id },
+  actorId,
+);
+await repo.createOrder(
+  { order_number: `TRK-PF-B-${Date.now()}`, recipient_name: 'B', pickup_method: 'self_pick_up', product_id: prodFilter.id, store_id: stores[1].id },
+  actorId,
+);
+const byProduct = await repo.listOrders({ product: [prodFilter.id], q: 'TRK-PF-' });
+assert.equal(byProduct.total, 2, 'filter produk memuat kedua order');
+assert.ok(byProduct.items.every((o) => o.product_id === prodFilter.id), 'hanya produk terpilih');
+const produkDanToko = await repo.listOrders({ product: [prodFilter.id], store: [stores[0].id], q: 'TRK-PF-' });
+assert.equal(produkDanToko.total, 1, 'produk + toko dipersempit (AND antar-filter)');
+const produkTakDipakai = await repo.listOrders({ product: ['00000000-0000-0000-0000-000000000000'], q: 'TRK-PF-' });
+assert.equal(produkTakDipakai.total, 0, 'produk lain tidak memuat order ini');

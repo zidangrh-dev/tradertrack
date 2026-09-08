@@ -22,6 +22,7 @@ export default function Pickup() {
   const [search, setSearch] = useState('');
   const [method, setMethod] = useState('');
   const [store, setStore] = useState<string[]>([]);
+  const [product, setProduct] = useState<string[]>([]);
   const [trader, setTrader] = useState('');
   // Rentang tanggal kosong = semua tanggal.
   const [fromKey, setFromKey] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export default function Pickup() {
   const [showFilters, setShowFilters] = useState(false);
   const [traders, setTraders] = useState<SelectOption[]>([]);
   const [stores, setStores] = useState<SelectOption[]>([]);
+  const [products, setProducts] = useState<SelectOption[]>([]);
 
   useEffect(() => {
     api.listUsers().then((users) =>
@@ -38,6 +40,14 @@ export default function Pickup() {
     api.listMarketplaceStores().then((ss) =>
       setStores(ss.map((s) => ({ value: s.id, label: s.name }))),
     ).catch(() => setStores([]));
+    // Produk nonaktif ikut ditampilkan agar order lama tetap bisa disaring.
+    api.listProducts().then((ps) =>
+      setProducts(
+        [...ps]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((p) => ({ value: p.id, label: p.name, sub: p.is_active ? undefined : 'Nonaktif' })),
+      ),
+    ).catch(() => setProducts([]));
   }, []);
 
   // Selalu status proses_pick_up dikirim ke server (bukan filter klien) agar
@@ -47,12 +57,13 @@ export default function Pickup() {
     if (search.trim()) q.q = search.trim();
     if (method) q.pickup_method = method;
     if (store.length) q.store = store.join(',');
+    if (product.length) q.product = product.join(',');
     if (trader) q.trader = trader;
     // Batas atas akhir hari agar rentang inklusif sampai tanggal terpilih.
     if (fromKey) q.from = startOfDayISO(fromKey);
     if (toKey) q.to = endOfDayISO(toKey);
     return q;
-  }, [search, method, store, trader, fromKey, toKey]);
+  }, [search, method, store, product, trader, fromKey, toKey]);
 
   const { orders, refresh, loading } = useOrders(query);
   const pending = useMemo(
@@ -73,10 +84,10 @@ export default function Pickup() {
   const [info, setInfo] = useState<string | null>(null);
   const settings = useSettings();
 
-  const activeFilters = [search.trim(), method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0) + (flagged ? 1 : 0);
+  const activeFilters = [search.trim(), method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (product.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0) + (flagged ? 1 : 0);
 
   const resetFilters = () => {
-    setSearch(''); setMethod(''); setStore([]); setTrader(''); setFromKey(null); setToKey(null); setFlagged(false);
+    setSearch(''); setMethod(''); setStore([]); setProduct([]); setTrader(''); setFromKey(null); setToKey(null); setFlagged(false);
   };
 
   const completePickup = async (o: OrderView) => {
@@ -162,6 +173,16 @@ export default function Pickup() {
             options={pickupMethodOptions}
             onChange={(v) => setMethod(v)}
             placeholder="Semua metode"
+            clearLabel="Semua"
+            compact
+            block={isNarrow}
+          />
+          <MultiSelect
+            label="Produk"
+            value={product}
+            options={products}
+            onChange={setProduct}
+            placeholder="Semua produk"
             clearLabel="Semua"
             compact
             block={isNarrow}
