@@ -84,7 +84,10 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
   // Aturan bukti ganda: order baru wajib barcode pick up + foto bukti order.
   const dualRequired = !!order.requires_dual_evidence && status === 'data_masuk';
-  const hasBarcode = !!order.barcode_path;
+  // Ambil dari detail (di-refresh tiap mutasi); prop order baru berubah saat
+  // daftar induk memuat ulang — kalau dipakai, preview telat sampai refresh.
+  const barcodePath = detail?.barcode_path ?? order.barcode_path;
+  const hasBarcode = !!barcodePath;
   const orderProof = detail?.photos.find((p) => p.source === 'order') ?? null;
   const hasOrderProof = !!orderProof;
   const dualReady = hasBarcode && hasOrderProof;
@@ -140,19 +143,22 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               <PhotoSlot
                 label="Foto bukti order"
                 filePath={orderProof?.file_path ?? null}
-                locked={status === 'selesai'}
+                locked={status !== 'data_masuk'}
+                lockedReason="Bukti order terkunci setelah order diproses."
                 busy={busy}
                 onPreview={(fp) => setPreview(fp)}
                 onPick={attachOrderProof}
-                onDelete={orderProof && status !== 'selesai' ? () => mutate(() => api.deletePhoto(order.id, orderProof.id)) : undefined}
+                onDelete={orderProof && status === 'data_masuk' ? () => mutate(() => api.deletePhoto(order.id, orderProof.id)) : undefined}
               />
               <PhotoSlot
                 label="Barcode pick up"
-                filePath={order.barcode_path}
+                filePath={barcodePath}
                 locked={status !== 'data_masuk'}
+                lockedReason="Barcode hanya bisa dilampirkan saat status Data masuk."
                 busy={busy}
                 onPreview={(fp) => setPreview(fp)}
                 onPick={attachBarcode}
+                onDelete={barcodePath && status === 'data_masuk' ? () => mutate(() => api.deleteBarcode(order.id)) : undefined}
               />
             </View>
             {dualRequired && !dualReady && (
@@ -251,10 +257,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
 /** Satu slot lampiran pick up: kosong → kotak tambah; terisi → pratinjau foto
  *  yang bisa diketuk untuk diperbesar, dengan aksi ganti/hapus. */
-function PhotoSlot({ label, filePath, locked, busy, onPreview, onPick, onDelete }: {
+function PhotoSlot({ label, filePath, locked, lockedReason, busy, onPreview, onPick, onDelete }: {
   label: string;
   filePath: string | null;
   locked: boolean;
+  /** Alasan slot terkunci — ditampilkan di kotak & saat ditekan. */
+  lockedReason?: string;
   busy: boolean;
   onPreview: (filePath: string) => void;
   onPick: () => void;
@@ -295,14 +303,19 @@ function PhotoSlot({ label, filePath, locked, busy, onPreview, onPick, onDelete 
         </View>
       ) : (
         <Pressable
-          style={({ pressed }) => [styles.slotEmpty, pressed && { opacity: 0.85 }]}
-          onPress={onPick}
-          disabled={busy || locked}
-          accessibilityLabel={`Lampirkan ${label}`}
+          style={({ pressed }) => [
+            styles.slotEmpty,
+            locked && styles.slotEmptyLocked,
+            pressed && !locked && { opacity: 0.85 },
+          ]}
+          // Saat terkunci tetap bisa ditekan: jelaskan alasannya, jangan diam saja.
+          onPress={locked ? () => notify('Tidak bisa dilampirkan', lockedReason ?? 'Lampiran ini sudah terkunci.') : onPick}
+          disabled={busy}
+          accessibilityLabel={locked ? `${label} terkunci` : `Lampirkan ${label}`}
         >
-          <Text style={styles.slotPlus}>+</Text>
-          <Text style={styles.slotHint} numberOfLines={2}>
-            {locked ? 'Terkunci' : 'Kamera / Berkas'}
+          <Text style={[styles.slotPlus, locked && styles.slotPlusLocked]}>{locked ? '\u{1F512}' : '+'}</Text>
+          <Text style={[styles.slotHint, locked && styles.slotHintLocked]} numberOfLines={2}>
+            {locked ? (lockedReason ?? 'Terkunci') : 'Kamera / Berkas'}
           </Text>
         </Pressable>
       )}
@@ -469,7 +482,10 @@ const styles = StyleSheet.create({
     borderColor: '#B9C8DA', backgroundColor: '#F4F8FD',
     alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 8,
   },
+  slotEmptyLocked: { borderStyle: 'solid', borderColor: colors.line, backgroundColor: colors.surfaceAlt },
   slotPlus: { fontSize: 24, color: colors.primaryMuted, lineHeight: 26 },
+  slotPlusLocked: { fontSize: 15, lineHeight: 20 },
+  slotHintLocked: { color: colors.faint },
   slotHint: { fontSize: 9, color: colors.muted, textAlign: 'center' },
   slotFilled: {
     height: 108, borderRadius: 10, borderWidth: 1, borderColor: colors.line,

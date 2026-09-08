@@ -481,6 +481,13 @@ export default (pool) => {
     return getOrder(id);
   };
 
+  // Kosongkan barcode. Kelengkapan pick up divalidasi ulang saat diproses
+  // (applyPickup membaca barcode_path saat itu), jadi order otomatis tertahan.
+  const clearBarcode = async (id) => {
+    await pool.query(`UPDATE orders SET barcode_path = NULL, updated_at = now() WHERE id = $1`, [id]);
+    return getOrder(id);
+  };
+
   const detail = async (id) => {
     const view = await getOrder(id);
     const { rows: photos } = await pool.query(`SELECT id, file_path, source FROM order_photos WHERE order_id = $1`, [id]);
@@ -636,7 +643,7 @@ export default (pool) => {
   return {
     settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
     activeAdminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
-    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode,
+    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode, clearBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,
   };
 };

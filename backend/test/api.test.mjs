@@ -571,6 +571,44 @@ describe('CF4 Pick up scan resi + foto barcode wajib', () => {
     const body = await res.json();
     assert.match(body.barcode_path, /^\/uploads\//);
   });
+  test('hapus barcode: sukses saat Data masuk, lalu pick up tertahan lagi', async () => {
+    const o = await orderReadyForPickup(trader);
+    // barcode terpasang → pick up boleh
+    const { data: before } = await client(trader).get(`/api/orders/${o.id}/detail`);
+    assert.match(before.barcode_path, /^\/uploads\//);
+
+    const del = await client(trader).del(`/api/orders/${o.id}/barcode`);
+    assert.equal(del.status, 200);
+    assert.equal(del.data.barcode_path, null, 'barcode dikosongkan');
+
+    // Inti aturan: tanpa barcode, order tidak bisa diproses walau bukti order ada.
+    const { status, data: err } = await client(trader).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 400);
+    assert.match(err.error, /barcode/i);
+
+    // dilampirkan lagi → bisa diproses
+    assert.equal(await attachBarcode(trader, o.id), 200);
+    const { status: s2 } = await client(trader).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(s2, 200, 'setelah barcode dipasang ulang, pick up jalan');
+  });
+  test('hapus barcode saat order sudah diproses → 400', async () => {
+    const o = await orderReadyForPickup(admin);
+    await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    const { status, data } = await client(admin).del(`/api/orders/${o.id}/barcode`);
+    assert.equal(status, 400);
+    assert.match(data.error, /Data masuk/);
+  });
+  test('hapus barcode order milik orang lain → 403', async () => {
+    const o = await orderReadyForPickup(admin);
+    const { status } = await client(trader).del(`/api/orders/${o.id}/barcode`);
+    assert.equal(status, 403);
+  });
+  test('hapus barcode pada order tanpa barcode → 400', async () => {
+    const { data: o } = await client(trader).post('/api/orders', order());
+    const { status, data } = await client(trader).del(`/api/orders/${o.id}/barcode`);
+    assert.equal(status, 400);
+    assert.match(data.error, /belum memiliki barcode/);
+  });
   test('lampirkan barcode ke order orang lain → 403', async () => {
     const { data: list } = await client(admin).get('/api/orders?trader=u-admin&status=data_masuk');
     const o = list.items[0];

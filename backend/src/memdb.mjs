@@ -330,6 +330,15 @@ export function attachBarcode(id, path) {
   return withMeta(o);
 }
 
+// Kosongkan barcode. Kelengkapan pick up divalidasi ulang saat diproses
+// (applyPickup membaca barcode_path saat itu), jadi order otomatis tertahan.
+export function clearBarcode(id) {
+  const o = findOrder(id);
+  o.barcode_path = null;
+  o.updated_at = now();
+  return withMeta(o);
+}
+
 export function detail(id) {
   const o = findOrder(id);
   const photos = db.photos.filter((p) => p.order_id === id);

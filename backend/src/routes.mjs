@@ -244,6 +244,21 @@ const upload = multer({
     ok(res, updated);
   }));
 
+  // Hapus barcode — aturan sama dengan unggahnya: hanya saat Data masuk.
+  // Order otomatis tertahan lagi karena kelengkapan divalidasi saat pick up.
+  r.delete('/orders/:id/barcode', requireAuth, asyncH(async (req, res) => {
+    const order = await orderFor(req, req.params.id);
+    if (order.status !== 'data_masuk') {
+      return res.status(400).json({ error: 'Barcode hanya bisa diubah saat status Data masuk.' });
+    }
+    if (!order.barcode_path) {
+      return res.status(400).json({ error: 'Order ini belum memiliki barcode.' });
+    }
+    const updated = await repo.clearBarcode(req.params.id);
+    emit();
+    ok(res, updated);
+  }));
+
   r.post('/orders/:id/photos', requireAuth, upload.single('photo'), asyncH(async (req, res) => {
     const order = await orderFor(req, req.params.id);
     if (order.status === 'selesai') {

@@ -121,6 +121,14 @@ await repo.uploadPhoto(complete.id, actorId, null, 'order');
 const picked = await repo.pickupOrder(complete.id, actorId);
 assert.equal(picked.status, 'proses_pick_up', 'kedua bukti lengkap → pick up jalan');
 
+// Hapus barcode mengembalikan order ke keadaan tidak lengkap (jalur SQL).
+const removable = await mkOrder('D');
+await repo.attachBarcode(removable.id, '/uploads/dual-barcode3.jpg');
+await repo.uploadPhoto(removable.id, actorId, null, 'order');
+const cleared = await repo.clearBarcode(removable.id);
+assert.equal(cleared.barcode_path, null, 'barcode dikosongkan');
+await assert.rejects(() => repo.pickupOrder(removable.id, actorId), /barcode/i, 'tanpa barcode kembali ditolak');
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');

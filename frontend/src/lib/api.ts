@@ -233,6 +233,7 @@ const remote = {
   attachBarcode: async (id: string, file: { uri: string; name: string; type: string }) => {
     return http<OrderView>(`/api/orders/${id}/barcode`, { method: 'POST', form: await photoForm(file) });
   },
+  deleteBarcode: (id: string) => http<OrderView>(`/api/orders/${id}/barcode`, { method: 'DELETE' }),
   detail: (id: string) => http<OrderDetail>(`/api/orders/${id}/detail`),
   /** source 'order' menandai foto bukti order (syarat pick up bersama barcode). */
   uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order') => {
