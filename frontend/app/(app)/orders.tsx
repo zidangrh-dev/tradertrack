@@ -488,7 +488,7 @@ function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved 
   };
 
   return (
-    <Sheet open onClose={onClose} title={`Edit #${order.order_number}`}>
+    <Sheet open onClose={onClose} title={`Edit #${order.order_number}`} headGap={13}>
       <Select
         block
         field
@@ -590,5 +590,7 @@ const styles = StyleSheet.create({
   cardPager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12 },
   cardPagerText: { fontSize: 12, fontWeight: '700', color: colors.muted },
 
-  ownerNote: { fontSize: 9, color: colors.faint, marginVertical: 8 },
+  // Napas di atas (memisahkan dari field terakhir) dan di bawah (sebelum tombol).
+  // Ritme 13px seragam dengan jarak antar-field di atasnya.
+  ownerNote: { fontSize: 10, color: colors.faint, lineHeight: 15, marginTop: 0, marginBottom: 13 },
 });

@@ -322,7 +322,7 @@ export function SelectField({ label, value, options, onChange }: { label: string
 
 /* ---------- Sheet (modal) ---------- */
 
-export function Sheet({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
+export function Sheet({ open, onClose, title, children, wide, headGap }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean; /** Jarak judul → isi (default 8). */ headGap?: number }) {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       {/* Konten Modal react-native tampil di jendela native terpisah — gesture
@@ -334,7 +334,7 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
         <View style={styles.modalRoot}>
           <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onClose} />
           <View style={[styles.sheet, wide && styles.sheetWide]}>
-            <View style={styles.sheetHead}>
+            <View style={[styles.sheetHead, headGap !== undefined && { marginBottom: headGap }]}>
               <Text style={styles.sheetTitle}>{title}</Text>
               <Pressable onPress={onClose} hitSlop={10}>
                 <Text style={styles.close}>×</Text>
@@ -428,7 +428,7 @@ export function Select({
   const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - searchH - 24));
 
   return (
-    <View ref={ref} style={block ? { width: '100%' } : undefined}>
+    <View ref={ref} style={[block ? { width: '100%' } : undefined, field && selStyles.fieldWrap]}>
       {/* Mode formulir: label sejajar <Field> agar kolom kiri & kanan seragam. */}
       {field && <Text style={selStyles.fieldLabel}>{label}</Text>}
       <Pressable
@@ -964,6 +964,8 @@ const selStyles = StyleSheet.create({
   triggerCompact: { height: 34, minWidth: 150, paddingHorizontal: 10 },
   // Mode formulir: setinggi & sejajar <Field> (label di luar, input 42 + marginTop 6).
   triggerField: { height: 42, minWidth: 0, marginTop: 6 },
+  // Ritme vertikal sama dengan <Field> (marginBottom 13) agar tidak berdempetan.
+  fieldWrap: { marginBottom: 13 },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
   fieldValue: { flex: 1, fontSize: 13, color: colors.text },
   fieldPlaceholder: { color: colors.faint },
