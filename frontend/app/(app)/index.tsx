@@ -6,19 +6,20 @@ import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useSettings } from '../../src/hooks/useSettings';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
-import { colors, radius, statusLabel, webNoOutline, type Status } from '../../src/theme';
+import { colors, radius, statusLabel, STATUS_FLOW, webNoOutline, type Status } from '../../src/theme';
 import { durationLabel, isToday, statusColor } from '../../src/lib/format';
 import { Avatar, Button, EmptyState, FlagBadge, PageHeader, SearchInput } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 import { isAdminLevel } from '../../src/lib/roles';
 
-const COLUMNS: Status[] = ['data_masuk', 'proses_pick_up', 'selesai'];
+const COLUMNS: Status[] = STATUS_FLOW;
 const DRAG_THRESHOLD = 60;
 
 const COL_SUB: Record<Status, string> = {
   data_masuk: 'Menunggu diproses',
   proses_pick_up: 'Menunggu barang diambil',
+  done_pickup: 'Menunggu verifikasi admin',
   selesai: 'Selesai hari ini',
 };
 
@@ -99,6 +100,9 @@ function DraggableCard({
           <Button label="Proses pick up" icon="→" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'proses_pick_up')} />
         )}
         {order.status === 'proses_pick_up' && (
+          <Button label="Tandai sudah diambil" icon="→" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'done_pickup')} />
+        )}
+        {order.status === 'done_pickup' && (
           <Button label="Selesaikan order" icon="✓" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'selesai')} />
         )}
       </Pressable>
@@ -123,6 +127,10 @@ export default function Kanban() {
   // Mode lebar: kolom memakai flex:1 (diukur dari lebar asli konten, bukan
   // lebar jendela) sehingga tidak pernah lebih lebar dari wadahnya.
   const colWidth = Math.round(width * 0.82);
+  // 4 kolom: di layar lebar tetap flex bila ruang cukup (≥ 320px/kolom),
+  // selebihnya beralih ke lebar tetap + scroll horizontal agar kartu terbaca.
+  const wideFits = width - 280 >= COLUMNS.length * 320;
+  const WIDE_COL = 320;
   const { orders, refresh, loading } = useOrders();
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -130,7 +138,7 @@ export default function Kanban() {
   const settings = useSettings();
 
   const byStatus = useMemo(() => {
-    const m: Record<Status, OrderView[]> = { data_masuk: [], proses_pick_up: [], selesai: [] };
+    const m = Object.fromEntries(COLUMNS.map((c) => [c, [] as OrderView[]])) as Record<Status, OrderView[]>;
     const q = search.trim().toLowerCase();
     orders.forEach((o) => {
       // Kolom Selesai secara bawaan hanya menampilkan order hari berjalan.
@@ -139,7 +147,7 @@ export default function Kanban() {
         const hay = `${o.order_number} ${o.product_name} ${o.recipient_name} ${o.trader_name} ${o.store_name}`.toLowerCase();
         if (!hay.includes(q)) return;
       }
-      m[o.status].push(o);
+      m[o.status]?.push(o);
     });
     return m;
   }, [orders, search]);
@@ -152,6 +160,20 @@ export default function Kanban() {
       if (o.photo_count >= settings.min_photos) {
         try {
           await api.completeOrder(o.id, '');
+          refresh();
+        } catch (e) {
+          notify('Gagal', (e as Error).message);
+        }
+        return;
+      }
+      setSelected(o);
+      return;
+    }
+    if (to === 'done_pickup') {
+      // Butuh foto bukti; kurang → buka modal detail agar bisa dilengkapi.
+      if (o.photo_count >= settings.min_photos) {
+        try {
+          await api.updateStatus(o.id, 'done_pickup');
           refresh();
         } catch (e) {
           notify('Gagal', (e as Error).message);
@@ -203,14 +225,14 @@ export default function Kanban() {
         <ActivityIndicator style={{ marginTop: 48 }} color={colors.primary} />
       ) : orders.length === 0 ? (
         <EmptyState icon="▦" text="Belum ada order. Trader mulai mencatat order dari Daftar Order." />
-      ) : searching && byStatus.data_masuk.length + byStatus.proses_pick_up.length + byStatus.selesai.length === 0 ? (
+      ) : searching && COLUMNS.every((c) => byStatus[c].length === 0) ? (
         <EmptyState icon="⌕" text={`Tidak ada order yang cocok dengan "${search.trim()}".`} />
       ) : (
         <View style={styles.viewport}>
           {/* Layar lebar: flex row murni agar kolom terkunci ke tinggi viewport
               (tanpa ScrollView pembungkus yang bikin halaman ikut scroll vertikal).
               Layar sempit: ScrollView horizontal seperti biasa. */}
-          {wide ? (
+          {wide && wideFits ? (
             <View style={[styles.board, styles.boardWide]}>
               {COLUMNS.map((status) => (
                 <View key={status} style={[styles.column, styles.columnWide]}>
@@ -236,10 +258,10 @@ export default function Kanban() {
               ))}
             </View>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScrollOuter} contentContainerStyle={styles.boardScroll}>
-              <View style={styles.board}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={wide} style={styles.boardScrollOuter} contentContainerStyle={styles.boardScroll}>
+              <View style={[styles.board, wide && styles.boardWideScroll]}>
                 {COLUMNS.map((status) => (
-                  <View key={status} style={[styles.column, { width: colWidth }]}>
+                  <View key={status} style={[styles.column, { width: wide ? WIDE_COL : colWidth }]}>
                     <View style={styles.colHead}>
                       <View style={[styles.dot, { backgroundColor: statusColor[status] }]} />
                       <Text style={styles.colTitle}>{statusLabel[status]}</Text>
@@ -284,6 +306,8 @@ const styles = StyleSheet.create({
   // (grow+shrink, basis 0) memaksa papan pas tinggi viewport sehingga daftar
   // kartu di tiap kolom punya ruang terbatas dan bisa scroll vertikal sendiri.
   boardWide: { paddingHorizontal: 16, paddingBottom: 12, flex: 1, minHeight: 0 },
+  // Layar lebar tapi kolom tak muat: kolom berlebar tetap, papan ikut tinggi viewport.
+  boardWideScroll: { alignItems: 'stretch', minHeight: 0, height: '100%' },
   // Layar lebar: kolom stretch penuh ke tinggi viewport; minHeight 0 agar
   // daftar kartu di dalamnya bisa scroll sendiri, bukan mendorong halaman.
   // flex:1 membagi lebar konten (bukan lebar jendela) jadi 3 kolom rata.

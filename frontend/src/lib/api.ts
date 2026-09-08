@@ -32,7 +32,7 @@ export interface OrderDetail extends OrderView {
 }
 
 export interface Reports {
-  totals: { total: number; data_masuk: number; proses_pick_up: number; selesai: number; bermasalah: number };
+  totals: { total: number; data_masuk: number; proses_pick_up: number; done_pickup: number; selesai: number; bermasalah: number };
   perTrader: { trader: string; total: number; selesai: number; belum_selesai: number }[];
   perProduk: { product_name: string; quota: number; used_quota: number; remaining_quota: number; amount: number }[];
   delayed: { order_number: string; product_name: string; trader: string; duration: string; is_problem: boolean }[];

@@ -48,7 +48,7 @@ export async function seedDemoData(pool) {
     ['240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', byName.fajar, 'data_masuk', {}],
     ['240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', byName.admin, 'data_masuk', {}],
     ['240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', byName.admin, 'data_masuk', {}],
-    ['240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', byName.admin, 'proses_pick_up', { picked_up_at: new Date() }],
+    ['240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', byName.admin, 'done_pickup', { picked_up_at: new Date(), photo_count: 1 }],
     ['240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', byName.nabila, 'proses_pick_up', { is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }],
     ['240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', byName.nabila, 'selesai', { photo_count: 2, picked_up_at: new Date(), completed_at: new Date(), note: 'Barang dalam kondisi baik.' }],
     ['240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', byName.fajar, 'selesai', { photo_count: 1, picked_up_at: new Date(), completed_at: new Date(), note: 'Sudah diambil.' }],

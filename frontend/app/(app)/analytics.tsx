@@ -12,6 +12,7 @@ import { isAdminLevel } from '../../src/lib/roles';
 const STATUS_META: { key: Status; label: string; color: string }[] = [
   { key: 'data_masuk', label: 'Data masuk', color: colors.amber },
   { key: 'proses_pick_up', label: 'Proses pick up', color: colors.blue },
+  { key: 'done_pickup', label: 'Done pickup', color: '#0F766E' },
   { key: 'selesai', label: 'Selesai', color: colors.green },
 ];
 
@@ -177,7 +178,7 @@ export default function Analytics() {
   );
 
   const t = data.totals;
-  const statusTotal = t.data_masuk + t.proses_pick_up + t.selesai;
+  const statusTotal = t.data_masuk + t.proses_pick_up + t.done_pickup + t.selesai;
   const pct = (n: number) => (statusTotal ? Math.round((n / statusTotal) * 100) : 0);
   const maxTrader = Math.max(1, ...data.perTrader.map((r) => r.total));
   const maxAmount = Math.max(1, ...data.perProduk.map((r) => r.amount));
@@ -228,6 +229,7 @@ export default function Analytics() {
         <MetricCard label="Total order" value={t.total} color={colors.primary} wide={wide} />
         <MetricCard label="Data masuk" value={t.data_masuk} color={colors.amber} wide={wide} />
         <MetricCard label="Proses pick up" value={t.proses_pick_up} color={colors.blue} wide={wide} />
+        <MetricCard label="Done pickup" value={t.done_pickup} color="#0F766E" wide={wide} />
         <MetricCard label="Selesai" value={t.selesai} color={colors.green} wide={wide} />
         <MetricCard label="Bermasalah" value={t.bermasalah} color={colors.red} danger dangerSpan wide={wide} />
       </View>

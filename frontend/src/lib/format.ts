@@ -23,6 +23,7 @@ export function isToday(iso: string) {
 export function statusPalette(status: Status) {
   switch (status) {
     case 'selesai': return { color: '#1F7A4D', bg: '#E3F5EC' };
+    case 'done_pickup': return { color: '#0F766E', bg: '#DCF5F1' };
     case 'proses_pick_up': return { color: '#2E6EB5', bg: '#E7F1FD' };
     default: return { color: '#A8610F', bg: '#FCF1DE' };
   }
@@ -31,6 +32,7 @@ export function statusPalette(status: Status) {
 export const statusColor: Record<Status, string> = {
   data_masuk: colors.amber,
   proses_pick_up: colors.blue,
+  done_pickup: '#0F766E',
   selesai: colors.green,
 };
 

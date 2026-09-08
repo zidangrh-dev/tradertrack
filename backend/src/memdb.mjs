@@ -204,7 +204,7 @@ export function orderByNumber(num) {
 }
 function withMeta(o) {
   const ageHours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;
-  const pending = (o.status === 'data_masuk' || o.status === 'proses_pick_up') &&
+  const pending = (o.status === 'data_masuk' || o.status === 'proses_pick_up' || o.status === 'done_pickup') &&
     ageHours >= db.settings.pending_threshold_hours;
   return { ...o, trader_name: userName(o.trader_id), product_label: productLabel(o), is_pending: pending };
 }
@@ -308,6 +308,19 @@ export function updateStatus(id, to, actorId) {
     // Jalur proses pick up mewajibkan foto barcode — pakai POST /orders/:id/pickup.
     throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
   }
+  // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai hanya
+  // dari done_pickup — order tidak boleh melompati verifikasi.
+  if (to === 'done_pickup') {
+    if (o.status !== 'proses_pick_up') {
+      throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
+    }
+    if (o.photo_count < db.settings.min_photos) {
+      throw new Error(`Minimal ${db.settings.min_photos} foto bukti sebelum menandai barang sudah diambil.`);
+    }
+  }
+  if (to === 'selesai' && o.status !== 'done_pickup') {
+    throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
+  }
   if (to === 'selesai' && o.photo_count < db.settings.min_photos) {
     throw new Error(`Minimal ${db.settings.min_photos} foto bukti sebelum order selesai.`);
   }
@@ -315,6 +328,8 @@ export function updateStatus(id, to, actorId) {
   o.status = to;
   o.updated_at = now();
   if (to === 'selesai') o.completed_at = now();
+  // Barang tercatat diambil saat done_pickup bila belum terisi.
+  if (to === 'done_pickup' && !o.picked_up_at) o.picked_up_at = now();
   if (to === 'data_masuk') { o.picked_up_at = null; o.completed_at = null; }
   pushEvent(id, actorId, to === 'selesai' ? 'completed' : 'status', from, to, null);
   return withMeta(o);
@@ -389,6 +404,9 @@ export function deletePhoto(orderId, photoId, actorId) {
 
 export function completeOrder(id, note, actorId) {
   const o = findOrder(id);
+  if (o.status !== 'done_pickup') {
+    throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
+  }
   if (o.photo_count < db.settings.min_photos) throw new Error(`Minimal ${db.settings.min_photos} foto bukti wajib diunggah.`);
   const from = o.status;
   o.status = 'selesai';
@@ -447,6 +465,7 @@ export function reports(range, from, to, traderId) {
     total: list.length,
     data_masuk: list.filter((o) => o.status === 'data_masuk').length,
     proses_pick_up: list.filter((o) => o.status === 'proses_pick_up').length,
+    done_pickup: list.filter((o) => o.status === 'done_pickup').length,
     selesai: list.filter((o) => o.status === 'selesai').length,
     bermasalah: list.filter((o) => o.is_problem).length,
   };
@@ -531,7 +550,7 @@ function seed() {
     mk('240626-017', 'Rak Serbaguna 4 Susun', 'Shopee', 'Fajar Rahman', 'self_pick_up', 'u-fajar', 'p-rak', 'data_masuk', { minutes: 32 }),
     mk('240626-016', 'Mouse Pad XL', 'Lazada', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-admin', 'p-mousepad', 'data_masuk', { minutes: 48 }),
     mk('240626-015', 'HDMI Cable 2.1 3M', 'Lazada', 'Dimas Arya', 'zaydan_ambilan_gjm', 'u-admin', 'p-hdmi', 'data_masuk', { minutes: 68 }),
-    mk('240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', 'u-admin', 'p-monitor', 'proses_pick_up', { minutes: 102, picked_up_at: minutesAgo(58) }),
+    mk('240626-011', 'Monitor LG 24 inch', 'Blibli', 'Rizky Maulana', 'zaydan_ambilan_gjm', 'u-admin', 'p-monitor', 'done_pickup', { minutes: 102, picked_up_at: minutesAgo(58), photo_count: 1 }),
     mk('240626-008', 'Mechanical Keyboard V1', 'Tokopedia', 'Bagus Santoso', 'self_pick_up', 'u-nabila', 'p-mekanik', 'proses_pick_up', { minutes: 198, picked_up_at: minutesAgo(160), is_problem: true, problem_reason: 'Label barcode tertukar dengan pesanan lain.' }),
     mk('240626-009', 'USB-C Hub 7 in 1', 'Tokopedia', 'Rina Sari', 'zaydan_ambilan_gjm', 'u-nabila', 'p-usbc', 'selesai', { minutes: 320, photo_count: 2, picked_up_at: minutesAgo(300), completed_at: minutesAgo(280), note: 'Barang dalam kondisi baik.' }),
     mk('240626-006', 'Standing Desk Mat', 'Shopee', 'Fauzan Hadi', 'zaydan_ambilan_gjm', 'u-fajar', 'p-meja', 'selesai', { minutes: 500, photo_count: 1, picked_up_at: minutesAgo(480), completed_at: minutesAgo(450), note: 'Sudah diambil.' }),

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS orders (
   trader_id uuid NOT NULL REFERENCES users(id),
   product_id uuid NOT NULL REFERENCES products(id),
   store_id uuid NOT NULL REFERENCES marketplace_stores(id),
-  status text NOT NULL DEFAULT 'data_masuk' CHECK (status IN ('data_masuk', 'proses_pick_up', 'selesai')),
+  status text NOT NULL DEFAULT 'data_masuk' CHECK (status IN ('data_masuk', 'proses_pick_up', 'done_pickup', 'selesai')),
   order_amount numeric,
   note text,
   is_problem boolean NOT NULL DEFAULT false,
@@ -71,6 +71,11 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS requires_dual_evidence boolean NOT N
 -- diganti sebelum ada baris ber-role superadmin.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('superadmin', 'admin', 'trader'));
+
+-- Status done_pickup: CHECK inline hanya berlaku untuk tabel yang baru dibuat,
+-- jadi database yang sudah ada perlu constraint-nya diganti di sini.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('data_masuk', 'proses_pick_up', 'done_pickup', 'selesai'));
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);

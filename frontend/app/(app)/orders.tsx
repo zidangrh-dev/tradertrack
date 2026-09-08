@@ -8,7 +8,7 @@ import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
+import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, STATUS_FLOW, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
@@ -108,7 +108,8 @@ export default function Orders() {
         case 'recipient': cmp = a.recipient_name.localeCompare(b.recipient_name); break;
         case 'trader': cmp = a.trader_name.localeCompare(b.trader_name); break;
         case 'method': cmp = a.pickup_method.localeCompare(b.pickup_method); break;
-        case 'status': cmp = a.status.localeCompare(b.status); break;
+        // Urut mengikuti alur order, bukan alfabetis.
+        case 'status': cmp = STATUS_FLOW.indexOf(a.status) - STATUS_FLOW.indexOf(b.status); break;
         case 'photo_count': cmp = a.photo_count - b.photo_count; break;
         case 'created_at': cmp = a.created_at.localeCompare(b.created_at); break;
         default: cmp = a.created_at.localeCompare(b.created_at);

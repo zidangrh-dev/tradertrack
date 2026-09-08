@@ -18,8 +18,8 @@ Dua role, tanpa registrasi mandiri. Seluruh UI berbahasa Indonesia.
 ### Alur hidup order
 
 ```
-data_masuk ──proses pick up──▶ proses_pick_up ──selesai──▶ selesai
-   (baru dibuat)      (wajib ada bukti)          (admin, wajib ≥1 foto)
+data_masuk ──proses pick up──▶ proses_pick_up ──tandai diambil──▶ done_pickup ──verifikasi──▶ selesai
+   (baru dibuat)   (wajib barcode+bukti)      (admin, wajib ≥1 foto)      (admin)
 ```
 
 1. **Trader input order** → memilih **produk** (dari katalog) dan **toko marketplace** dari dua dropdown terpisah, mengisi nomor pesanan & penerima. Kuota produk dicek saat itu.
@@ -47,6 +47,7 @@ admin — semua yang bisa dilakukan admin, ditambah kewenangan khusus di bawah.
 | Input order | Untuk siapa pun | Untuk siapa pun | Untuk dirinya sendiri |
 | Proses pick up order | Semua | Semua | Miliknya saja |
 | Unggah/hapus foto bukti | Semua (non-selesai) | Semua (non-selesai) | Miliknya saja (non-selesai) |
+| Tandai sudah diambil (done pickup) | ✔ | ✔ | ✗ |
 | Selesaikan order / tandai bermasalah / reopen | ✔ | ✔ | ✗ |
 | Scan resi | ✔ | ✔ | ✗ |
 | Kelola produk, toko, kuota | ✔ | ✔ | ✗ |

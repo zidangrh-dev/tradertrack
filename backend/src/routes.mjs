@@ -9,7 +9,8 @@ import { getRepo } from './repo.mjs';
 import { gateEnabled, isGatedPlatform, versionMatches } from './appVersion.mjs';
 
 const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
-const STATUS_WHITELIST = ['data_masuk', 'selesai'];
+// proses_pick_up dikecualikan: wajib lewat POST /orders/:id/pickup (butuh foto).
+const STATUS_WHITELIST = ['data_masuk', 'done_pickup', 'selesai'];
 // 'order' menandai foto bukti order — syarat pick up bersama barcode.
 const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas'];
 

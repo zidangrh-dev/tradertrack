@@ -45,10 +45,15 @@ export const webNoOutline = ({ outlineStyle: 'none', outlineWidth: 0 } as unknow
 export const statusLabel = {
   data_masuk: 'Data masuk',
   proses_pick_up: 'Proses pick up',
+  done_pickup: 'Done pickup',
   selesai: 'Selesai',
 } as const;
 
 export type Status = keyof typeof statusLabel;
+
+// Urutan alur order — SATU sumber kebenaran. Kanban, drag, dan pengurutan
+// mengacu ke sini agar penambahan status tidak perlu menyunting banyak tempat.
+export const STATUS_FLOW: Status[] = ['data_masuk', 'proses_pick_up', 'done_pickup', 'selesai'];
 
 export const pickupMethodLabel = {
   zaydan_ambilan_gjm: 'Zaydan Ambilan GJM',

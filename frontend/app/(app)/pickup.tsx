@@ -90,16 +90,16 @@ export default function Pickup() {
     setSearch(''); setMethod(''); setStore([]); setProduct([]); setTrader(''); setFromKey(null); setToKey(null); setFlagged(false);
   };
 
-  const completePickup = async (o: OrderView) => {
-    // Foto bukti cukup → selesaikan langsung; kurang → buka modal untuk tambah foto.
+  const markDonePickup = async (o: OrderView) => {
+    // Foto bukti cukup → tandai langsung; kurang → buka modal untuk tambah foto.
     if (o.photo_count < settings.min_photos) {
       setSelected(o);
       return;
     }
     setBusy(o.id);
     try {
-      await api.completeOrder(o.id, '');
-      setInfo(`${o.order_number} → Selesai`);
+      await api.updateStatus(o.id, 'done_pickup');
+      setInfo(`${o.order_number} → Done pickup, menunggu verifikasi admin`);
       refresh();
     } catch (e) {
       notify('Gagal', (e as Error).message);
@@ -248,7 +248,7 @@ export default function Pickup() {
           <View>
             <Text style={styles.sectionTitle}>Order siap pickup</Text>
             <Text style={styles.sectionSub}>
-              {activeFilters > 0 ? 'Hasil filter pada order berstatus pickup.' : 'Order berstatus pickup yang menunggu penyelesaian.'}
+              {activeFilters > 0 ? 'Hasil filter pada order berstatus pickup.' : 'Order yang menunggu ditandai sudah diambil.'}
             </Text>
           </View>
           <Text style={styles.count}>{pending.length}</Text>
@@ -273,13 +273,13 @@ export default function Pickup() {
               onPress={() => setSelected(o)}
               actions={
                 <Button
-                  label={busy === o.id ? 'Menyelesaikan…' : 'Selesaikan order'}
+                  label={busy === o.id ? 'Menandai…' : 'Tandai sudah diambil'}
                   icon="✓"
                   variant="soft"
                   size="sm"
                   fullWidth
                   disabled={busy !== null}
-                  onPress={() => completePickup(o)}
+                  onPress={() => markDonePickup(o)}
                 />
               }
             />

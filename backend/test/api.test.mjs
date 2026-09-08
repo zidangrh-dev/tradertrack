@@ -110,6 +110,24 @@ async function orderReadyForPickup(token, over = {}) {
   return o;
 }
 
+/** Bawa order sampai done_pickup: buat → lengkapi bukti → pickup → tandai diambil. */
+async function orderDonePickup(token, over = {}) {
+  const o = await orderReadyForPickup(token, over);
+  await client(token).post(`/api/orders/${o.id}/pickup`, {});
+  await postMultipart(token, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+  const r = await client(token).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+  assert.equal(r.status, 200, 'order sampai done_pickup');
+  return o;
+}
+
+/** Bawa order sampai selesai (lewat done_pickup, sesuai alur baru). */
+async function orderSelesai(token, note = 'x', over = {}) {
+  const o = await orderDonePickup(token, over);
+  const r = await client(token).patch(`/api/orders/${o.id}/complete`, { note });
+  assert.equal(r.status, 200, 'order sampai selesai');
+  return o;
+}
+
 async function postMultipart(token, url, { code, file, raw } = {}) {
   const fd = new FormData();
   if (code !== undefined) fd.append('code', code);
@@ -719,14 +737,16 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
     assert.equal(status, 403);
   });
   test('complete tanpa foto minimal → tolak', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
+    // Order di done_pickup lalu fotonya dihapus → syarat foto gagal.
+    const o = await orderDonePickup(admin);
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    for (const f of d.photos) await client(admin).del(`/api/orders/${o.id}/photos/${f.id}`);
     const { status, data: err } = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
     assert.equal(status, 400);
     assert.match(err.error, /foto bukti/);
   });
   test('complete dengan foto → selesai + note + event', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+    const o = await orderDonePickup(admin);
     const { status, data: r } = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'Barang bagus' });
     assert.equal(status, 200);
     assert.equal(r.status, 'selesai');
@@ -750,9 +770,7 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
     assert.equal(r.problem_reason, 'Paket hilang');
   });
   test('buka kembali order selesai', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     const { data: r } = await client(admin).patch(`/api/orders/${o.id}/reopen`);
     assert.equal(r.status, 'proses_pick_up');
     assert.equal(r.completed_at, null);
@@ -770,45 +788,35 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
 
   // ---- Order selesai terkunci: tidak bisa diedit/dihapus/fotonya diubah ----
   test('edit order selesai (oleh admin sekalipun) → tolak', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     const { status } = await client(admin).patch(`/api/orders/${o.id}`, { recipient_name: 'Revisi' });
     assert.equal(status, 400);
     assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.recipient_name, 'Penerima Uji', 'data tidak berubah');
   });
   test('hapus order selesai (oleh admin sekalipun) → tolak', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     const { status } = await client(admin).del(`/api/orders/${o.id}`);
     assert.equal(status, 400);
     const { data: still } = await client(admin).get(`/api/orders/${o.id}/detail`);
     assert.equal(still.status, 'selesai', 'order masih ada');
   });
   test('upload foto pada order selesai → tolak', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     const { status, data: r } = await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti-lagi.jpg' });
     assert.equal(status, 400);
     assert.match(r.error, /terkunci|Buka kembali/);
   });
   test('hapus foto pada order selesai → tolak', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     const { status, data: r } = await client(admin).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
     assert.equal(status, 400);
     assert.match(r.error, /Buka kembali/);
-    const { data: after } = await client(admin).get(`/api/orders/${o.id}/detail`);
-    assert.equal(after.photo_count, 1, 'foto tetap ada');
+    const { data: before } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.ok(before.photos.some((f) => f.id === d.photos[0].id), 'foto tetap ada');
   });
   test('buka kembali lalu edit/hapus foto → boleh lagi', async () => {
-    const { data: o } = await client(admin).post('/api/orders', order());
-    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
-    await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const o = await orderSelesai(admin);
     await client(admin).patch(`/api/orders/${o.id}/reopen`);
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     const { status } = await client(admin).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
@@ -1020,9 +1028,12 @@ describe('CF8 Produk, toko marketplace & pengaturan', () => {
 
     // Semua order selesai → hapus boleh, tapi menjadi soft (nonaktif) karena order merujuk.
     const pDone = await mk(`Produk Hapus Selesai ${Date.now()}`);
-    const o2 = await client(trader).post('/api/orders', order({ product_id: pDone.id }));
-    assert.equal(o2.status, 201);
+    // Order harus menempuh alur penuh sampai selesai agar produk bisa di-soft delete.
+    const o2 = { data: await orderReadyForPickup(trader, { product_id: pDone.id }) };
+    await client(trader).post(`/api/orders/${o2.data.id}/pickup`, {});
     const up = await postMultipart(admin, `/api/orders/${o2.data.id}/photos`, { file: "bukti-selesai.jpg" }); assert.equal(up.status, 200);
+    const dp = await client(admin).patch(`/api/orders/${o2.data.id}/status`, { to_status: 'done_pickup' });
+    assert.equal(dp.status, 200);
     const comp = await client(admin).patch(`/api/orders/${o2.data.id}/complete`, { note: 'x' });
     assert.equal(comp.status, 200);
     const delDone = await client(admin).del(`/api/products/${pDone.id}`);
@@ -1299,5 +1310,108 @@ describe('CF10 Superadmin', () => {
   test('admin biasa tetap tunduk aturan admin terakhir', async () => {
     const { status } = await client(sa).del(`/api/users/${adminId}`);
     assert.equal(status, 204, 'admin biasa boleh dihapus selagi masih ada superadmin');
+  });
+});
+
+describe('CF11 Alur done pickup', () => {
+  let admin, trader, produkUji;
+  before(async () => {
+    admin = await login('admin', 'admin');
+    trader = await login('nabila', 'trader');
+    // Produk sendiri berkuota longgar: produk bawaan sudah terpakai tes lain.
+    const nama = `Produk Alur ${Date.now()}`;
+    const { data } = await client(admin).post('/api/products', { name: nama, quota: 50 });
+    produkUji = data.find((p) => p.name === nama).id;
+  });
+
+  test('rantai lengkap: data_masuk → proses_pick_up → done_pickup → selesai', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkUji });
+    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.status, 'data_masuk');
+
+    const pk = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(pk.data.status, 'proses_pick_up');
+
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+    const dp = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+    assert.equal(dp.status, 200);
+    assert.equal(dp.data.status, 'done_pickup');
+    assert.ok(dp.data.picked_up_at, 'waktu pengambilan tercatat');
+
+    const sel = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'ok' });
+    assert.equal(sel.data.status, 'selesai');
+
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.ok(d.events.some((e) => e.to_status === 'done_pickup'), 'transisi done_pickup tercatat di riwayat');
+  });
+
+  test('proses_pick_up → selesai langsung ditolak (wajib lewat done pickup)', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkUji });
+    await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+
+    const viaComplete = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    assert.equal(viaComplete.status, 400);
+    assert.match(viaComplete.data.error, /Done pickup/i);
+
+    const viaStatus = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'selesai' });
+    assert.equal(viaStatus.status, 400);
+
+    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.status, 'proses_pick_up', 'status tidak berubah');
+  });
+
+  test('done_pickup hanya dari proses_pick_up', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkUji }); // masih data_masuk
+    const { status, data } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+    assert.equal(status, 400);
+    assert.match(data.error, /Proses pick up/i);
+  });
+
+  test('done_pickup butuh foto bukti', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkUji });
+    await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    // hapus semua foto agar syarat min_photos tidak terpenuhi
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    for (const f of d.photos) await client(admin).del(`/api/orders/${o.id}/photos/${f.id}`);
+    const { status, data: err } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+    assert.equal(status, 400);
+    assert.match(err.error, /foto/i);
+  });
+
+  test('trader tidak bisa menandai done pickup maupun menyelesaikan', async () => {
+    const o = await orderReadyForPickup(trader, { product_id: produkUji });
+    await client(trader).post(`/api/orders/${o.id}/pickup`, {});
+    await postMultipart(trader, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
+
+    const dp = await client(trader).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+    assert.equal(dp.status, 403, 'hanya admin yang boleh menandai sudah diambil');
+
+    await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
+    const sel = await client(trader).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    assert.equal(sel.status, 403, 'hanya admin yang boleh menyelesaikan');
+  });
+
+  test('filter & laporan mengenali done_pickup', async () => {
+    await orderDonePickup(admin, { product_id: produkUji });
+    const f = await client(admin).get('/api/orders?status=done_pickup');
+    assert.equal(f.status, 200);
+    assert.ok(f.data.total >= 1);
+    assert.ok(f.data.items.every((o) => o.status === 'done_pickup'));
+
+    const rep = await client(admin).get('/api/reports');
+    assert.equal(typeof rep.data.totals.done_pickup, 'number', 'totals memuat done_pickup');
+    assert.ok(rep.data.totals.done_pickup >= 1);
+  });
+
+  test('reopen dari selesai kembali ke proses_pick_up', async () => {
+    const o = await orderSelesai(admin, 'x', { product_id: produkUji });
+    const { data: r } = await client(admin).patch(`/api/orders/${o.id}/reopen`);
+    assert.equal(r.status, 'proses_pick_up');
+    assert.equal(r.completed_at, null);
+  });
+
+  test('status tak dikenal tetap ditolak', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkUji });
+    const { status } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done' });
+    assert.equal(status, 400);
   });
 });

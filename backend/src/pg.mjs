@@ -11,7 +11,7 @@ const SELECT_VIEW = `
 
 function toView(row, threshold) {
   const ageHours = (Date.now() - new Date(row.updated_at).getTime()) / 3600000;
-  const pending = (row.status === 'data_masuk' || row.status === 'proses_pick_up') && ageHours >= threshold;
+  const pending = (row.status === 'data_masuk' || row.status === 'proses_pick_up' || row.status === 'done_pickup') && ageHours >= threshold;
   const { tracking_number: _t, ...rest } = row;
   return {
     ...rest,
@@ -411,12 +411,27 @@ export default (pool) => {
     const { rows } = await pool.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     const o = rows[0];
     if (!o) throw new Error('Order tidak ditemukan');
+    // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai
+    // hanya dari done_pickup — order tidak boleh melompati verifikasi.
+    if (to === 'done_pickup') {
+      if (o.status !== 'proses_pick_up') {
+        throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
+      }
+      if (o.photo_count < s.min_photos) {
+        throw new Error(`Minimal ${s.min_photos} foto bukti sebelum menandai barang sudah diambil.`);
+      }
+    }
+    if (to === 'selesai' && o.status !== 'done_pickup') {
+      throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
+    }
     if (to === 'selesai' && o.photo_count < s.min_photos) {
       throw new Error(`Minimal ${s.min_photos} foto bukti sebelum order selesai.`);
     }
     const from = o.status;
     const sets = ['status = $1', 'updated_at = now()'];
     if (to === 'selesai') sets.push('completed_at = now()');
+    // Barang tercatat diambil saat done_pickup bila belum terisi.
+    if (to === 'done_pickup') sets.push('picked_up_at = COALESCE(picked_up_at, now())');
     if (to === 'data_masuk') sets.push('picked_up_at = NULL', 'completed_at = NULL');
     await pool.query(`UPDATE orders SET ${sets.join(', ')} WHERE id = $2`, [to, id]);
     await pushEvent(pool, id, actorId, to === 'selesai' ? 'completed' : 'status', from, to, null);
@@ -546,6 +561,9 @@ export default (pool) => {
   const completeOrder = async (id, note, actorId) => {
     const s = await S();
     const o = await getOrder(id);
+    if (o.status !== 'done_pickup') {
+      throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
+    }
     if (o.photo_count < s.min_photos) throw new Error(`Minimal ${s.min_photos} foto bukti wajib diunggah.`);
     const from = o.status;
     await pool.query(`UPDATE orders SET status = 'selesai', note = $1, completed_at = now(), updated_at = now() WHERE id = $2`, [note, id]);
@@ -602,6 +620,7 @@ export default (pool) => {
       `SELECT COUNT(*)::int AS total,
               COALESCE(SUM((o.status = 'data_masuk')::int), 0) AS data_masuk,
               COALESCE(SUM((o.status = 'proses_pick_up')::int), 0) AS proses_pick_up,
+              COALESCE(SUM((o.status = 'done_pickup')::int), 0) AS done_pickup,
               COALESCE(SUM((o.status = 'selesai')::int), 0) AS selesai,
               COALESCE(SUM(o.is_problem::int), 0) AS bermasalah
        FROM orders o${whereSql}`,
@@ -631,7 +650,7 @@ export default (pool) => {
     // Delayed ikut rentang: hanya order yang masih pending/bermasalah dan
     // pembaruannya terjadi di dalam rentang terpilih.
     const delayedConds = [
-      `(o.is_problem OR (o.status IN ('data_masuk','proses_pick_up') AND o.updated_at <= now() - ($1 || ' hours')::interval))`,
+      `(o.is_problem OR (o.status IN ('data_masuk','proses_pick_up','done_pickup') AND o.updated_at <= now() - ($1 || ' hours')::interval))`,
     ];
     const delayedArgs = [String(threshold)];
     if (start) { delayedConds.push(`o.updated_at >= $${delayedArgs.length + 1}`); delayedArgs.push(start); }

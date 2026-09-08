@@ -182,3 +182,37 @@ const produkDanToko = await repo.listOrders({ product: [prodFilter.id], store: [
 assert.equal(produkDanToko.total, 1, 'produk + toko dipersempit (AND antar-filter)');
 const produkTakDipakai = await repo.listOrders({ product: ['00000000-0000-0000-0000-000000000000'], q: 'TRK-PF-' });
 assert.equal(produkTakDipakai.total, 0, 'produk lain tidak memuat order ini');
+
+// Alur done_pickup di jalur SQL: CHECK constraint + urutan transisi.
+const flowProd = (await repo.listProducts()).find((x) => x.remaining_quota >= 2);
+const mkFlow = async (tag) => repo.createOrder(
+  { order_number: `TRK-FLOW-${tag}-${Date.now()}`, recipient_name: 'A', pickup_method: 'self_pick_up', product_id: flowProd.id, store_id: stores[0].id },
+  actorId,
+);
+
+// Melompati done_pickup ditolak.
+const lompat = await mkFlow('A');
+await repo.attachBarcode(lompat.id, '/uploads/flow-a.jpg');
+await repo.uploadPhoto(lompat.id, actorId, null, 'order');
+await repo.pickupOrder(lompat.id, actorId);
+await assert.rejects(() => repo.completeOrder(lompat.id, '', actorId), /Done pickup/i, 'tidak boleh langsung selesai');
+await assert.rejects(() => repo.updateStatus(lompat.id, 'selesai', actorId), /Done pickup/i, 'jalur status juga ditolak');
+
+// Rantai penuh berhasil.
+const penuh = await mkFlow('B');
+await repo.attachBarcode(penuh.id, '/uploads/flow-b.jpg');
+await repo.uploadPhoto(penuh.id, actorId, null, 'order');
+await repo.pickupOrder(penuh.id, actorId);
+const done = await repo.updateStatus(penuh.id, 'done_pickup', actorId);
+assert.equal(done.status, 'done_pickup', 'CHECK constraint menerima done_pickup');
+assert.ok(done.picked_up_at, 'waktu pengambilan tercatat');
+const beres = await repo.completeOrder(penuh.id, 'ok', actorId);
+assert.equal(beres.status, 'selesai');
+
+// done_pickup hanya dari proses_pick_up.
+const langsung = await mkFlow('C');
+await assert.rejects(() => repo.updateStatus(langsung.id, 'done_pickup', actorId), /Proses pick up/i);
+
+// Laporan mengenal status baru.
+const repFlow = await repo.reports('', undefined, undefined);
+assert.equal(typeof repFlow.totals.done_pickup, 'number', 'totals memuat done_pickup');

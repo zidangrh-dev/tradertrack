@@ -104,6 +104,10 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     mutate(() => api.attachBarcode(order.id, photo));
   };
 
+  // Dua transisi terakhir khusus admin (server juga menegakkan lewat requireAdmin).
+  const canMarkDone = !!detail && detail.photo_count >= settings.min_photos && isAdmin;
+  const markDonePickup = () => mutate(() => api.updateStatus(order.id, 'done_pickup'));
+
   const finish = () => mutate(() => api.completeOrder(order.id, note.trim()));
   const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()));
   const reopen = () => mutate(() => api.reopen(order.id));
@@ -198,16 +202,31 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                 />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
               </>
-            ) : (
+            ) : status === 'proses_pick_up' ? (
+              <>
+                {/* Tandai sudah diambil — hanya admin, wajib ada foto bukti. */}
+                <Button
+                  label={canMarkDone ? 'Tandai sudah diambil' : `Unggah minimal ${settings.min_photos} foto dulu`}
+                  icon="→"
+                  variant="soft"
+                  onPress={markDonePickup}
+                  disabled={!canMarkDone || busy || !detail}
+                  style={{ flex: 1 }}
+                />
+                <Button label="Tutup" variant="secondary" onPress={onClose} />
+              </>
+            ) : status === 'done_pickup' ? (
               <>
                 <Button
-                  label={canComplete ? 'Selesaikan order' : `Unggah minimal 1 foto untuk selesai`}
+                  label={canComplete ? 'Selesaikan order' : `Unggah minimal ${settings.min_photos} foto untuk selesai`}
                   onPress={finish}
                   disabled={!canComplete || busy}
                   style={{ flex: 1 }}
                 />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
               </>
+            ) : (
+              <Button label="Tutup" variant="secondary" onPress={onClose} />
             )}
           </View>
         )}
