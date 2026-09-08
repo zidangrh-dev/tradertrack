@@ -1,6 +1,7 @@
 // Repo PostgreSQL (produksi). Factory menerima pg.Pool dan mengembalikan
 // interface yang identik dengan memdb.mjs — routes memanggil keduanya sama.
 import { rangeToFrom } from './ranges.mjs';
+import { normalizeRequiredVersion, normalizeUpdateUrl } from './appVersion.mjs';
 
 const SELECT_VIEW = `
   SELECT o.*, u.display_name AS trader_name,
@@ -32,6 +33,9 @@ async function loadSettings(pool) {
     min_photos: Number(map.min_photos ?? 1),
     max_photos: Number(map.max_photos ?? 3),
     max_file_mb: Number(map.max_file_mb ?? 20),
+    // String, bukan angka: kosong berarti gerbang versi mati.
+    required_app_version: String(map.required_app_version ?? ''),
+    app_update_url: String(map.app_update_url ?? ''),
   };
 }
 
@@ -49,6 +53,8 @@ export default (pool) => {
       ['min_photos', patch.min_photos],
       ['max_photos', patch.max_photos],
       ['max_file_mb', patch.max_file_mb],
+      ['required_app_version', patch.required_app_version === undefined ? undefined : normalizeRequiredVersion(patch.required_app_version)],
+      ['app_update_url', patch.app_update_url === undefined ? undefined : normalizeUpdateUrl(patch.app_update_url)],
     ].filter(([, v]) => v !== undefined);
     for (const [k, v] of pairs) {
       await pool.query(

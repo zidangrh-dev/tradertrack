@@ -208,7 +208,51 @@ Gotcha untuk yang mengubah test: file `test/api.test.mjs` **harus memakai satu h
 
 ---
 
-## 8. Catatan singkat untuk pengembangan berikutnya
+## 8. Rilis update aplikasi (gerbang versi)
+
+Aplikasi HP bisa dikunci pada versi tertentu: APK dengan versi berbeda tidak
+bisa dipakai dan hanya menampilkan popup pembaruan berisi tombol unduh.
+**Versi web tidak pernah dikunci** — inilah jalur pemulihan bila terjadi salah
+setel.
+
+### Urutan rilis (jangan dibalik)
+
+1. **Naikkan versi + push** — ubah `version` di `frontend/app.json`
+   (mis. `0.1.0` → `0.2.0`), commit, push ke GitHub.
+2. **Deploy VPS** — `bash /opt/zproject/update.sh`.
+   Backend & web ikut terbarui; APK lama **masih jalan** karena versi wajib
+   belum diubah.
+3. **Build APK** — `cd frontend && npm run build:apk`, lalu unduh hasilnya.
+4. **Taruh APK di tempat yang bisa diunduh** (VPS, Drive, dsb.) sampai
+   menghasilkan link unduhan langsung.
+5. **Isi di aplikasi web** → Pengaturan → panel **Versi aplikasi**:
+   isi **Link unduhan APK** lalu **Versi wajib** (`0.2.0`), simpan.
+   Sejak titik ini semua APK lama terkunci dan menampilkan popup.
+6. **Pengguna** menekan Unduh → pasang APK → buka aplikasi → normal kembali.
+
+> Isi versi wajib **setelah** APK barunya benar-benar bisa diunduh. Bila
+> dibalik, pengguna terkunci dengan tombol unduh yang belum ada isinya.
+
+### Membatalkan blokir
+
+- **Cara biasa:** buka web di laptop → Pengaturan → **kosongkan** kolom versi
+  wajib → simpan. Blokir hilang seketika.
+- **Rem darurat (server):** tambahkan `APP_VERSION_GATE=off` di
+  `/opt/zproject/.env`, lalu `docker compose -p zproject up -d api`.
+
+### Cara kerja singkat
+
+- Klien mengirim header `X-App-Version` + `X-App-Platform` di tiap permintaan.
+- Server menolak dengan **409** `APP_VERSION_MISMATCH` bila platform native dan
+  versinya tidak sama persis dengan `required_app_version`.
+- Endpoint `login`, `logout`, `session`, `app-version`, dan `settings` **tidak
+  pernah** diblokir supaya admin selalu bisa memperbaiki.
+- `GET /api/app-version` bersifat publik; dipakai popup untuk mengambil versi
+  wajib dan link unduhan.
+
+---
+
+## 9. Catatan singkat untuk pengembangan berikutnya
 
 - Jika menambah kolom ke tabel, `CREATE TABLE IF NOT EXISTS` **tidak** menambah kolom pada DB lama — tambahkan `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, atau reset DB dev.
 - Pertahankan aturan kuota lintas toko & atomic add/reset; jangan balik ke kuota per kombinasi produk+toko.

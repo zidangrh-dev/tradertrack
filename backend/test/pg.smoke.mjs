@@ -133,3 +133,14 @@ await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');
 process.exit(0);
+
+// Setting gerbang versi tersimpan & terbaca di jalur SQL (string, bukan angka).
+const s0 = await repo.settings();
+assert.equal(s0.required_app_version, '', 'default: gerbang versi mati');
+const s1 = await repo.settingsPatch({ required_app_version: '2.4.1', app_update_url: 'https://contoh.test/app.apk' });
+assert.equal(s1.required_app_version, '2.4.1');
+assert.equal(s1.app_update_url, 'https://contoh.test/app.apk');
+await assert.rejects(() => repo.settingsPatch({ required_app_version: 'terbaru' }), /1\.2\.0/, 'format versi divalidasi');
+await assert.rejects(() => repo.settingsPatch({ app_update_url: 'ftp://x/a.apk' }), /http/, 'skema URL divalidasi');
+const s2 = await repo.settingsPatch({ required_app_version: '' });
+assert.equal(s2.required_app_version, '', 'dikosongkan → gerbang mati');

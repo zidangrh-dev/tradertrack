@@ -85,4 +85,8 @@ export interface AppSettings {
   min_photos: number;
   max_photos: number;
   max_file_mb: number;
+  /** Versi APK yang wajib dipakai; kosong = gerbang versi mati. */
+  required_app_version: string;
+  /** Link unduhan APK untuk popup pembaruan. */
+  app_update_url: string;
 }

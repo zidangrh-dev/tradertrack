@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { api, type AppSettings, type UserRow } from '../../src/lib/api';
+import { api, APP_VERSION, type AppSettings, type UserRow } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -15,12 +15,20 @@ export default function Settings() {
   const [showUsers, setShowUsers] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [requiredVersion, setRequiredVersion] = useState('');
+  const [updateUrl, setUpdateUrl] = useState('');
 
   const load = useCallback(() => {
     api.getSettings().then(setSettings).catch(() => setSettings(null));
     api.listUsers().then(setUsers).catch(() => setUsers([]));
   }, []);
   useEffect(load, [load]);
+
+  // Sinkronkan input dari data server (juga setelah simpan berhasil).
+  useEffect(() => {
+    setRequiredVersion(settings?.required_app_version ?? '');
+    setUpdateUrl(settings?.app_update_url ?? '');
+  }, [settings?.required_app_version, settings?.app_update_url]);
 
   const save = async (patch: Partial<AppSettings>) => {
     if (!settings) return;
@@ -51,6 +59,30 @@ export default function Settings() {
         <Text style={styles.rule}>Aturan: jumlah minimal foto tidak boleh disetel nol.</Text>
       </Panel>
 
+      <Panel
+        title="Versi aplikasi"
+        note="Kunci aplikasi HP pada versi tertentu. Isi versi wajib HANYA setelah APK baru siap diunduh — begitu disimpan, semua pengguna HP dengan versi lain langsung terkunci sampai memperbarui. Kosongkan untuk mematikan penguncian. Versi web tidak pernah terkunci."
+      >
+        <Text style={styles.versionNow}>Versi aplikasi ini: {APP_VERSION || '—'}</Text>
+        <TextField
+          label="Versi wajib (mis. 0.2.0 — kosongkan untuk mematikan)"
+          value={requiredVersion}
+          onChange={setRequiredVersion}
+          placeholder="0.2.0"
+        />
+        <TextField
+          label="Link unduhan APK"
+          value={updateUrl}
+          onChange={setUpdateUrl}
+          placeholder="https://..."
+        />
+        <Button
+          label="Simpan versi aplikasi"
+          fullWidth
+          onPress={() => save({ required_app_version: requiredVersion.trim(), app_update_url: updateUrl.trim() })}
+        />
+      </Panel>
+
       <Panel title="Akun pengguna" note="Admin membuat akun trader/admin. Tidak ada registrasi mandiri.">
         <Button label={`Kelola ${users.length} akun`} icon="→" variant="secondary" onPress={() => setShowUsers(true)} />
       </Panel>
@@ -78,6 +110,23 @@ function NumField({ label, value, onChange }: { label: string; value: string; on
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput style={styles.input} keyboardType="number-pad" value={value} onChangeText={onChange} />
+    </View>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.faint}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
     </View>
   );
 }
@@ -228,6 +277,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '700', color: colors.muted },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, height: 40, paddingHorizontal: 12, marginTop: 6, backgroundColor: colors.surface, color: colors.text },
   rule: { fontSize: 10, color: '#A8610F', fontWeight: '700', marginTop: 4 },
+  versionNow: { fontSize: 11, color: colors.muted, marginBottom: 10, fontWeight: '700' },
   saved: { color: '#1F7A4D', fontWeight: '700', fontSize: 11, textAlign: 'center', marginVertical: 6 },
   userRow: { flexDirection: 'row', gap: 10, paddingVertical: 13, borderTopWidth: 1, borderTopColor: colors.surfaceAlt },
   userName: { fontSize: 13, fontWeight: '700', color: colors.text },

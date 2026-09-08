@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { requireAuth, requireAdmin, signToken } from './auth.mjs';
 import { getRepo } from './repo.mjs';
+import { gateEnabled, isGatedPlatform, versionMatches } from './appVersion.mjs';
 
 const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
 const STATUS_WHITELIST = ['data_masuk', 'selesai'];
@@ -59,8 +60,10 @@ async function validateImage(file, uploadDir) {
   }
 }
 
-const asyncH = (fn) => (req, res) => {
-  Promise.resolve(fn(req, res)).catch((e) => {
+// next diteruskan agar pembungkus ini juga sah dipakai sebagai middleware,
+// bukan hanya handler akhir.
+const asyncH = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch((e) => {
     const status = e.status || (e.message === 'UNAUTHORIZED' ? 401 : 400);
     res.status(status).json({ error: e.message });
   });
@@ -106,6 +109,34 @@ const upload = multer({
   });
 
   const r = Router();
+
+  // ---------- Gerbang versi aplikasi ----------
+  // Info versi wajib — publik: popup pembaruan harus tetap dapat data meski
+  // token sudah kedaluwarsa atau permintaan lain diblokir.
+  r.get('/app-version', asyncH(async (_req, res) => {
+    const s = await repo.settings();
+    ok(res, { required_version: s.required_app_version ?? '', update_url: s.app_update_url ?? '' });
+  }));
+
+  // Jalur yang TIDAK pernah diblokir: tanpa ini, versi wajib yang salah ketik
+  // akan mengunci admin sendiri sehingga mustahil dibatalkan dari aplikasi.
+  const VERSION_GATE_EXEMPT = new Set(['/login', '/logout', '/session', '/app-version', '/settings']);
+
+  r.use(asyncH(async (req, res, next) => {
+    if (VERSION_GATE_EXEMPT.has(req.path)) return next();
+    // Hanya aplikasi native yang dijaga; web adalah jalur pemulihan.
+    if (!isGatedPlatform(req.get('X-App-Platform'))) return next();
+    const s = await repo.settings();
+    const required = s.required_app_version ?? '';
+    if (!gateEnabled(required)) return next();
+    if (versionMatches(req.get('X-App-Version'), required)) return next();
+    return res.status(409).json({
+      error: `Versi aplikasi Anda tidak sesuai. Perbarui ke versi ${required} untuk melanjutkan.`,
+      code: 'APP_VERSION_MISMATCH',
+      required_version: required,
+      update_url: s.app_update_url ?? '',
+    });
+  }));
 
   // Otorisasi order: fetch order + cek kepemilikan. adminBypass=true berarti
   // admin boleh ke semua order; false = ketat milik sendiri (hapus/edit sendiri).

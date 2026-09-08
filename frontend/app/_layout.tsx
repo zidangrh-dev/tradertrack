@@ -3,6 +3,8 @@ import { Stack, Redirect, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider, useAuth } from '../src/hooks/useAuth';
+import { VersionGateProvider, useVersionGate } from '../src/hooks/useVersionGate';
+import { UpdateGate } from '../src/components/UpdateGate';
 import { colors } from '../src/theme';
 import { NotifyHost } from '../src/components/NotifyHost';
 
@@ -36,14 +38,30 @@ function Gate() {
   );
 }
 
+/** Popup pembaruan tampil di atas segalanya saat versi aplikasi tertinggal. */
+function VersionBlocker() {
+  const { state, recheck } = useVersionGate();
+  if (!state.blocked) return null;
+  return (
+    <UpdateGate
+      requiredVersion={state.requiredVersion}
+      updateUrl={state.updateUrl}
+      onRetry={recheck}
+    />
+  );
+}
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <StatusBar style="light" />
-        <Gate />
-        <NotifyHost />
-      </AuthProvider>
+      <VersionGateProvider>
+        <AuthProvider>
+          <StatusBar style="light" />
+          <Gate />
+          <NotifyHost />
+          <VersionBlocker />
+        </AuthProvider>
+      </VersionGateProvider>
     </GestureHandlerRootView>
   );
 }

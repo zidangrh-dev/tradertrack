@@ -1031,3 +1031,103 @@ describe('CF8 Produk, toko marketplace & pengaturan', () => {
     assert.equal(status, 403);
   });
 });
+
+describe('CF9 Gerbang versi aplikasi', () => {
+  let admin, trader;
+  before(async () => { admin = await login('admin', 'admin'); trader = await login('nabila', 'trader'); });
+  // Selalu matikan gerbang setelah blok ini agar tidak mengganggu tes lain.
+  after(async () => { await client(admin).patch('/api/settings', { required_app_version: '', app_update_url: '' }); });
+
+  // Klien native: kirim header versi + platform seperti APK sungguhan.
+  const nativeClient = (token, version, platform = 'android') => {
+    const req = async (method, path) => {
+      const res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-App-Version': version,
+          'X-App-Platform': platform,
+        },
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      return { status: res.status, data };
+    };
+    return { get: (p) => req('GET', p) };
+  };
+
+  test('info versi publik tanpa token', async () => {
+    const res = await fetch(`${BASE}/api/app-version`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok('required_version' in body && 'update_url' in body);
+  });
+
+  test('gerbang mati saat versi wajib kosong', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '' });
+    const { status } = await nativeClient(admin, '0.0.1').get('/api/orders');
+    assert.equal(status, 200, 'tanpa versi wajib tidak boleh memblokir');
+  });
+
+  test('versi APK tidak sama → 409 + link unduhan', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '9.9.9', app_update_url: 'https://contoh.test/app.apk' });
+    const { status, data } = await nativeClient(admin, '0.1.0').get('/api/orders');
+    assert.equal(status, 409);
+    assert.equal(data.code, 'APP_VERSION_MISMATCH');
+    assert.equal(data.required_version, '9.9.9');
+    assert.equal(data.update_url, 'https://contoh.test/app.apk');
+  });
+
+  test('versi APK sama persis → lolos', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '9.9.9' });
+    const { status } = await nativeClient(trader, '9.9.9').get('/api/orders');
+    assert.equal(status, 200);
+  });
+
+  test('web tidak pernah diblokir walau versi beda', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '9.9.9' });
+    const { status } = await nativeClient(admin, '0.1.0', 'web').get('/api/orders');
+    assert.equal(status, 200, 'web adalah jalur pemulihan admin');
+    const { status: s2 } = await client(admin).get('/api/orders');
+    assert.equal(s2, 200, 'klien tanpa header platform tidak diblokir');
+  });
+
+  test('jalur pemulihan admin tetap terbuka saat terblokir', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '9.9.9' });
+    const c = nativeClient(admin, '0.1.0');
+    // Tanpa ini, versi wajib yang salah ketik akan mengunci admin selamanya.
+    assert.equal((await c.get('/api/settings')).status, 200, 'settings wajib lolos');
+    assert.equal((await c.get('/api/session')).status, 200, 'session wajib lolos');
+    assert.equal((await c.get('/api/app-version')).status, 200, 'app-version wajib lolos');
+    const res = await fetch(`${BASE}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Version': '0.1.0', 'X-App-Platform': 'android' },
+      body: JSON.stringify({ username: 'admin', password: 'admin' }),
+    });
+    assert.equal(res.status, 200, 'login wajib lolos');
+  });
+
+  test('mengosongkan versi wajib membatalkan blokir', async () => {
+    await client(admin).patch('/api/settings', { required_app_version: '9.9.9' });
+    assert.equal((await nativeClient(admin, '0.1.0').get('/api/orders')).status, 409);
+    await client(admin).patch('/api/settings', { required_app_version: '' });
+    assert.equal((await nativeClient(admin, '0.1.0').get('/api/orders')).status, 200);
+  });
+
+  test('format versi & link divalidasi', async () => {
+    const bad = await client(admin).patch('/api/settings', { required_app_version: 'versi-terbaru' });
+    assert.equal(bad.status, 400);
+    assert.match(bad.data.error, /1\.2\.0/);
+    const badUrl = await client(admin).patch('/api/settings', { app_update_url: 'drive.google.com/x' });
+    assert.equal(badUrl.status, 400);
+    assert.match(badUrl.data.error, /http/);
+    const okUrl = await client(admin).patch('/api/settings', { app_update_url: 'https://contoh.test/a.apk' });
+    assert.equal(okUrl.status, 200);
+  });
+
+  test('trader tidak bisa mengubah versi wajib', async () => {
+    const { status } = await client(trader).patch('/api/settings', { required_app_version: '1.0.0' });
+    assert.equal(status, 403);
+  });
+});

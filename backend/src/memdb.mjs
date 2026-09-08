@@ -5,6 +5,7 @@
 
 import { randomUUID as uid } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { normalizeRequiredVersion, normalizeUpdateUrl } from './appVersion.mjs';
 import { rangeToFrom } from './ranges.mjs';
 
 const hash = (pw) => bcrypt.hashSync(pw, 8);
@@ -42,6 +43,12 @@ export function settingsPatch(patch) {
     min_photos: Number(patch.min_photos ?? db.settings.min_photos),
     max_photos: Number(patch.max_photos ?? db.settings.max_photos),
     max_file_mb: Number(patch.max_file_mb ?? db.settings.max_file_mb),
+    required_app_version: patch.required_app_version === undefined
+      ? db.settings.required_app_version
+      : normalizeRequiredVersion(patch.required_app_version),
+    app_update_url: patch.app_update_url === undefined
+      ? db.settings.app_update_url
+      : normalizeUpdateUrl(patch.app_update_url),
   });
   return { ...db.settings };
 }
@@ -539,5 +546,5 @@ function seed() {
   orders.filter((o) => o.completed_at).forEach((o) => events.push({ id: uid(), order_id: o.id, actor_id: 'u-admin', event_type: 'completed', from_status: 'proses_pick_up', to_status: 'selesai', note: o.note, created_at: o.completed_at }));
   orders.filter((o) => o.is_problem).forEach((o) => events.push({ id: uid(), order_id: o.id, actor_id: 'u-admin', event_type: 'problem', from_status: null, to_status: null, note: o.problem_reason, created_at: o.updated_at }));
 
-  return { users, products, marketplaceStores, orders, photos, events, settings: { pending_threshold_hours: 3, min_photos: 1, max_photos: 3, max_file_mb: 20 } };
+  return { users, products, marketplaceStores, orders, photos, events, settings: { pending_threshold_hours: 3, min_photos: 1, max_photos: 3, max_file_mb: 20, required_app_version: '', app_update_url: '' } };
 }

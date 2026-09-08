@@ -69,6 +69,36 @@ function resolveApiUrl(): string {
 
 const API_URL: string = resolveApiUrl();
 
+/** Versi aplikasi terpasang. extra.appVersion tertanam saat build (andal di
+ *  APK standalone); expoConfig.version dipakai sebagai cadangan. */
+export const APP_VERSION: string = String(
+  (Constants.expoConfig?.extra as { appVersion?: string } | undefined)?.appVersion
+    ?? Constants.expoConfig?.version
+    ?? '',
+);
+
+/** Gerbang versi hanya berlaku untuk aplikasi native; web adalah jalur pemulihan. */
+const APP_PLATFORM: string = Platform.OS;
+
+/** Dilempar saat server menolak karena versi aplikasi tidak sesuai (HTTP 409). */
+export class AppVersionError extends Error {
+  requiredVersion: string;
+  updateUrl: string;
+  constructor(message: string, requiredVersion: string, updateUrl: string) {
+    super(message);
+    this.name = 'AppVersionError';
+    this.requiredVersion = requiredVersion;
+    this.updateUrl = updateUrl;
+  }
+}
+
+/** Info gerbang versi (publik) — dipakai saat boot sebelum permintaan lain. */
+export async function fetchVersionGate(): Promise<{ required_version: string; update_url: string }> {
+  const res = await fetch(`${API_URL}/api/app-version`);
+  if (!res.ok) throw new Error('Gagal memeriksa versi aplikasi.');
+  return res.json();
+}
+
 const TOKEN_KEY = 'zproject.jwt';
 
 async function getToken(): Promise<string | null> {
@@ -124,7 +154,10 @@ async function photoForm(file: { uri: string; name: string; type: string }, extr
 
 async function http<T>(path: string, options: { method?: string; body?: unknown; form?: FormData } = {}): Promise<T> {
   const token = await getToken();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    'X-App-Version': APP_VERSION,
+    'X-App-Platform': APP_PLATFORM,
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   const isForm = options.form instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
@@ -133,6 +166,17 @@ async function http<T>(path: string, options: { method?: string; body?: unknown;
     body: isForm ? options.form : options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!res.ok) {
+    // 409 khusus: versi aplikasi tertinggal → popup pembaruan, bukan toast biasa.
+    if (res.status === 409) {
+      try {
+        const body = await res.clone().json();
+        if (body?.code === 'APP_VERSION_MISMATCH') {
+          throw new AppVersionError(body.error, body.required_version ?? '', body.update_url ?? '');
+        }
+      } catch (e) {
+        if (e instanceof AppVersionError) throw e;
+      }
+    }
     let msg: string | undefined;
     try {
       msg = (await res.json()).error;

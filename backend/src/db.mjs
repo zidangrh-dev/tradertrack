@@ -19,7 +19,9 @@ export async function migrate(pool) {
       ('pending_threshold_hours', '3', 'Ambang waktu tertunda (jam)'),
       ('min_photos', '1', 'Jumlah minimal foto bukti penyelesaian'),
       ('max_photos', '3', 'Jumlah maksimal foto per order'),
-      ('max_file_mb', '20', 'Ukuran maksimal per berkas foto (MB)')
+      ('max_file_mb', '20', 'Ukuran maksimal per berkas foto (MB)'),
+      ('required_app_version', '', 'Versi APK wajib; kosong = gerbang versi mati'),
+      ('app_update_url', '', 'Link unduhan APK untuk popup pembaruan')
      ON CONFLICT (setting_key) DO NOTHING`,
   );
 }
