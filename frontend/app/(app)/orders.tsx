@@ -407,6 +407,8 @@ export default function Orders() {
       <EditOrderModal
         key={editing?.id ?? 'none'}
         order={editing}
+        productOptions={products}
+        storeOptions={stores}
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); refresh(); }}
       />
@@ -438,15 +440,40 @@ async function removeOrder(o: OrderView, refresh: () => void) {
   });
 }
 
-function EditOrderModal({ order, onClose, onSaved }: { order: OrderView | null; onClose: () => void; onSaved: () => void }) {
+function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved }: {
+  order: OrderView | null;
+  productOptions: SelectOption[];
+  storeOptions: SelectOption[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // Produk & toko dipilih dari katalog (bukan teks bebas) agar nama selalu
+  // cocok dengan master data — sama seperti form input order.
   const [product, setProduct] = useState(order?.product_name ?? '');
   const [store, setStore] = useState(order?.store_name ?? '');
-  const [orderNumber, setOrderNumber] = useState(order?.order_number.replace('TRK-', '') ?? '');
+  // Nomor pesanan disimpan utuh; memotong 'TRK-' saat memuat tanpa
+  // mengembalikannya saat menyimpan akan diam-diam mengubah nomor order.
+  const [orderNumber, setOrderNumber] = useState(order?.order_number ?? '');
   const [recipient, setRecipient] = useState(order?.recipient_name ?? '');
+  const [busy, setBusy] = useState(false);
 
   if (!order) return null;
 
+  // Opsi memakai NAMA sebagai nilai: endpoint edit menerima product_name /
+  // store_name, bukan id. Nama lama tetap disertakan bila katalog berubah.
+  const byName = (opts: SelectOption[], current: string): SelectOption[] => {
+    const names = opts.map((o) => ({ value: o.label, label: o.label, sub: o.sub }));
+    return current && !names.some((n) => n.value === current)
+      ? [...names, { value: current, label: current, sub: 'Tidak ada di katalog' }]
+      : names;
+  };
+
   const save = async () => {
+    if (!product.trim() || !store.trim() || !orderNumber.trim() || !recipient.trim()) {
+      notify('Lengkapi data', 'Produk, toko, nomor pesanan, dan penerima wajib diisi.');
+      return;
+    }
+    setBusy(true);
     try {
       await api.editOwnOrder(order.id, {
         product_name: product.trim(), store_name: store.trim(),
@@ -455,17 +482,35 @@ function EditOrderModal({ order, onClose, onSaved }: { order: OrderView | null; 
       onSaved();
     } catch (e) {
       notify('Gagal', (e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <Sheet open onClose={onClose} title={`Edit #${order.order_number}`}>
-      <Field label="Nama produk" value={product} onChangeText={setProduct} />
-      <Field label="Nama toko" value={store} onChangeText={setStore} />
-      <Field label="Nomor pesanan" value={orderNumber} onChangeText={setOrderNumber} hint="Harus unik." />
+      <Select
+        block
+        field
+        label="Nama produk"
+        value={product}
+        options={byName(productOptions, order.product_name)}
+        onChange={setProduct}
+        placeholder="Pilih produk"
+      />
+      <Select
+        block
+        field
+        label="Nama toko"
+        value={store}
+        options={byName(storeOptions, order.store_name)}
+        onChange={setStore}
+        placeholder="Pilih toko"
+      />
+      <Field label="Nomor pesanan" value={orderNumber} onChangeText={setOrderNumber} hint="Harus unik — tidak boleh sama dengan order lain." />
       <Field label="Nama penerima" value={recipient} onChangeText={setRecipient} />
       <Text style={styles.ownerNote}>Hanya order milik Anda yang masih berstatus Data masuk yang dapat diubah.</Text>
-      <Button label="Simpan perubahan" fullWidth onPress={save} />
+      <Button label={busy ? 'Menyimpan…' : 'Simpan perubahan'} fullWidth disabled={busy} onPress={save} />
     </Sheet>
   );
 }

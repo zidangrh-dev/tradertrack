@@ -829,6 +829,32 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
     assert.equal(status, 400);
     assert.match(r.error, /sudah dipakai/);
   });
+  test('nomor pesanan bentrok lewat spasi juga ditolak', async () => {
+    const { data: a } = await client(admin).post('/api/orders', order());
+    const { data: b } = await client(admin).post('/api/orders', order());
+    // Tanpa trim di server, ' NOMOR ' lolos sebagai nomor berbeda.
+    const { status, data: r } = await client(admin).patch(`/api/orders/${b.id}`, { order_number: `  ${a.order_number}  ` });
+    assert.equal(status, 400);
+    assert.match(r.error, /sudah dipakai/);
+    const { data: after } = await client(admin).get(`/api/orders/${b.id}/detail`);
+    assert.equal(after.order_number, b.order_number, 'nomor tidak berubah');
+  });
+  test('nomor pesanan kosong saat edit → tolak', async () => {
+    const { data: o } = await client(admin).post('/api/orders', order());
+    const { status } = await client(admin).patch(`/api/orders/${o.id}`, { order_number: '   ' });
+    assert.equal(status, 400);
+  });
+  test('edit menyimpan nomor pesanan apa adanya (tanpa memotong awalan)', async () => {
+    // Produk sendiri: kuota produk bawaan sudah terpakai tes-tes sebelumnya.
+    const nama = `Produk Edit ${Date.now()}`;
+    const { data: prods } = await client(admin).post('/api/products', { name: nama, quota: 5 });
+    const pid = prods.find((p) => p.name === nama).id;
+    const { data: o } = await client(admin).post('/api/orders', order({ product_id: pid }));
+    const baru = `TRK-EDIT-${Date.now()}`;
+    const { status, data: r } = await client(admin).patch(`/api/orders/${o.id}`, { order_number: baru });
+    assert.equal(status, 200, `gagal: ${JSON.stringify(r)}`);
+    assert.equal(r.order_number, baru, 'nomor tersimpan utuh');
+  });
 });
 
 describe('CF6 Realtime', () => {
@@ -841,8 +867,14 @@ describe('CF6 Realtime', () => {
       socket.on('connect_error', (e) => { clearTimeout(t); reject(e); });
     });
     try {
+      // Produk sendiri: kuota produk bawaan bisa habis oleh tes-tes sebelumnya,
+      // membuat order gagal dibuat sehingga event tidak pernah terkirim.
+      const nama = `Produk RT ${Date.now()}`;
+      const { data: prods } = await client(token).post('/api/products', { name: nama, quota: 5 });
+      const pid = prods.find((p) => p.name === nama).id;
       const got = new Promise((resolve) => socket.on('packages:changed', resolve));
-      await client(token).post('/api/orders', order({ order_number: `TRK-RT-${Date.now()}` }));
+      const dibuat = await client(token).post('/api/orders', order({ order_number: `TRK-RT-${Date.now()}`, product_id: pid }));
+      assert.equal(dibuat.status, 201, `order uji gagal dibuat: ${JSON.stringify(dibuat.data)}`);
       const timer = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout event')), 4000));
       await Promise.race([got, timer]);
     } finally {

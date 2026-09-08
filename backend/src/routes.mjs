@@ -349,12 +349,18 @@ const upload = multer({
   r.patch('/orders/:id', requireAuth, asyncH(async (req, res) => {
     const order = await orderFor(req, req.params.id, { adminBypass: false });
     if (order.status !== 'data_masuk') return res.status(400).json({ error: 'Order hanya bisa diubah saat status Data masuk.' });
+    // Dirapikan seperti saat pembuatan: tanpa trim, ' 123' lolos sebagai
+    // nomor berbeda dari '123' dan aturan unik bisa ditembus.
+    const trimmed = (v) => (v === undefined || v === null ? undefined : String(v).trim());
     const patch = {
-      product_name: req.body?.product_name ?? undefined,
-      store_name: req.body?.store_name ?? undefined,
-      order_number: req.body?.order_number ?? undefined,
-      recipient_name: req.body?.recipient_name ?? undefined,
+      product_name: trimmed(req.body?.product_name),
+      store_name: trimmed(req.body?.store_name),
+      order_number: trimmed(req.body?.order_number),
+      recipient_name: trimmed(req.body?.recipient_name),
     };
+    if (patch.order_number !== undefined && !patch.order_number) {
+      return res.status(400).json({ error: 'Nomor pesanan tidak boleh kosong.' });
+    }
     const updated = await repo.editOrder(req.params.id, patch, req.user.id);
     emit();
     ok(res, updated);
