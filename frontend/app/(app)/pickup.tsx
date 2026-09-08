@@ -7,10 +7,10 @@ import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useSettings } from '../../src/hooks/useSettings';
 import { colors, radius, pickupMethodOptions, space } from '../../src/theme';
 import { Button, EmptyState, Field, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, type SelectOption } from '../../src/components/ui';
+import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 import { BarcodeScanner } from '../../src/components/BarcodeScanner';
 
-const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
 
 export default function Pickup() {
   useAdminOnly();
@@ -23,7 +23,9 @@ export default function Pickup() {
   const [method, setMethod] = useState('');
   const [store, setStore] = useState<string[]>([]);
   const [trader, setTrader] = useState('');
-  const [period, setPeriod] = useState('');
+  // Rentang tanggal kosong = semua tanggal.
+  const [fromKey, setFromKey] = useState<string | null>(null);
+  const [toKey, setToKey] = useState<string | null>(null);
   const [flagged, setFlagged] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [traders, setTraders] = useState<SelectOption[]>([]);
@@ -46,12 +48,11 @@ export default function Pickup() {
     if (method) q.pickup_method = method;
     if (store.length) q.store = store.join(',');
     if (trader) q.trader = trader;
-    const d = new Date();
-    if (period === 'hari_ini') q.from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
-    if (period === '7_hari') q.from = new Date(Date.now() - 7 * 864e5).toISOString();
-    if (period === 'bulan_ini') q.from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    // Batas atas akhir hari agar rentang inklusif sampai tanggal terpilih.
+    if (fromKey) q.from = startOfDayISO(fromKey);
+    if (toKey) q.to = endOfDayISO(toKey);
     return q;
-  }, [search, method, store, trader, period]);
+  }, [search, method, store, trader, fromKey, toKey]);
 
   const { orders, refresh, loading } = useOrders(query);
   const pending = useMemo(
@@ -72,10 +73,10 @@ export default function Pickup() {
   const [info, setInfo] = useState<string | null>(null);
   const settings = useSettings();
 
-  const activeFilters = [search.trim(), method, trader, period].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (flagged ? 1 : 0);
+  const activeFilters = [search.trim(), method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0) + (flagged ? 1 : 0);
 
   const resetFilters = () => {
-    setSearch(''); setMethod(''); setStore([]); setTrader(''); setPeriod(''); setFlagged(false);
+    setSearch(''); setMethod(''); setStore([]); setTrader(''); setFromKey(null); setToKey(null); setFlagged(false);
   };
 
   const completePickup = async (o: OrderView) => {
@@ -185,14 +186,10 @@ export default function Pickup() {
             compact
             block={isNarrow}
           />
-          <Select
-            label="Periode"
-            value={period}
-            options={Object.entries(PERIOD_OPTIONS).map(([value, label]) => ({ value, label }))}
-            onChange={setPeriod}
-            placeholder="Semua periode"
-            clearLabel="Semua"
-            compact
+          <DateRangeField
+            fromKey={fromKey}
+            toKey={toKey}
+            onChange={(f, t) => { setFromKey(f); setToKey(t); }}
             block={isNarrow}
           />
           <Pressable onPress={() => setFlagged((v) => !v)} style={[styles.flagChip, flagged && styles.flagChipActive, isNarrow && { alignSelf: 'flex-start' }]}>

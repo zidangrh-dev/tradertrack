@@ -6,6 +6,7 @@ import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
 import { Button, EmptyState, PageHeader, Sheet } from '../../src/components/ui';
+import { Calendar, fmtDate, keyOf, parseKey } from '../../src/components/DateRangePicker';
 import { isAdminLevel } from '../../src/lib/roles';
 
 const STATUS_META: { key: Status; label: string; color: string }[] = [
@@ -39,35 +40,6 @@ function useCountUp(target: number, duration = 550) {
   return display;
 }
 
-/* ---------- Kalender: satu-satunya filter rentang tanggal ---------- */
-
-const DAYS = ['M', 'S', 'S', 'R', 'K', 'J', 'S']; // Senin pertama
-
-const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-
-// Kunci berpadding (2026-09-03) — perbandingan rentang lewat string butuh urutan leksikografis.
-const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const parseKey = (k: string) => {
-  const [y, m, d] = k.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-
-/** Ambil 6 minggu penuh (Senin–Minggu) yang memuat bulan `view`. */
-function monthGrid(view: Date): Date[] {
-  const first = new Date(view.getFullYear(), view.getMonth(), 1);
-  const start = new Date(first);
-  start.setDate(1 - ((first.getDay() + 6) % 7)); // mundur ke Senin
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return d;
-  });
-}
-
-function fmtDate(d: Date) {
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 // Pill rentang tanggal — di header kanan (lebar) atau baris aksi sendiri (HP).
 function RangePill({ fromKey, toKey, onPress, flex }: { fromKey: string; toKey: string; onPress: () => void; flex?: boolean }) {
   return (
@@ -85,86 +57,6 @@ function RangePill({ fromKey, toKey, onPress, flex }: { fromKey: string; toKey: 
       </View>
       <Text style={styles.rangePillCaret}>▾</Text>
     </Pressable>
-  );
-}
-
-function Calendar({ initialFrom, initialTo, onApply, onCancel }: {
-  initialFrom: string;
-  initialTo: string;
-  onApply: (fromKey: string, toKey: string) => void;
-  onCancel: () => void;
-}) {
-  // Draf di dalam modal: menutup tanpa "Terapkan" tidak mengubah rentang aktif.
-  const [fromKey, setFromKey] = useState<string | null>(initialFrom);
-  const [toKey, setToKey] = useState<string | null>(initialTo);
-  // Buka di bulan yang memuat rentang aktif.
-  const [view, setView] = useState(() => {
-    const base = parseKey(initialTo);
-    return new Date(base.getFullYear(), base.getMonth(), 1);
-  });
-  const cells = useMemo(() => monthGrid(view), [view]);
-
-  const go = (delta: number) => setView((v) => new Date(v.getFullYear(), v.getMonth() + delta, 1));
-
-  // Urutan ketuk: mulai → akhir (otomatis tukar bila terbalik) → ketuk lagi memulai rentang baru.
-  const pick = (k: string) => {
-    if (!fromKey) { setFromKey(k); return; }
-    if (!toKey) {
-      if (k < fromKey) { setToKey(fromKey); setFromKey(k); } else { setToKey(k); }
-      return;
-    }
-    setFromKey(k);
-    setToKey(null);
-  };
-
-  const inRange = (k: string) => !!fromKey && !!toKey && k > fromKey && k < toKey;
-  const complete = !!fromKey && !!toKey;
-
-  return (
-    <View>
-      <View style={styles.calHead}>
-        <Pressable onPress={() => go(-1)} hitSlop={10} style={styles.calNav}>
-          <Text style={styles.calNavText}>‹</Text>
-        </Pressable>
-        <Text style={styles.calTitle}>{MONTHS[view.getMonth()]} {view.getFullYear()}</Text>
-        <Pressable onPress={() => go(1)} hitSlop={10} style={styles.calNav}>
-          <Text style={styles.calNavText}>›</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.calDow}>
-        {DAYS.map((d, i) => <Text key={i} style={styles.calDowText}>{d}</Text>)}
-      </View>
-
-      <View style={styles.calGrid}>
-        {cells.map((d, i) => {
-          const k = keyOf(d);
-          const outside = d.getMonth() !== view.getMonth();
-          const isFrom = fromKey === k;
-          const isTo = toKey === k;
-          const style = isFrom || isTo ? styles.calCellEnd : inRange(k) ? styles.calCellRange : undefined;
-          const textStyle = isFrom || isTo ? styles.calCellTextEnd : inRange(k) ? styles.calCellTextRange : undefined;
-          return (
-            <Pressable
-              key={i}
-              disabled={outside}
-              onPress={() => pick(k)}
-              style={[styles.calCell, style, outside && { opacity: 0 }]}
-            >
-              <Text style={[styles.calCellText, textStyle]}>{d.getDate()}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.calHint}>
-        {!fromKey ? 'Ketuk tanggal mulai.' : !toKey ? 'Ketuk tanggal akhir.' : `${fmtDate(parseKey(fromKey))} — ${fmtDate(parseKey(toKey))}`}
-      </Text>
-      <View style={styles.calActions}>
-        <Button label="Batal" variant="secondary" onPress={onCancel} />
-        <Button label="Terapkan" disabled={!complete} onPress={() => complete && onApply(fromKey!, toKey!)} style={{ flex: 1 }} />
-      </View>
-    </View>
   );
 }
 
@@ -479,24 +371,6 @@ const styles = StyleSheet.create({
   rangePillCaret: { fontSize: 9, color: colors.faint },
 
   // Kalender mini di dalam modal
-  calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  calTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
-  calNav: { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
-  calNavText: { fontSize: 18, color: colors.muted, lineHeight: 20, marginTop: -2 },
-  calDow: { flexDirection: 'row' },
-  calDowText: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '800', color: colors.faint, paddingVertical: 4 },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell: {
-    width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
-    borderRadius: radius.sm,
-  },
-  calCellEnd: { backgroundColor: colors.primary },
-  calCellRange: { backgroundColor: colors.primarySoft },
-  calCellText: { fontSize: 12, color: colors.text, fontWeight: '600' },
-  calCellTextEnd: { color: colors.onPrimary, fontWeight: '800' },
-  calCellTextRange: { color: colors.primary },
-  calHint: { fontSize: 10, color: colors.faint, marginTop: 10 },
-  calActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
 
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginBottom: space.lg },
   // HP: dua kolom rata; kartu Bermasalah membentang penuh di bawah.

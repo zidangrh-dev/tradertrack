@@ -11,11 +11,11 @@ import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
+import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
 import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 import { isAdminLevel } from '../../src/lib/roles';
 
-const PERIOD_OPTIONS: Record<string, string> = { hari_ini: 'Hari ini', '7_hari': '7 hari terakhir', bulan_ini: 'Bulan berjalan' };
 const PER_PAGE = 50;
 const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima'];
 
@@ -44,7 +44,9 @@ export default function Orders() {
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
   const [store, setStore] = useState<string[]>([]);
-  const [period, setPeriod] = useState('');
+  // Rentang tanggal kosong = semua tanggal (tidak ada data yang tersembunyi diam-diam).
+  const [fromKey, setFromKey] = useState<string | null>(null);
+  const [toKey, setToKey] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -77,12 +79,11 @@ export default function Orders() {
     if (trader) q.trader = trader;
     q.page = String(page);
     q.per_page = String(PER_PAGE);
-    const d = new Date();
-    if (period === 'hari_ini') q.from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
-    if (period === '7_hari') q.from = new Date(Date.now() - 7 * 864e5).toISOString();
-    if (period === 'bulan_ini') q.from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    // Batas atas akhir hari agar rentang inklusif sampai tanggal terpilih.
+    if (fromKey) q.from = startOfDayISO(fromKey);
+    if (toKey) q.to = endOfDayISO(toKey);
     return q;
-  }, [search, status, method, store, trader, period, page]);
+  }, [search, status, method, store, trader, fromKey, toKey, page]);
 
   const { orders, total, loading, error, refresh } = useOrders(query);
 
@@ -121,10 +122,10 @@ export default function Orders() {
   };
 
   const resetFilters = () => {
-    setStatus(''); setMethod(''); setStore([]); setTrader(''); setPeriod(''); setPage(1);
+    setStatus(''); setMethod(''); setStore([]); setTrader(''); setFromKey(null); setToKey(null); setPage(1);
   };
 
-  const activeFilters = [status, method, trader, period].filter(Boolean).length + (store.length > 0 ? 1 : 0);
+  const activeFilters = [status, method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0);
   const copyFiltered = async () => {
     try {
       const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
@@ -302,14 +303,10 @@ export default function Orders() {
             block={isNarrow}
           />
         )}
-        <Select
-          label="Periode"
-          value={period}
-          options={Object.entries(PERIOD_OPTIONS).map(([value, label]) => ({ value, label }))}
-          onChange={(v) => { setPeriod(v); setPage(1); }}
-          placeholder="Semua periode"
-          clearLabel="Semua"
-          compact
+        <DateRangeField
+          fromKey={fromKey}
+          toKey={toKey}
+          onChange={(f, t) => { setFromKey(f); setToKey(t); setPage(1); }}
           block={isNarrow}
         />
 
