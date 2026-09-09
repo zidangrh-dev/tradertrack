@@ -48,8 +48,7 @@
       "router": {},
       "eas": {
         "projectId": "95a43f55-aee5-43f4-8854-9a6cef826bd7"
-      },
-      "appVersion": "1.0.0"
+      }
     }
   }
 }
