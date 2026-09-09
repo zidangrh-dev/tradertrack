@@ -22,13 +22,20 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const isAdmin = isAdminLevel(user?.role);
-  const { orders } = useOrders();
+  // Sidebar hanya butuh angka, bukan isinya: minta halaman terkecil dan pakai
+  // `total` dari server. Sebelumnya ikut menarik 200 order tiap refresh.
+  const { total: totalSemua } = useOrders({ per_page: '1' });
+  // Hitungan pick up ikut lewat server (per_page kecil, yang dipakai hanya
+  // `total`) — kalau dihitung dari array daftar, angkanya ikut terpotong 200.
+  const { total: totalPickup } = useOrders({ status: 'proses_pick_up', per_page: '1' });
   // Dropdown profil: menu bawah (Ganti kata sandi / Keluar) + modal ganti sandi.
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const total = orders.length;
-  const pickupCount = orders.filter((o) => o.status === 'proses_pick_up').length;
+  // Badge memakai `total` dari server, bukan orders.length: daftar dibatasi
+  // 200 per halaman, jadi panjang array mentok di 200 walau ordernya lebih.
+  const total = totalSemua;
+  const pickupCount = totalPickup;
 
   const MAIN_ITEMS: Item[] = [
     { href: '/(app)', icon: '▦', label: 'Papan kerja', adminOnly: true },
