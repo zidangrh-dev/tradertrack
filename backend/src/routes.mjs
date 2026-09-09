@@ -348,6 +348,20 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
     await validateImage(req.file, uploadDir);
     // 'order' = foto bukti order (syarat pick up); selain itu bukti penyelesaian.
     const source = PHOTO_SOURCE_WHITELIST.includes(req.body?.source) ? req.body.source : null;
+    // Bukti order: sejajar dengan aturan barcode. Boleh dilampirkan saat Data
+    // masuk, atau menyusul pada order yang terlanjur diproses tanpa bukti —
+    // celah menutup sendiri begitu buktinya ada, sehingga bukti yang sudah
+    // terpasang tidak bisa ditukar setelah order berjalan.
+    if (source === 'order' && order.status !== 'data_masuk') {
+      const sudahAda = await repo.hasOrderProof(req.params.id);
+      if (order.status !== 'proses_pick_up' || sudahAda) {
+        return res.status(400).json({
+          error: sudahAda
+            ? 'Bukti order hanya bisa diubah saat status Data masuk.'
+            : 'Bukti order hanya bisa dilampirkan saat status Data masuk atau Proses pick up.',
+        });
+      }
+    }
     // Foto pengambilan adalah bukti verifikasi milik admin — trader hanya boleh
     // melihatnya. Tanpa cek ini, menyembunyikan tombol di UI tidak menutup API.
     if (source === 'pickup_evidence') {

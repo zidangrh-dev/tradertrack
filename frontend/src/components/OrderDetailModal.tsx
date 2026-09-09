@@ -103,6 +103,10 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const bisaLampirBarcode = status === 'data_masuk' || (status === 'proses_pick_up' && !barcodePath);
   const orderProof = detail?.photos.find((p) => p.source === 'order') ?? null;
   const hasOrderProof = !!orderProof;
+  // Sejajar dengan celah barcode: order warisan yang terlanjur diproses tanpa
+  // bukti order tetap boleh dilengkapi. Menutup sendiri begitu buktinya ada,
+  // jadi bukti yang sudah terpasang tidak bisa ditukar setelah order berjalan.
+  const bisaLampirBuktiOrder = status === 'data_masuk' || (status === 'proses_pick_up' && !hasOrderProof);
   const dualReady = hasBarcode && hasOrderProof;
   const pickupEvidences = detail?.photos.filter((p) => p.source === 'pickup_evidence') ?? [];
   // Foto pengambilan berkuota sendiri (maks 3), lepas dari max_photos yang
@@ -193,8 +197,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               <PhotoSlot
                 label="Foto bukti order"
                 filePath={orderProof?.file_path ?? null}
-                locked={status !== 'data_masuk'}
-                lockedReason="Bukti order terkunci setelah order diproses."
+                locked={!bisaLampirBuktiOrder}
+                lockedReason={
+                  hasOrderProof
+                    ? 'Bukti order hanya bisa diubah saat status Data masuk.'
+                    : 'Bukti order hanya bisa dilampirkan saat status Data masuk atau Proses pick up.'
+                }
                 busy={busy}
                 onPreview={(fp) => setPreview(fp)}
                 onPick={attachOrderProof}
