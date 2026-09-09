@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at timestamptz NOT NULL DEFAULT now(),
   picked_up_at timestamptz,
   completed_at timestamptz,
+  -- Waktu perpindahan status TERAKHIR. Sengaja dipisah dari updated_at: unggah
+  -- foto / edit order menaikkan updated_at, dan kanban tidak boleh mengurutkan
+  -- ulang karenanya. Hanya transisi status yang menyentuh kolom ini.
+  status_changed_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -66,6 +70,15 @@ DROP TABLE IF EXISTS master_data CASCADE;
 
 -- Kolom menyusul untuk database yang dibuat sebelum aturan bukti ganda.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS requires_dual_evidence boolean NOT NULL DEFAULT false;
+
+-- Kolom menyusul untuk database lama: urutan kanban berbasis perpindahan status.
+-- Backfill memakai jejak waktu terbaik yang ada, bukan now(), agar urutan awal
+-- tidak jadi acak — semua baris lama kebagian stempel yang sama.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_changed_at timestamptz;
+UPDATE orders SET status_changed_at = COALESCE(completed_at, picked_up_at, created_at)
+  WHERE status_changed_at IS NULL;
+ALTER TABLE orders ALTER COLUMN status_changed_at SET DEFAULT now();
+ALTER TABLE orders ALTER COLUMN status_changed_at SET NOT NULL;
 
 -- Role superadmin: constraint lama hanya mengizinkan admin/trader, jadi harus
 -- diganti sebelum ada baris ber-role superadmin.
@@ -79,6 +92,7 @@ ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('data_ma
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_status_changed_at ON orders(status_changed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_trader_id ON orders(trader_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);

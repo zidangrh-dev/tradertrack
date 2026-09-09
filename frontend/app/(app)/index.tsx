@@ -170,16 +170,7 @@ export default function Kanban() {
       return;
     }
     if (to === 'done_pickup') {
-      // Butuh foto bukti; kurang → buka modal detail agar bisa dilengkapi.
-      if (o.photo_count >= settings.min_photos) {
-        try {
-          await api.updateStatus(o.id, 'done_pickup');
-          refresh();
-        } catch (e) {
-          notify('Gagal', (e as Error).message);
-        }
-        return;
-      }
+      // Wajib lampirkan 2 foto pengambilan → buka modal detail untuk alurnya.
       setSelected(o);
       return;
     }

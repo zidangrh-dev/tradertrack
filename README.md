@@ -19,13 +19,20 @@ Dua role, tanpa registrasi mandiri. Seluruh UI berbahasa Indonesia.
 
 ```
 data_masuk ──proses pick up──▶ proses_pick_up ──tandai diambil──▶ done_pickup ──verifikasi──▶ selesai
-   (baru dibuat)   (wajib barcode+bukti)      (admin, wajib ≥1 foto)      (admin)
+   (baru dibuat)   (wajib barcode+bukti)   (admin, wajib 2 foto ambil)    (admin)
 ```
 
 1. **Trader input order** → memilih **produk** (dari katalog) dan **toko marketplace** dari dua dropdown terpisah, mengisi nomor pesanan & penerima. Kuota produk dicek saat itu.
 2. **Trader (atau admin) proses pick up** → order berpindah ke `proses_pick_up`. Syarat: order sudah punya ≥1 bukti (foto barcode yang dilampirkan saat input, atau foto yang diunggah saat proses). Pemilik order juga bisa mengunggah/menghapus foto bukti lewat modal detail, persis seperti admin.
-3. **Admin selesaikan order** → wajib `photo_count >= min_photos` (default 1). Trader **tidak** boleh menyelesaikan order.
-4. Order bisa ditandai **bermasalah**, dan order `selesai` bisa **dibuka kembali** (reopen) oleh admin.
+3. **Admin tandai sudah diambil** → wajib ada **1-3 foto pengambilan** (`source: pickup_evidence`) lewat `POST /orders/:id/done-pickup`. Foto boleh dilampirkan **lebih dulu** lewat galeri modal detail (`POST /orders/:id/photos`); yang sudah ada **ikut dihitung**, jadi tombol tandai bisa dipanggil tanpa berkas baru. Jalur `PATCH /orders/:id/status` ke `done_pickup` **ditolak**. Foto pengambilan **hanya boleh diinput admin** — trader dapat melihatnya (read-only) tapi tidak mengunggah/menghapus. Foto itu **terkunci** bagi semua orang begitu order masuk `done_pickup`.
+4. **Admin selesaikan order** → wajib `photo_count >= min_photos` (default 1). Trader **tidak** boleh menyelesaikan order.
+5. Order bisa ditandai **bermasalah** (alasan wajib) dan tandanya bisa **dicabut** lagi lewat `DELETE /orders/:id/problem`; order `selesai` bisa **dibuka kembali** (reopen) oleh admin.
+
+### Barcode susulan (tambalan order warisan)
+
+Order yang dibuat **sebelum** aturan bukti ganda (`requires_dual_evidence = false`) bisa masuk `proses_pick_up` hanya berbekal ≥1 foto, tanpa barcode. Order seperti itu dulu **terkunci selamanya**: `POST /orders/:id/barcode` menolak status selain `data_masuk`.
+
+Kelonggarannya sempit dan **menutup sendiri**: barcode boleh dilampirkan saat `proses_pick_up` **hanya bila `barcode_path` masih kosong**. Begitu terisi, syaratnya gugur dan endpoint terkunci lagi — jadi ini bukan pintu untuk mengganti barcode. Aturan kepemilikan tidak berubah (pemilik order atau admin), dan `done_pickup`/`selesai` tidak kebagian. `DELETE /orders/:id/barcode` tetap hanya melayani `data_masuk`, sehingga celah tidak bisa dibuka ulang.
 
 ### Kuota — per tipe barang, lintas toko
 
@@ -47,6 +54,7 @@ admin — semua yang bisa dilakukan admin, ditambah kewenangan khusus di bawah.
 | Input order | Untuk siapa pun | Untuk siapa pun | Untuk dirinya sendiri |
 | Proses pick up order | Semua | Semua | Miliknya saja |
 | Unggah/hapus foto bukti | Semua (non-selesai) | Semua (non-selesai) | Miliknya saja (non-selesai) |
+| Unggah/hapus **foto pengambilan** (`pickup_evidence`) | ✔ (saat `proses_pick_up`) | ✔ (saat `proses_pick_up`) | ✗ (hanya melihat) |
 | Tandai sudah diambil (done pickup) | ✔ | ✔ | ✗ |
 | Selesaikan order / tandai bermasalah / reopen | ✔ | ✔ | ✗ |
 | Scan resi | ✔ | ✔ | ✗ |
@@ -67,7 +75,7 @@ superadmin (hanya bila belum ada superadmin sama sekali).
 
 ### Penanda "Tertunda"
 
-Tidak disimpan — dihitung saat render: status `data_masuk`/`proses_pick_up` yang `updated_at`-nya lebih lama dari `pending_threshold_hours` (default 3 jam, atur di Pengaturan). Order bermasalah menampilkan badge "Bermasalah" (menimpa Tertunda).
+Tidak disimpan — dihitung saat render: status `data_masuk`/`proses_pick_up`/`done_pickup` yang `status_changed_at`-nya lebih lama dari `pending_threshold_hours` (default 3 jam, atur di Pengaturan). Acuannya **bukan** `updated_at`, jadi mengunggah foto tidak me-reset jam tertunda. Order bermasalah menampilkan badge "Bermasalah" (menimpa Tertunda).
 
 ---
 
@@ -101,12 +109,21 @@ Kedua repo menghadirkan interface yang sama.
 | `users` | `username`, `password_hash`, `display_name`, `role` (`admin`/`trader`), `is_active` |
 | `products` | `name` (unik, case-insensitive), `quota` (int ≥ 0), `is_active` — **kuota menempel di sini** |
 | `marketplace_stores` | `name` (unik, case-insensitive), `is_active` |
-| `orders` | `order_number` (unik), `product_name`/`store_name` (denormalisasi utk tampilan), `product_id`/`store_id` (FK), `trader_id`, `status`, `order_amount`, `note`, `is_problem`, `barcode_path`, `photo_count`, waktu (`created_at`, `picked_up_at`, `completed_at`, `updated_at`) |
-| `order_photos` | bukti foto (`file_path`, `source`: `pickup`/`kamera`/`berkas`, `uploaded_by`) |
+| `orders` | `order_number` (unik), `product_name`/`store_name` (denormalisasi utk tampilan), `product_id`/`store_id` (FK), `trader_id`, `status`, `order_amount`, `note`, `is_problem`, `barcode_path`, `photo_count`, waktu (`created_at`, `picked_up_at`, `completed_at`, `status_changed_at`, `updated_at`) |
+| `order_photos` | bukti foto (`file_path`, `source`: `order`/`pickup`/`pickup_evidence`/`kamera`/`berkas`, `uploaded_by`) |
 | `order_events` | riwayat status (actor + note + timestamp) |
 | `app_settings` | `pending_threshold_hours`, `min_photos`, `max_photos`, `max_file_mb` |
 
 `used_quota`/`remaining_quota` produk **bukan kolom** — dihitung dari `COUNT(order)` per `product_id`.
+
+### `status_changed_at` vs `updated_at`
+
+Dua stempel waktu yang sengaja dipisah:
+
+- **`updated_at`** — naik pada **setiap** perubahan baris (unggah/hapus foto, edit order, tandai bermasalah).
+- **`status_changed_at`** — naik **hanya** saat status berpindah (`createOrder`, pick up, done pickup, complete, reopen, `updateStatus`).
+
+Dipakai untuk dua hal: **urutan daftar/kanban** (`ORDER BY status_changed_at DESC`) dan **jam tertunda** (`is_pending` + laporan `delayed`). Konsekuensinya kartu naik ke atas saat digeser, tapi **tidak** bergerak saat fotonya ditambah — dan order yang mandek tidak terlihat segar hanya karena admin mengunggah foto. Database lama di-backfill `COALESCE(completed_at, picked_up_at, created_at)`.
 
 ### Kunci ketepatan & race condition
 
@@ -127,11 +144,13 @@ Autentikasi: `POST /login` → JWT → header `Authorization: Bearer <token>`. F
 | `GET/POST /orders` | auth | daftar (filter `q,status,pickup_method,trader,from,to`) & buat order (`product_id`, `store_id`, `order_number`, `recipient_name`, `pickup_method`, `order_amount?`) |
 | `POST /orders/scan` | admin | cocokkan nomor resi (foto barcode opsional) → `proses_pick_up` |
 | `POST /orders/:id/pickup` | pemilik/admin | proses pick up; butuh bukti bila belum ada |
+| `POST /orders/:id/done-pickup` | admin | tandai sudah diambil; total foto pengambilan wajib **1-3** (field `photo`, 0-3 berkas — yang sudah tersimpan ikut dihitung) |
 | `GET /orders/:id/detail` | pemilik/admin | order + foto + riwayat events |
-| `POST /orders/:id/photos` · `DELETE /orders/:id/photos/:photoId` | pemilik/admin | kelola bukti (terkunci saat `selesai`) |
-| `PATCH /orders/:id/status` | admin | `data_masuk` ↔ `selesai` (bukan `proses_pick_up`) |
-| `POST /orders/:id/barcode` | pemilik/admin | lampirkan foto barcode pengambilan |
-| `PATCH /orders/:id/complete` · `:id/problem` · `:id/reopen` | admin | selesaikan / tandai masalah / buka kembali |
+| `POST /orders/:id/photos` · `DELETE /orders/:id/photos/:photoId` | pemilik/admin | kelola bukti (terkunci saat `selesai`; dibatasi `max_photos`). Foto `pickup_evidence`: unggah/hapus **admin saja**, hanya selama `proses_pick_up`, berkuota sendiri **maks 3** (lepas dari `max_photos`) |
+| `PATCH /orders/:id/status` | admin | `data_masuk` ↔ `selesai` (bukan `proses_pick_up`/`done_pickup` — pakai endpoint khusus) |
+| `POST /orders/:id/barcode` | pemilik/admin | lampirkan foto barcode pengambilan. Saat `data_masuk` bebas; saat `proses_pick_up` **hanya bila `barcode_path` masih kosong** (tambalan order warisan — lihat §2) |
+| `PATCH /orders/:id/complete` · `:id/problem` · `:id/reopen` | admin | selesaikan / tandai masalah (alasan wajib) / buka kembali |
+| `DELETE /orders/:id/problem` | admin | cabut tanda bermasalah (alasan dikosongkan, idempoten) |
 | `DELETE /orders/:id` · `PATCH /orders/:id` | pemilik | hapus/edit order sendiri saat `data_masuk` |
 | `GET /reports?range=` | admin | totals, per-trader, rekap per produk, tertunda/bermasalah |
 | `GET/POST /products`, `PATCH/DELETE /products/:id`, `POST /products/:id/quota`, `POST /products/:id/reset-quota` | baca: auth; tulis: admin | katalog produk & kuota |

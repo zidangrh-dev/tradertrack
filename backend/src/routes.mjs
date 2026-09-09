@@ -12,7 +12,7 @@ const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
 // proses_pick_up dikecualikan: wajib lewat POST /orders/:id/pickup (butuh foto).
 const STATUS_WHITELIST = ['data_masuk', 'done_pickup', 'selesai'];
 // 'order' menandai foto bukti order — syarat pick up bersama barcode.
-const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas'];
+const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas', 'pickup_evidence'];
 
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/bmp']);
 const MAX_MULTER_MB = 50; // pagar keras DoS; batas bisnis diambil dari setting max_file_mb.
@@ -90,7 +90,9 @@ const EXT_BY_MIME = {
   'image/bmp': '.bmp',
 };
 
-const upload = multer({
+// Pembuat instans multer: `upload` membatasi 1 file (single), `uploadDua`
+// mengizinkan 2 file sekaligus (done-pickup). Konfigurasi identik selain itu.
+const makeUpload = (maxFiles) => multer({
     storage: multer.diskStorage({
       destination: uploadDir,
       filename: (_req, file, cb) => {
@@ -99,7 +101,7 @@ const upload = multer({
         cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
       },
     }),
-    limits: { fileSize: MAX_MULTER_MB * 1024 * 1024, files: 1 },
+    limits: { fileSize: MAX_MULTER_MB * 1024 * 1024, files: maxFiles },
     fileFilter: (_req, file, cb) => {
       if (!IMAGE_MIME.has(file.mimetype)) {
         cb(Object.assign(new Error(`Format berkas harus gambar (${[...IMAGE_MIME].join(', ')}).`), { status: 400 }));
@@ -108,6 +110,11 @@ const upload = multer({
       cb(null, true);
     },
   });
+
+const upload = makeUpload(1);
+// Foto pengambilan: 1-3 per order (batas sendiri, lepas dari max_photos).
+const MAX_PICKUP_EVIDENCE = 3;
+const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
 
   const r = Router();
 
@@ -250,6 +257,32 @@ const upload = multer({
     ok(res, order);
   }));
 
+  // Tandai sudah diambil — wajib ada foto pengambilan (1-3). Foto yang sudah
+  // dilampirkan lebih dulu lewat galeri ikut dihitung, jadi admin tidak perlu
+  // memotret ulang: kirim tanpa berkas bila bukti sudah lengkap.
+  r.post('/orders/:id/done-pickup', requireAdmin, uploadAmbilan.array('photo', MAX_PICKUP_EVIDENCE), asyncH(async (req, res) => {
+    const order = await orderFor(req, req.params.id);
+    if (order.status !== 'proses_pick_up') {
+      return res.status(400).json({ error: 'Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.' });
+    }
+    const files = req.files ?? [];
+    const { photos } = await repo.detail(req.params.id);
+    const sudahAda = photos.filter((p) => p.source === 'pickup_evidence').length;
+    const total = sudahAda + files.length;
+    if (total < 1) {
+      return res.status(400).json({ error: 'Wajib melampirkan minimal 1 foto pengambilan.' });
+    }
+    if (total > MAX_PICKUP_EVIDENCE) {
+      return res.status(400).json({
+        error: `Maksimal ${MAX_PICKUP_EVIDENCE} foto pengambilan per order (sudah ada ${sudahAda}).`,
+      });
+    }
+    for (const f of files) await validateImage(f, uploadDir);
+    const updated = await repo.donePickup(req.params.id, files, req.user.id);
+    emit();
+    ok(res, updated);
+  }));
+
   r.get('/orders/:id/detail', requireAuth, asyncH(async (req, res) => {
     await orderFor(req, req.params.id);
     ok(res, await repo.detail(req.params.id));
@@ -260,6 +293,9 @@ const upload = multer({
     if (to === 'proses_pick_up') {
       return res.status(400).json({ error: 'Gunakan unggahan foto barcode untuk memproses pick up.' });
     }
+    if (to === 'done_pickup') {
+      return res.status(400).json({ error: 'Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.' });
+    }
     if (!STATUS_WHITELIST.includes(to)) return res.status(400).json({ error: 'Status tujuan tidak valid.' });
     const order = await repo.updateStatus(req.params.id, to, req.user.id);
     emit();
@@ -268,8 +304,17 @@ const upload = multer({
 
   r.post('/orders/:id/barcode', requireAuth, upload.single('photo'), asyncH(async (req, res) => {
     const order = await orderFor(req, req.params.id);
-    if (order.status !== 'data_masuk') {
-      return res.status(400).json({ error: 'Barcode hanya bisa dilampirkan saat status Data masuk.' });
+    // Kelonggaran untuk order warisan: sebelum aturan bukti ganda berlaku, order
+    // bisa masuk Proses pick up tanpa barcode dan jadi terkunci selamanya.
+    // Celahnya sempit dan menutup sendiri — begitu barcode terisi, syarat
+    // `!barcode_path` gugur, jadi tidak bisa dipakai untuk mengganti barcode.
+    const susulan = order.status === 'proses_pick_up' && !order.barcode_path;
+    if (order.status !== 'data_masuk' && !susulan) {
+      return res.status(400).json({
+        error: order.barcode_path
+          ? 'Order ini sudah memiliki barcode. Barcode hanya bisa diubah saat status Data masuk.'
+          : 'Barcode hanya bisa dilampirkan saat status Data masuk atau Proses pick up.',
+      });
     }
     if (!req.file) return res.status(400).json({ error: 'Berkas gambar barcode wajib diunggah.' });
     await validateImage(req.file, uploadDir);
@@ -303,6 +348,24 @@ const upload = multer({
     await validateImage(req.file, uploadDir);
     // 'order' = foto bukti order (syarat pick up); selain itu bukti penyelesaian.
     const source = PHOTO_SOURCE_WHITELIST.includes(req.body?.source) ? req.body.source : null;
+    // Foto pengambilan adalah bukti verifikasi milik admin — trader hanya boleh
+    // melihatnya. Tanpa cek ini, menyembunyikan tombol di UI tidak menutup API.
+    if (source === 'pickup_evidence') {
+      if (!isAdminLevel(req.user.role)) {
+        return res.status(403).json({ error: 'Hanya admin yang boleh melampirkan foto pengambilan.' });
+      }
+      // Bukti verifikasi membeku setelah order ditandai sudah diambil — sejalan
+      // dengan aturan hapus di bawah. Reopen mengembalikan status ke Proses pick
+      // up, jadi koreksi tetap mungkin lewat jalur itu.
+      if (order.status !== 'proses_pick_up') {
+        return res.status(400).json({ error: 'Foto pengambilan hanya bisa dilampirkan saat order masih Proses pick up.' });
+      }
+      // Batas sendiri (bukan max_photos): bukti wajib tidak boleh diblok setelan.
+      const { photos } = await repo.detail(req.params.id);
+      if (photos.filter((p) => p.source === 'pickup_evidence').length >= MAX_PICKUP_EVIDENCE) {
+        return res.status(400).json({ error: `Maksimal ${MAX_PICKUP_EVIDENCE} foto pengambilan per order.` });
+      }
+    }
     const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file, source);
     emit();
     ok(res, updated);
@@ -312,6 +375,19 @@ const upload = multer({
     const order = await orderFor(req, req.params.id);
     if (order.status === 'selesai') {
       return res.status(400).json({ error: 'Foto bukti order selesai tidak dapat dihapus. Buka kembali order terlebih dahulu.' });
+    }
+    // Foto pengambilan (pickup_evidence) adalah bukti verifikasi milik admin:
+    // trader tidak boleh menghapusnya, dan admin pun hanya selama order masih
+    // Proses pick up (belum ditandai sudah diambil).
+    const { photos } = await repo.detail(req.params.id);
+    const foto = photos.find((p) => p.id === req.params.photoId);
+    if (foto?.source === 'pickup_evidence') {
+      if (!isAdminLevel(req.user.role)) {
+        return res.status(403).json({ error: 'Hanya admin yang boleh menghapus foto pengambilan.' });
+      }
+      if (order.status !== 'proses_pick_up') {
+        return res.status(400).json({ error: 'Foto pengambilan hanya bisa dihapus saat order masih Proses pick up.' });
+      }
     }
     const updated = await repo.deletePhoto(req.params.id, req.params.photoId);
     emit();
@@ -328,6 +404,14 @@ const upload = multer({
     const reason = String(req.body?.reason ?? '').trim();
     if (!reason) return res.status(400).json({ error: 'Alasan kendala wajib diisi.' });
     const order = await repo.markProblem(req.params.id, reason, req.user.id);
+    emit();
+    ok(res, order);
+  }));
+
+  // Cabut tanda bermasalah. Idempoten: order yang memang tidak bermasalah tetap
+  // 200 agar klien bisa memanggil tanpa cek lebih dulu.
+  r.delete('/orders/:id/problem', requireAdmin, asyncH(async (req, res) => {
+    const order = await repo.clearProblem(req.params.id, req.user.id);
     emit();
     ok(res, order);
   }));

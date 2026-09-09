@@ -280,16 +280,29 @@ const remote = {
   deleteBarcode: (id: string) => http<OrderView>(`/api/orders/${id}/barcode`, { method: 'DELETE' }),
   detail: (id: string) => http<OrderDetail>(`/api/orders/${id}/detail`),
   /** source 'order' menandai foto bukti order (syarat pick up bersama barcode). */
-  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order') => {
+  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order' | 'pickup_evidence') => {
     if (!file) return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST' });
     return http<OrderView>(`/api/orders/${id}/photos`, {
       method: 'POST',
       form: await photoForm(file, source ? { source } : undefined),
     });
   },
+  /** Tandai sudah diambil. Foto opsional: bila bukti pengambilan sudah
+   *  dilampirkan lebih dulu lewat galeri, panggil tanpa berkas. */
+  donePickup: async (id: string, files: { uri: string; name: string; type: string }[] = []) => {
+    if (files.length === 0) return http<OrderView>(`/api/orders/${id}/done-pickup`, { method: 'POST' });
+    const form = await photoForm(files[0]);
+    for (const f of files.slice(1)) {
+      const extra = await photoForm(f);
+      form.append('photo', extra.get('photo') as Blob, f.name);
+    }
+    return http<OrderView>(`/api/orders/${id}/done-pickup`, { method: 'POST', form });
+  },
   deletePhoto: (orderId: string, photoId: string) => http<OrderView>(`/api/orders/${orderId}/photos/${photoId}`, { method: 'DELETE' }),
   completeOrder: (id: string, note: string) => http<OrderView>(`/api/orders/${id}/complete`, { method: 'PATCH', body: { note } }),
   markProblem: (id: string, reason: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'PATCH', body: { reason } }),
+  /** Cabut tanda bermasalah — idempoten, aman dipanggil tanpa cek lebih dulu. */
+  clearProblem: (id: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'DELETE' }),
   reopen: (id: string) => http<OrderView>(`/api/orders/${id}/reopen`, { method: 'PATCH' }),
   deleteOwnOrder: (id: string) => http<void>(`/api/orders/${id}`, { method: 'DELETE' }),
   editOwnOrder: (id: string, patch: Partial<Order>) => http<OrderView>(`/api/orders/${id}`, { method: 'PATCH', body: patch }),

@@ -198,21 +198,83 @@ await repo.pickupOrder(lompat.id, actorId);
 await assert.rejects(() => repo.completeOrder(lompat.id, '', actorId), /Done pickup/i, 'tidak boleh langsung selesai');
 await assert.rejects(() => repo.updateStatus(lompat.id, 'selesai', actorId), /Done pickup/i, 'jalur status juga ditolak');
 
-// Rantai penuh berhasil.
+// Rantai penuh berhasil: done_pickup via repo.donePickup (2 foto, transaksi).
 const penuh = await mkFlow('B');
 await repo.attachBarcode(penuh.id, '/uploads/flow-b.jpg');
 await repo.uploadPhoto(penuh.id, actorId, null, 'order');
 await repo.pickupOrder(penuh.id, actorId);
-const done = await repo.updateStatus(penuh.id, 'done_pickup', actorId);
+const duaFoto = [
+  { filename: 'flow-b1.jpg', originalname: 'a.jpg', mimetype: 'image/jpeg', size: 1 },
+  { filename: 'flow-b2.jpg', originalname: 'b.jpg', mimetype: 'image/jpeg', size: 1 },
+];
+const done = await repo.donePickup(penuh.id, duaFoto, actorId);
 assert.equal(done.status, 'done_pickup', 'CHECK constraint menerima done_pickup');
+assert.equal(done.photo_count, 3, '2 foto pengambilan + 1 bukti order');
 assert.ok(done.picked_up_at, 'waktu pengambilan tercatat');
 const beres = await repo.completeOrder(penuh.id, 'ok', actorId);
 assert.equal(beres.status, 'selesai');
 
 // done_pickup hanya dari proses_pick_up.
 const langsung = await mkFlow('C');
-await assert.rejects(() => repo.updateStatus(langsung.id, 'done_pickup', actorId), /Proses pick up/i);
+await assert.rejects(() => repo.donePickup(langsung.id, duaFoto, actorId), /Proses pick up/i);
+
+// updateStatus ke done_pickup ditolak — jalur wajib lewat donePickup.
+await assert.rejects(() => repo.updateStatus(penuh.id, 'done_pickup', actorId), /2 foto pengambilan/i);
+
+// donePickup tanpa berkas baru: bukti sudah dilampirkan lebih dulu lewat galeri
+// (uploadPhoto source pickup_evidence). photo_count hanya menghitung yang nyata.
+const galeri = await mkFlow('D');
+await repo.attachBarcode(galeri.id, '/uploads/flow-d.jpg');
+await repo.uploadPhoto(galeri.id, actorId, null, 'order');
+await repo.pickupOrder(galeri.id, actorId);
+await repo.uploadPhoto(galeri.id, actorId, null, 'pickup_evidence');
+const sebelumTandai = (await repo.getOrder(galeri.id)).photo_count;
+const tanpaBerkas = await repo.donePickup(galeri.id, [], actorId);
+assert.equal(tanpaBerkas.status, 'done_pickup', 'bukti dari galeri cukup untuk menandai');
+assert.equal(tanpaBerkas.photo_count, sebelumTandai, 'photo_count tidak naik tanpa berkas baru');
+const fotoGaleri = (await repo.detail(galeri.id)).photos.filter((p) => p.source === 'pickup_evidence');
+assert.equal(fotoGaleri.length, 1, 'foto tidak terduplikasi');
+
+// max_photos tidak memblokir foto pengambilan (kuotanya sendiri, di routes).
+const kuota = await mkFlow('E');
+await repo.attachBarcode(kuota.id, '/uploads/flow-e.jpg');
+await repo.uploadPhoto(kuota.id, actorId, null, 'order');
+await repo.pickupOrder(kuota.id, actorId);
+await repo.uploadPhoto(kuota.id, actorId, null, 'kamera');
+await repo.uploadPhoto(kuota.id, actorId, null, 'berkas');
+await assert.rejects(
+  () => repo.uploadPhoto(kuota.id, actorId, null, 'kamera'), /Maksimal/i,
+  'foto biasa tetap dibatasi max_photos',
+);
+const lolos = await repo.uploadPhoto(kuota.id, actorId, null, 'pickup_evidence');
+assert.ok(lolos, 'foto pengambilan lolos meski max_photos tercapai');
 
 // Laporan mengenal status baru.
 const repFlow = await repo.reports('', undefined, undefined);
 assert.equal(typeof repFlow.totals.done_pickup, 'number', 'totals memuat done_pickup');
+
+// Urutan daftar berbasis status_changed_at: geser status menaikkan order,
+// unggah foto tidak. Kolomnya sengaja dipisah dari updated_at.
+const urutA = await mkFlow('URUT-A');
+const urutB = await mkFlow('URUT-B');
+const posisiUrut = async (id) => {
+  const { items } = await repo.listOrders({ per_page: 200 });
+  return items.findIndex((x) => x.id === id);
+};
+assert.ok(await posisiUrut(urutA.id) > await posisiUrut(urutB.id), 'A mula-mula di bawah B');
+
+const stempelAwal = (await repo.getOrder(urutA.id)).status_changed_at;
+await repo.uploadPhoto(urutA.id, actorId, null, 'order');
+assert.equal(
+  (await repo.getOrder(urutA.id)).status_changed_at, stempelAwal,
+  'unggah foto tidak menggeser status_changed_at',
+);
+assert.ok(await posisiUrut(urutA.id) > await posisiUrut(urutB.id), 'unggah foto tidak menaikkan urutan');
+
+await repo.attachBarcode(urutA.id, '/uploads/urut-a.jpg');
+await repo.pickupOrder(urutA.id, actorId);
+assert.notEqual(
+  (await repo.getOrder(urutA.id)).status_changed_at, stempelAwal,
+  'perpindahan status menggeser status_changed_at',
+);
+assert.ok(await posisiUrut(urutA.id) < await posisiUrut(urutB.id), 'setelah digeser A naik di atas B');

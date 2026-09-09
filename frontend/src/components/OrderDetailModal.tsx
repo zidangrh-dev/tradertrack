@@ -7,11 +7,14 @@ import { notify, confirmAsk } from '../lib/notify';
 import { pickPhoto } from '../lib/photo';
 import { dateTime } from '../lib/format';
 import { useFileUrl } from '../hooks/useFileUrl';
-import { colors, pickupMethodLabel } from '../theme';
+import { colors, pickupMethodLabel, radius } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { Avatar, Button, Sheet, StatusTag } from './ui';
 import { isAdminLevel } from '../lib/roles';
+
+/** Kuota foto pengambilan per order — cerminan MAX_PICKUP_EVIDENCE di server. */
+const MAX_FOTO_AMBILAN = 3;
 
 export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderView | null; onClose: () => void; onChanged?: () => void }) {
   const { user } = useAuth();
@@ -88,10 +91,38 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // Ambil dari detail (di-refresh tiap mutasi); prop order baru berubah saat
   // daftar induk memuat ulang — kalau dipakai, preview telat sampai refresh.
   const barcodePath = detail?.barcode_path ?? order.barcode_path;
+  // Foto barcode yang diunggah saat proses pickup disimpan sebagai source
+  // 'pickup' (bukan di barcode_path) — tampilkan agar tidak berubah jadi gembok.
+  const barcodeFoto = detail?.photos.find((p) => p.source === 'pickup') ?? null;
+  const barcodeTampil = barcodePath ?? barcodeFoto?.file_path ?? null;
   const hasBarcode = !!barcodePath;
+  // Order warisan bisa masuk Proses pick up tanpa barcode dan jadi terkunci.
+  // Celah susulan memakai barcodePath (bukan barcodeTampil): order yang hanya
+  // punya foto 'pickup' tetap boleh dilengkapi barcode aslinya. Menutup sendiri
+  // begitu barcode terisi — server menegakkan aturan yang sama.
+  const bisaLampirBarcode = status === 'data_masuk' || (status === 'proses_pick_up' && !barcodePath);
   const orderProof = detail?.photos.find((p) => p.source === 'order') ?? null;
   const hasOrderProof = !!orderProof;
   const dualReady = hasBarcode && hasOrderProof;
+  const pickupEvidences = detail?.photos.filter((p) => p.source === 'pickup_evidence') ?? [];
+  // Foto pengambilan berkuota sendiri (maks 3), lepas dari max_photos yang
+  // mengatur foto penyelesaian — samakan dengan MAX_PICKUP_EVIDENCE di server
+  // agar tombol tambah tidak hilang lebih cepat daripada aturan sebenarnya.
+  const kuotaFotoPenuh = pickupEvidences.length >= MAX_FOTO_AMBILAN;
+  // Foto pengambilan hanya boleh diinput admin (server juga menegakkan lewat
+  // requireAdmin). Trader tetap melihat thumbnail-nya, tanpa tombol aksi.
+  // Bukti membeku setelah ditandai sudah diambil (server menegakkan hal sama).
+  const bisaTambahFoto = isAdmin && status === 'proses_pick_up' && !kuotaFotoPenuh;
+  const jumlahAmbilan = pickupEvidences.length;
+  const hintAmbilan = !isAdmin || status !== 'proses_pick_up'
+    ? jumlahAmbilan === 0
+      ? 'Belum ada foto pengambilan.'
+      : `${jumlahAmbilan} foto pengambilan${status === 'proses_pick_up' ? '' : ' (terkunci)'}.`
+    : kuotaFotoPenuh
+      ? `Kuota foto pengambilan penuh (maks ${MAX_FOTO_AMBILAN} per order).`
+      : jumlahAmbilan === 0
+        ? 'Belum ada foto pengambilan. Wajib minimal 1 sebelum menandai sudah diambil.'
+        : `Sudah ${jumlahAmbilan} foto pengambilan.`;
 
   const attachOrderProof = async () => {
     const photo = await pickPhoto('Foto bukti order');
@@ -104,12 +135,26 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     mutate(() => api.attachBarcode(order.id, photo));
   };
 
-  // Dua transisi terakhir khusus admin (server juga menegakkan lewat requireAdmin).
-  const canMarkDone = !!detail && detail.photo_count >= settings.min_photos && isAdmin;
-  const markDonePickup = () => mutate(() => api.updateStatus(order.id, 'done_pickup'));
+  // Tandai sudah diambil — khusus admin, wajib ada foto pengambilan. Foto yang
+  // sudah dilampirkan lewat galeri dipakai apa adanya; picker hanya muncul bila
+  // belum ada satu pun.
+  const markDonePickup = async () => {
+    if (pickupEvidences.length > 0) return mutate(() => api.donePickup(order.id));
+    const foto = await pickPhoto('Foto pengambilan');
+    if (!foto) return notify('Foto wajib', 'Wajib melampirkan minimal 1 foto pengambilan.');
+    mutate(() => api.donePickup(order.id, [foto]));
+  };
 
   const finish = () => mutate(() => api.completeOrder(order.id, note.trim()));
   const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()));
+  // Menyalakan hanya membuka form (perlu alasan lalu Simpan); mematikan langsung
+  // dikirim ke server — kalau hanya state lokal, tandanya balik lagi saat modal
+  // dibuka ulang karena detail dari server menimpanya.
+  const toggleProblem = () => {
+    if (!problem) return setProblem(true);
+    setProblem(false);
+    if (detail?.is_problem) mutate(() => api.clearProblem(order.id));
+  };
   const reopen = () => mutate(() => api.reopen(order.id));
 
   return (
@@ -143,7 +188,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
         {(isAdmin || isOwner) && detail && (
           <>
-            <Text style={styles.section}>Lampiran pick up</Text>
+            <Text style={styles.section}>Lampiran order</Text>
             <View style={styles.slotRow}>
               <PhotoSlot
                 label="Foto bukti order"
@@ -157,9 +202,13 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               />
               <PhotoSlot
                 label="Barcode pick up"
-                filePath={barcodePath}
-                locked={status !== 'data_masuk'}
-                lockedReason="Barcode hanya bisa dilampirkan saat status Data masuk."
+                filePath={barcodeTampil}
+                locked={!bisaLampirBarcode}
+                lockedReason={
+                  barcodePath
+                    ? 'Barcode hanya bisa diubah saat status Data masuk.'
+                    : 'Barcode hanya bisa dilampirkan saat status Data masuk atau Proses pick up.'
+                }
                 busy={busy}
                 onPreview={(fp) => setPreview(fp)}
                 onPick={attachBarcode}
@@ -172,6 +221,37 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                   Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lengkapi keduanya
                   agar order bisa masuk proses pick up.
                 </Text>
+              </View>
+            )}
+
+            {status !== 'data_masuk' && (
+              <View style={styles.evidenceBlock}>
+                <Text style={styles.section}>Lampiran Pick Up</Text>
+                <View style={styles.evidenceRow}>
+                  {pickupEvidences.map((f) => (
+                    <EvidenceThumb
+                      key={f.id}
+                      filePath={f.file_path}
+                      onPreview={() => setPreview(f.file_path)}
+                      onDelete={isAdmin && status === 'proses_pick_up' ? () => mutate(() => api.deletePhoto(order.id, f.id)) : undefined}
+                    />
+                  ))}
+                  {bisaTambahFoto && (
+                    <Pressable
+                      onPress={async () => {
+                        const photo = await pickPhoto('Foto pengambilan');
+                        if (!photo) return;
+                        mutate(() => api.uploadPhoto(order.id, photo, 'pickup_evidence'));
+                      }}
+                      style={({ pressed }) => [styles.evidenceAdd, pressed && { opacity: 0.85 }]}
+                      disabled={busy}
+                      accessibilityLabel="Tambah foto pengambilan"
+                    >
+                      <Text style={styles.evidenceAddText}>＋</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={styles.evidenceHint}>{hintAmbilan}</Text>
               </View>
             )}
           </>
@@ -204,13 +284,13 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               </>
             ) : status === 'proses_pick_up' ? (
               <>
-                {/* Tandai sudah diambil — hanya admin, wajib ada foto bukti. */}
+                {/* Tandai sudah diambil — hanya admin, wajib ada foto pengambilan. */}
                 <Button
-                  label={canMarkDone ? 'Tandai sudah diambil' : `Unggah minimal ${settings.min_photos} foto dulu`}
+                  label={pickupEvidences.length > 0 ? 'Tandai sudah diambil' : 'Lampirkan foto & tandai diambil'}
                   icon="→"
                   variant="soft"
                   onPress={markDonePickup}
-                  disabled={!canMarkDone || busy || !detail}
+                  disabled={busy || !detail}
                   style={{ flex: 1 }}
                 />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
@@ -248,7 +328,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
 
         {isAdmin && detail && (
           <View style={styles.problemBox}>
-            <Pressable onPress={() => setProblem((p) => !p)} style={styles.problemToggle} disabled={busy}>
+            <Pressable onPress={toggleProblem} style={styles.problemToggle} disabled={busy}>
               <Text style={styles.problemCheckbox}>{problem ? '☑' : '☐'}</Text>
               <Text style={styles.problemLabel}>Tandai order ini bermasalah</Text>
             </Pressable>
@@ -358,9 +438,38 @@ function eventLabel(type: string) {
     case 'picked_up': return 'Scan nomor pesanan';
     case 'completed': return 'Selesai';
     case 'problem': return 'Ditandai bermasalah';
+    case 'problem_cleared': return 'Tanda bermasalah dicabut';
     case 'reopened': return 'Dibuka kembali';
     default: return type;
   }
+}
+
+/** Satu thumbnail foto pengambilan — bisa diperbesar; tombol hapus muncul
+ *  hanya saat order masih Proses pick up (aturan server). */
+function EvidenceThumb({ filePath, onPreview, onDelete }: {
+  filePath: string;
+  onPreview: () => void;
+  onDelete?: () => void;
+}) {
+  const uri = useFileUrl(filePath);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  return (
+    <View style={styles.evidenceThumb}>
+      <Pressable style={{ flex: 1 }} onPress={onPreview} accessibilityLabel="Perbesar foto pengambilan">
+        {uri && !failed ? (
+          <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" onError={() => setFailed(true)} />
+        ) : (
+          <View style={styles.slotFallback}><Text style={styles.slotFallbackGlyph}>▣</Text></View>
+        )}
+      </Pressable>
+      {!!onDelete && (
+        <Pressable onPress={onDelete} hitSlop={6} style={styles.evidenceDel} accessibilityLabel="Hapus foto pengambilan">
+          <Text style={styles.evidenceDelText}>✕</Text>
+        </Pressable>
+      )}
+    </View>
+  );
 }
 
 function PhotoPreview({ filePath }: { filePath: string | null }) {
@@ -515,6 +624,25 @@ const styles = StyleSheet.create({
   slotImage: { width: '100%', height: '100%' },
   slotFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   slotFallbackGlyph: { fontSize: 26, color: colors.primaryMuted },
+  // Galeri Lampiran Pick Up
+  evidenceBlock: { marginTop: 16 },
+  evidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  evidenceThumb: {
+    width: 72, height: 72, borderRadius: radius.sm, overflow: 'hidden',
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceAlt,
+  },
+  evidenceDel: {
+    position: 'absolute', top: 2, right: 2,
+    width: 18, height: 18, borderRadius: radius.full, backgroundColor: 'rgba(15,22,42,.72)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  evidenceDelText: { color: '#fff', fontSize: 9, fontWeight: '800', lineHeight: 11 },
+  evidenceAdd: {
+    width: 72, height: 72, borderRadius: radius.sm, borderWidth: 1, borderStyle: 'dashed',
+    borderColor: colors.line, alignItems: 'center', justifyContent: 'center',
+  },
+  evidenceAddText: { fontSize: 22, color: colors.muted, lineHeight: 26 },
+  evidenceHint: { fontSize: 10, color: colors.faint, marginTop: 8, lineHeight: 15 },
   slotActions: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 8, paddingVertical: 5, backgroundColor: 'rgba(255,255,255,.94)',

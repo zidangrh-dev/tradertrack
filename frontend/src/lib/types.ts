@@ -54,6 +54,9 @@ export interface Order {
   created_at: string;
   picked_up_at: string | null;
   completed_at: string | null;
+  /** Waktu perpindahan status terakhir — dasar urutan kanban & jam tertunda.
+   *  Sengaja tidak ikut naik saat unggah foto atau edit order. */
+  status_changed_at: string;
   updated_at: string;
 }
 

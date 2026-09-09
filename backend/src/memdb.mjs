@@ -203,10 +203,13 @@ export function orderByNumber(num) {
   return db.orders.find((o) => o.order_number === num) ?? null;
 }
 function withMeta(o) {
-  const ageHours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;
+  // Tertunda dihitung dari perpindahan status terakhir, bukan updated_at:
+  // mengunggah foto pada order mandek tidak boleh me-reset jam tertunda.
+  const acuan = o.status_changed_at ?? o.updated_at;
+  const ageHours = (Date.now() - new Date(acuan).getTime()) / 3600000;
   const pending = (o.status === 'data_masuk' || o.status === 'proses_pick_up' || o.status === 'done_pickup') &&
     ageHours >= db.settings.pending_threshold_hours;
-  return { ...o, trader_name: userName(o.trader_id), product_label: productLabel(o), is_pending: pending };
+  return { ...o, status_changed_at: acuan, trader_name: userName(o.trader_id), product_label: productLabel(o), is_pending: pending };
 }
 function pushEvent(orderId, actorId, eventType, from, to, note) {
   db.events.push({ id: uid(), order_id: orderId, actor_id: actorId, event_type: eventType, from_status: from, to_status: to, note: note ?? null, created_at: now() });
@@ -229,7 +232,13 @@ export function listOrders(query = {}) {
   if (query.trader) out = out.filter((o) => o.trader_id === query.trader);
   if (query.from) out = out.filter((o) => o.created_at >= query.from);
   if (query.to) out = out.filter((o) => o.created_at <= query.to);
-  out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // Urut berdasarkan perpindahan status terakhir (selaras jalur SQL): kartu yang
+  // baru digeser naik ke atas, unggah foto tidak mengubah urutan.
+  out.sort((a, b) => {
+    const av = a.status_changed_at ?? a.updated_at;
+    const bv = b.status_changed_at ?? b.updated_at;
+    return bv.localeCompare(av) || b.created_at.localeCompare(a.created_at);
+  });
   const total = out.length;
   const perPage = Math.max(1, Math.min(200, Number(query.per_page ?? 50)));
   const page = Math.max(1, Number(query.page ?? 1));
@@ -261,7 +270,7 @@ export function createOrder(input, actorId) {
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: now(),
     // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
     requires_dual_evidence: true,
-    picked_up_at: null, completed_at: null, updated_at: now(),
+    picked_up_at: null, completed_at: null, status_changed_at: now(), updated_at: now(),
   };
   db.orders.unshift(o);
   pushEvent(o.id, actorId, 'created', null, 'data_masuk', 'Order dibuat');
@@ -287,6 +296,7 @@ function applyPickup(o, actorId, file, note) {
   }
   o.status = 'proses_pick_up';
   o.picked_up_at = now();
+  o.status_changed_at = now();
   o.updated_at = now();
   if (file) {
     o.photo_count += 1;
@@ -311,12 +321,8 @@ export function updateStatus(id, to, actorId) {
   // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai hanya
   // dari done_pickup — order tidak boleh melompati verifikasi.
   if (to === 'done_pickup') {
-    if (o.status !== 'proses_pick_up') {
-      throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
-    }
-    if (o.photo_count < db.settings.min_photos) {
-      throw new Error(`Minimal ${db.settings.min_photos} foto bukti sebelum menandai barang sudah diambil.`);
-    }
+    // Jalur wajib lewat unggahan 2 foto pengambilan — POST /orders/:id/done-pickup.
+    throw new Error('Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.');
   }
   if (to === 'selesai' && o.status !== 'done_pickup') {
     throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
@@ -326,10 +332,9 @@ export function updateStatus(id, to, actorId) {
   }
   const from = o.status;
   o.status = to;
+  o.status_changed_at = now();
   o.updated_at = now();
   if (to === 'selesai') o.completed_at = now();
-  // Barang tercatat diambil saat done_pickup bila belum terisi.
-  if (to === 'done_pickup' && !o.picked_up_at) o.picked_up_at = now();
   if (to === 'data_masuk') { o.picked_up_at = null; o.completed_at = null; }
   pushEvent(id, actorId, to === 'selesai' ? 'completed' : 'status', from, to, null);
   return withMeta(o);
@@ -379,7 +384,11 @@ export function detail(id) {
 
 export function uploadPhoto(orderId, actorId, file = null, source = null) {
   const o = findOrder(orderId);
-  if (o.photo_count >= db.settings.max_photos) throw new Error(`Maksimal ${db.settings.max_photos} foto per order.`);
+  // Foto pengambilan punya kuota sendiri (ditegakkan di routes): bukti wajib
+  // tidak boleh terhalang setelan max_photos yang mengatur foto penyelesaian.
+  if (source !== 'pickup_evidence' && o.photo_count >= db.settings.max_photos) {
+    throw new Error(`Maksimal ${db.settings.max_photos} foto per order.`);
+  }
   o.photo_count += 1;
   o.updated_at = now();
   db.photos.push({
@@ -402,6 +411,33 @@ export function deletePhoto(orderId, photoId, actorId) {
   return withMeta(o);
 }
 
+// Tandai sudah diambil — wajib 2 foto pengambilan.
+export function donePickup(id, files, actorId) {
+  const o = findOrder(id);
+  if (o.status !== 'proses_pick_up') {
+    throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
+  }
+  for (const f of files) {
+    db.photos.push({
+      id: uid(), order_id: id,
+      file_path: `/uploads/${f.filename}`,
+      file_name: f.originalname,
+      mime_type: f.mimetype,
+      file_size: f.size,
+      source: 'pickup_evidence', uploaded_by: actorId, created_at: now(),
+    });
+  }
+  o.status = 'done_pickup';
+  // Ikut jumlah berkas yang benar-benar diunggah — bisa 0 bila bukti sudah
+  // dilampirkan lebih dulu lewat galeri.
+  o.photo_count += files.length;
+  if (!o.picked_up_at) o.picked_up_at = now();
+  o.status_changed_at = now();
+  o.updated_at = now();
+  pushEvent(id, actorId, 'status', 'proses_pick_up', 'done_pickup', null);
+  return withMeta(o);
+}
+
 export function completeOrder(id, note, actorId) {
   const o = findOrder(id);
   if (o.status !== 'done_pickup') {
@@ -412,6 +448,7 @@ export function completeOrder(id, note, actorId) {
   o.status = 'selesai';
   o.note = note;
   o.completed_at = now();
+  o.status_changed_at = now();
   o.updated_at = now();
   pushEvent(id, actorId, 'completed', from, 'selesai', note);
   return withMeta(o);
@@ -426,12 +463,24 @@ export function markProblem(id, reason, actorId) {
   return withMeta(o);
 }
 
+// Cabut tanda bermasalah. Bukan perpindahan status, jadi status_changed_at
+// sengaja tidak disentuh — urutan kanban tidak boleh berubah karenanya.
+export function clearProblem(id, actorId) {
+  const o = findOrder(id);
+  o.is_problem = false;
+  o.problem_reason = null;
+  o.updated_at = now();
+  pushEvent(id, actorId, 'problem_cleared', null, null, null);
+  return withMeta(o);
+}
+
 export function reopen(id, actorId) {
   const o = findOrder(id);
   if (o.status !== 'selesai') throw new Error('Hanya order Selesai yang dapat dibuka kembali.');
   const from = o.status;
   o.status = 'proses_pick_up';
   o.completed_at = null;
+  o.status_changed_at = now();
   o.updated_at = now();
   pushEvent(id, actorId, 'reopened', from, 'proses_pick_up', 'Order dibuka kembali oleh admin');
   return withMeta(o);
@@ -490,14 +539,15 @@ export function reports(range, from, to, traderId) {
   });
   const perProduk = [...byProduk.values()].map((r) => ({ ...r, remaining_quota: Math.max(0, r.quota - r.used_quota) }));
 
-  // Delayed ikut rentang (berbasis updated_at, selaras PG): order yang masih
-  // pending/bermasalah dan pembaruannya terjadi di dalam rentang terpilih.
-  const delayedInRange = (o) => mine(o) && (!start || o.updated_at >= start) && (!to || o.updated_at <= to);
+  // Delayed ikut rentang (berbasis status_changed_at, selaras PG): order yang
+  // masih pending/bermasalah dan status terakhirnya berubah di dalam rentang.
+  const acuanWaktu = (o) => o.status_changed_at ?? o.updated_at;
+  const delayedInRange = (o) => mine(o) && (!start || acuanWaktu(o) >= start) && (!to || acuanWaktu(o) <= to);
   const delayed = db.orders
     .filter((o) => (o.is_problem || withMeta(o).is_pending) && delayedInRange(o))
-    .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+    .sort((a, b) => acuanWaktu(a).localeCompare(acuanWaktu(b)))
     .map((o) => {
-      const hours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;
+      const hours = (Date.now() - new Date(acuanWaktu(o)).getTime()) / 3600000;
       const h = Math.floor(hours);
       const m = Math.round((hours - h) * 60);
       return { order_number: o.order_number, product_name: o.product_name, trader: userName(o.trader_id), duration: `${h}j ${m}m`, is_problem: o.is_problem };
@@ -542,6 +592,8 @@ function seed() {
     status, order_amount: null, note: null, is_problem: false,
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: minutesAgo(extra.minutes ?? 10),
     picked_up_at: null, completed_at: null, updated_at: minutesAgo(extra.minutes ?? 10),
+    // Selaras backfill SQL: stempel status memakai jejak waktu terbaik yang ada.
+    status_changed_at: extra.completed_at ?? extra.picked_up_at ?? minutesAgo(extra.minutes ?? 10),
     ...extra,
   });
 

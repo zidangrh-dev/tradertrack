@@ -294,12 +294,15 @@ function TraderForm({ open, onClose, onSave }: { open: boolean; onClose: () => v
 }
 
 const styles = StyleSheet.create({
-  formStack: { gap: 20 },
+  // Field/Select sudah membawa marginBottom 13 sendiri — gap di sini hanya
+  // penambah tipis, bukan sumber ritme, agar baris tidak berjarak ganda.
+  formStack: { gap: 4 },
   formBlock: { width: '100%' },
   // Kolom rapat (10) supaya pasangan kiri-kanan terbaca satu kesatuan; saat
   // ditumpuk di HP jaraknya sedikit lebih lega karena jadi baris terpisah.
   twoColumn: { flexDirection: 'row', gap: 10 },
-  twoColumnStacked: { flexDirection: 'column', gap: 14 },
+  // Saat ditumpuk, jarak vertikal datang dari marginBottom milik tiap field.
+  twoColumnStacked: { flexDirection: 'column', gap: 0 },
   column: { flex: 1, minWidth: 0 },
   formActions: { marginTop: 26, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
@@ -312,7 +315,9 @@ const styles = StyleSheet.create({
   },
   readonlyText: { fontSize: 13, color: colors.muted },
   // Tinggi tetap: ruang tersedia baik saat kosong maupun terisi.
-  quotaHint: { fontSize: 10, color: colors.muted, marginTop: 6, height: 14, lineHeight: 14 },
+  // Select di atasnya membawa marginBottom 13; margin negatif menarik hint
+  // kembali menempel ke dropdown produk (jarak nyata ≈ 3px).
+  quotaHint: { fontSize: 10, color: colors.muted, marginTop: -10, height: 14, lineHeight: 14 },
   attachTitle: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 },
   attachLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, marginBottom: 6 },
   // Tinggi dipatok (bukan minHeight): kedua kotak identik, baik kosong maupun

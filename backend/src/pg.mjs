@@ -10,13 +10,17 @@ const SELECT_VIEW = `
   JOIN users u ON u.id = o.trader_id`;
 
 function toView(row, threshold) {
-  const ageHours = (Date.now() - new Date(row.updated_at).getTime()) / 3600000;
+  // Tertunda dihitung dari perpindahan status terakhir, bukan updated_at:
+  // mengunggah foto pada order mandek tidak boleh me-reset jam tertunda.
+  const acuan = row.status_changed_at ?? row.updated_at;
+  const ageHours = (Date.now() - new Date(acuan).getTime()) / 3600000;
   const pending = (row.status === 'data_masuk' || row.status === 'proses_pick_up' || row.status === 'done_pickup') && ageHours >= threshold;
   const { tracking_number: _t, ...rest } = row;
   return {
     ...rest,
     order_amount: rest.order_amount == null ? null : Number(rest.order_amount),
     created_at: new Date(rest.created_at).toISOString(),
+    status_changed_at: new Date(acuan).toISOString(),
     updated_at: new Date(rest.updated_at).toISOString(),
     picked_up_at: rest.picked_up_at ? new Date(rest.picked_up_at).toISOString() : null,
     completed_at: rest.completed_at ? new Date(rest.completed_at).toISOString() : null,
@@ -340,7 +344,7 @@ export default (pool) => {
     const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS total FROM (${SELECT_VIEW}${where}) c`, vals);
     const total = countRows[0].total;
     const { rows } = await pool.query(
-      `${SELECT_VIEW}${where} ORDER BY o.created_at DESC LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`,
+      `${SELECT_VIEW}${where} ORDER BY o.status_changed_at DESC, o.created_at DESC LIMIT $${vals.length + 1} OFFSET $${vals.length + 2}`,
       [...vals, perPage, (page - 1) * perPage],
     );
     return { items: rows.map((r) => toView(r, threshold)), total, page, per_page: perPage };
@@ -414,12 +418,8 @@ export default (pool) => {
     // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai
     // hanya dari done_pickup — order tidak boleh melompati verifikasi.
     if (to === 'done_pickup') {
-      if (o.status !== 'proses_pick_up') {
-        throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
-      }
-      if (o.photo_count < s.min_photos) {
-        throw new Error(`Minimal ${s.min_photos} foto bukti sebelum menandai barang sudah diambil.`);
-      }
+      // Jalur wajib lewat unggahan 2 foto pengambilan — POST /orders/:id/done-pickup.
+      throw new Error('Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.');
     }
     if (to === 'selesai' && o.status !== 'done_pickup') {
       throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
@@ -428,10 +428,8 @@ export default (pool) => {
       throw new Error(`Minimal ${s.min_photos} foto bukti sebelum order selesai.`);
     }
     const from = o.status;
-    const sets = ['status = $1', 'updated_at = now()'];
+    const sets = ['status = $1', 'status_changed_at = now()', 'updated_at = now()'];
     if (to === 'selesai') sets.push('completed_at = now()');
-    // Barang tercatat diambil saat done_pickup bila belum terisi.
-    if (to === 'done_pickup') sets.push('picked_up_at = COALESCE(picked_up_at, now())');
     if (to === 'data_masuk') sets.push('picked_up_at = NULL', 'completed_at = NULL');
     await pool.query(`UPDATE orders SET ${sets.join(', ')} WHERE id = $2`, [to, id]);
     await pushEvent(pool, id, actorId, to === 'selesai' ? 'completed' : 'status', from, to, null);
@@ -457,7 +455,7 @@ export default (pool) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const sets = [`status = 'proses_pick_up'`, 'picked_up_at = now()', 'updated_at = now()'];
+      const sets = [`status = 'proses_pick_up'`, 'picked_up_at = now()', 'status_changed_at = now()', 'updated_at = now()'];
       if (file) sets.push('photo_count = photo_count + 1');
       await client.query(`UPDATE orders SET ${sets.join(', ')} WHERE id = $1`, [orderId]);
       if (file) {
@@ -536,7 +534,11 @@ export default (pool) => {
   const uploadPhoto = async (orderId, actorId, file = null, source = null) => {
     const s = await S();
     const o = await getOrder(orderId);
-    if (o.photo_count >= s.max_photos) throw new Error(`Maksimal ${s.max_photos} foto per order.`);
+    // Foto pengambilan punya kuota sendiri (ditegakkan di routes): bukti wajib
+    // tidak boleh terhalang setelan max_photos yang mengatur foto penyelesaian.
+    if (source !== 'pickup_evidence' && o.photo_count >= s.max_photos) {
+      throw new Error(`Maksimal ${s.max_photos} foto per order.`);
+    }
     const path = file ? `/uploads/${file.filename}` : `/uploads/demo-${orderId.slice(0, 4)}.jpg`;
     const name = file ? file.originalname : 'bukti.jpg';
     const mime = file ? file.mimetype : 'image/jpeg';
@@ -558,6 +560,40 @@ export default (pool) => {
     return getOrder(orderId);
   };
 
+  // Tandai sudah diambil — foto pengambilan wajib ada, satu transaksi.
+  // `files` boleh kosong bila bukti sudah dilampirkan lebih dulu lewat galeri;
+  // kelengkapannya divalidasi di routes sebelum sampai sini.
+  const donePickup = async (id, files, actorId) => {
+    const o = await getOrder(id);
+    if (o.status !== 'proses_pick_up') {
+      throw new Error('Hanya order berstatus Proses pick up yang bisa ditandai sudah diambil.');
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE orders SET status = 'done_pickup', photo_count = photo_count + $2,
+           picked_up_at = COALESCE(picked_up_at, now()), status_changed_at = now(), updated_at = now() WHERE id = $1`,
+        [id, files.length],
+      );
+      for (const f of files) {
+        await client.query(
+          `INSERT INTO order_photos (order_id, file_path, file_name, mime_type, file_size, source, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,'pickup_evidence',$6)`,
+          [id, `/uploads/${f.filename}`, f.originalname, f.mimetype, f.size, actorId],
+        );
+      }
+      await pushEvent(client, id, actorId, 'status', 'proses_pick_up', 'done_pickup', null);
+      await client.query('COMMIT');
+      return getOrder(id);
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  };
+
   const completeOrder = async (id, note, actorId) => {
     const s = await S();
     const o = await getOrder(id);
@@ -566,7 +602,7 @@ export default (pool) => {
     }
     if (o.photo_count < s.min_photos) throw new Error(`Minimal ${s.min_photos} foto bukti wajib diunggah.`);
     const from = o.status;
-    await pool.query(`UPDATE orders SET status = 'selesai', note = $1, completed_at = now(), updated_at = now() WHERE id = $2`, [note, id]);
+    await pool.query(`UPDATE orders SET status = 'selesai', note = $1, completed_at = now(), status_changed_at = now(), updated_at = now() WHERE id = $2`, [note, id]);
     await pushEvent(pool, id, actorId, 'completed', from, 'selesai', note);
     return getOrder(id);
   };
@@ -577,11 +613,20 @@ export default (pool) => {
     return getOrder(id);
   };
 
+  // Cabut tanda bermasalah. Bukan perpindahan status, jadi status_changed_at
+  // sengaja tidak disentuh — urutan kanban tidak boleh berubah karenanya.
+  const clearProblem = async (id, actorId) => {
+    await getOrder(id); // pastikan order ada — lempar 'Order tidak ditemukan'
+    await pool.query(`UPDATE orders SET is_problem = false, problem_reason = NULL, updated_at = now() WHERE id = $1`, [id]);
+    await pushEvent(pool, id, actorId, 'problem_cleared', null, null, null);
+    return getOrder(id);
+  };
+
   const reopen = async (id, actorId) => {
     const o = await getOrder(id);
     if (o.status !== 'selesai') throw new Error('Hanya order Selesai yang dapat dibuka kembali.');
     const from = o.status;
-    await pool.query(`UPDATE orders SET status = 'proses_pick_up', completed_at = NULL, updated_at = now() WHERE id = $1`, [id]);
+    await pool.query(`UPDATE orders SET status = 'proses_pick_up', completed_at = NULL, status_changed_at = now(), updated_at = now() WHERE id = $1`, [id]);
     await pushEvent(pool, id, actorId, 'reopened', from, 'proses_pick_up', 'Order dibuka kembali oleh admin');
     return getOrder(id);
   };
@@ -649,22 +694,24 @@ export default (pool) => {
     const threshold = (await S()).pending_threshold_hours;
     // Delayed ikut rentang: hanya order yang masih pending/bermasalah dan
     // pembaruannya terjadi di dalam rentang terpilih.
+    // Acuan durasi = status_changed_at, selaras dengan is_pending: unggah foto
+    // tidak boleh membuat order mandek terlihat segar.
     const delayedConds = [
-      `(o.is_problem OR (o.status IN ('data_masuk','proses_pick_up','done_pickup') AND o.updated_at <= now() - ($1 || ' hours')::interval))`,
+      `(o.is_problem OR (o.status IN ('data_masuk','proses_pick_up','done_pickup') AND o.status_changed_at <= now() - ($1 || ' hours')::interval))`,
     ];
     const delayedArgs = [String(threshold)];
-    if (start) { delayedConds.push(`o.updated_at >= $${delayedArgs.length + 1}`); delayedArgs.push(start); }
-    if (to) { delayedConds.push(`o.updated_at <= $${delayedArgs.length + 1}`); delayedArgs.push(to); }
+    if (start) { delayedConds.push(`o.status_changed_at >= $${delayedArgs.length + 1}`); delayedArgs.push(start); }
+    if (to) { delayedConds.push(`o.status_changed_at <= $${delayedArgs.length + 1}`); delayedArgs.push(to); }
     if (traderId) { delayedConds.push(`o.trader_id = $${delayedArgs.length + 1}`); delayedArgs.push(traderId); }
     const { rows: delayed } = await pool.query(
-      `SELECT o.order_number, o.product_name, u.display_name AS trader, o.updated_at, o.is_problem
+      `SELECT o.order_number, o.product_name, u.display_name AS trader, o.status_changed_at, o.is_problem
        FROM orders o JOIN users u ON u.id = o.trader_id
        WHERE ${delayedConds.join(' AND ')}
-       ORDER BY o.updated_at ASC`,
+       ORDER BY o.status_changed_at ASC`,
       delayedArgs,
     );
     const delayedRows = delayed.map((o) => {
-      const hours = (Date.now() - new Date(o.updated_at).getTime()) / 3600000;
+      const hours = (Date.now() - new Date(o.status_changed_at).getTime()) / 3600000;
       const h = Math.floor(hours);
       const m = Math.round((hours - h) * 60);
       return { order_number: o.order_number, product_name: o.product_name, trader: o.trader, duration: `${h}j ${m}m`, is_problem: o.is_problem };
@@ -676,7 +723,7 @@ export default (pool) => {
   return {
     settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
     activeAdminCount, activeSuperadminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
-    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, attachBarcode, clearBarcode,
-    detail, uploadPhoto, deletePhoto, completeOrder, markProblem, reopen, deleteOrder, editOrder, reports,
+    orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, donePickup, attachBarcode, clearBarcode,
+    detail, uploadPhoto, deletePhoto, completeOrder, markProblem, clearProblem, reopen, deleteOrder, editOrder, reports,
   };
 };

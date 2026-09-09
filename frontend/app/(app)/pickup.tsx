@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, Platform, useWindowDimensions } from 'react-native';
 import { api, type OrderView } from '../../src/lib/api';
+import { pickPhoto } from '../../src/lib/photo';
 import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
-import { useSettings } from '../../src/hooks/useSettings';
 import { colors, radius, pickupMethodOptions, space } from '../../src/theme';
 import { Button, EmptyState, Field, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
@@ -82,7 +82,6 @@ export default function Pickup() {
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [scanOrder, setScanOrder] = useState<OrderView | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const settings = useSettings();
 
   const activeFilters = [search.trim(), method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (product.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0) + (flagged ? 1 : 0);
 
@@ -91,14 +90,18 @@ export default function Pickup() {
   };
 
   const markDonePickup = async (o: OrderView) => {
-    // Foto bukti cukup → tandai langsung; kurang → buka modal untuk tambah foto.
-    if (o.photo_count < settings.min_photos) {
-      setSelected(o);
-      return;
+    // Foto pengambilan wajib ada. Yang sudah dilampirkan lewat modal detail
+    // dipakai apa adanya; picker hanya muncul bila belum ada satu pun.
+    const { photos } = await api.detail(o.id);
+    const sudahAda = photos.some((p) => p.source === 'pickup_evidence');
+    let foto = null as Awaited<ReturnType<typeof pickPhoto>>;
+    if (!sudahAda) {
+      foto = await pickPhoto('Foto pengambilan');
+      if (!foto) return notify('Foto wajib', 'Wajib melampirkan minimal 1 foto pengambilan.');
     }
     setBusy(o.id);
     try {
-      await api.updateStatus(o.id, 'done_pickup');
+      await api.donePickup(o.id, foto ? [foto] : []);
       setInfo(`${o.order_number} → Done pickup, menunggu verifikasi admin`);
       refresh();
     } catch (e) {
