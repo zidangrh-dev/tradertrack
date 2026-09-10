@@ -437,16 +437,26 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
   }));
 
   r.delete('/orders/:id', requireAuth, asyncH(async (req, res) => {
-    const order = await orderFor(req, req.params.id, { adminBypass: false });
-    if (order.status !== 'data_masuk') return res.status(400).json({ error: 'Order hanya bisa dihapus saat status Data masuk.' });
-    await repo.deleteOrder(req.params.id);
+    // Admin boleh menghapus di semua status (koreksi data); trader tetap
+    // hanya order miliknya sendiri dan hanya selama masih Data masuk.
+    const admin = isAdminLevel(req.user.role);
+    const order = await orderFor(req, req.params.id, { adminBypass: admin });
+    if (!admin && order.status !== 'data_masuk') {
+      return res.status(400).json({ error: 'Order hanya bisa dihapus saat status Data masuk.' });
+    }
+    await repo.deleteOrder(req.params.id, req.user.id);
     emit();
     noContent(res);
   }));
 
   r.patch('/orders/:id', requireAuth, asyncH(async (req, res) => {
-    const order = await orderFor(req, req.params.id, { adminBypass: false });
-    if (order.status !== 'data_masuk') return res.status(400).json({ error: 'Order hanya bisa diubah saat status Data masuk.' });
+    // Admin boleh mengoreksi data order di semua status; trader tetap dibatasi
+    // pada order miliknya sendiri selama masih Data masuk.
+    const admin = isAdminLevel(req.user.role);
+    const order = await orderFor(req, req.params.id, { adminBypass: admin });
+    if (!admin && order.status !== 'data_masuk') {
+      return res.status(400).json({ error: 'Order hanya bisa diubah saat status Data masuk.' });
+    }
     // Dirapikan seperti saat pembuatan: tanpa trim, ' 123' lolos sebagai
     // nomor berbeda dari '123' dan aturan unik bisa ditembus.
     const trimmed = (v) => (v === undefined || v === null ? undefined : String(v).trim());

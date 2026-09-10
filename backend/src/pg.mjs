@@ -637,8 +637,18 @@ export default (pool) => {
     return getOrder(id);
   };
 
-  const deleteOrder = async (id) => {
+  // order_events punya ON DELETE CASCADE, jadi mencatat event sebelum menghapus
+  // order akan ikut terhapus. Jejaknya ditulis ke log server agar penghapusan
+  // oleh admin tetap bisa ditelusuri.
+  const deleteOrder = async (id, actorId = null) => {
+    const { rows } = await pool.query(
+      `SELECT o.order_number, o.status, u.display_name AS aktor
+       FROM orders o LEFT JOIN users u ON u.id = $2 WHERE o.id = $1`, [id, actorId]);
+    const o = rows[0];
     await pool.query(`DELETE FROM orders WHERE id = $1`, [id]);
+    if (o) {
+      console.log(`[order:deleted] ${o.order_number} (status ${o.status}) dihapus oleh ${o.aktor ?? actorId ?? 'tidak diketahui'}`);
+    }
   };
 
   const editOrder = async (id, patch, actorId) => {
@@ -650,8 +660,22 @@ export default (pool) => {
       if (patch[k] !== undefined) { sets.push(`${k} = $${vals.length + 1}`); vals.push(patch[k]); }
     }
     if (sets.length) {
+      // Ambil nilai lama sebelum UPDATE supaya jejaknya menyimpan dari->ke.
+      const { rows: sebelumRows } = await pool.query(
+        `SELECT product_name, store_name, order_number, recipient_name, status FROM orders WHERE id = $1`, [id]);
+      const sebelum = sebelumRows[0] ?? {};
       vals.push(id);
       await pool.query(`UPDATE orders SET ${sets.join(', ')}, updated_at = now() WHERE id = $${vals.length}`, vals);
+      const LABEL = {
+        product_name: 'Produk', store_name: 'Toko',
+        order_number: 'Nomor order', recipient_name: 'Penerima',
+      };
+      const berubah = Object.keys(LABEL)
+        .filter((k) => patch[k] !== undefined && patch[k] !== sebelum[k])
+        .map((k) => `${LABEL[k]}: "${sebelum[k] ?? ''}" -> "${patch[k]}"`);
+      if (berubah.length) {
+        await pushEvent(pool, id, actorId, 'edited', sebelum.status, sebelum.status, berubah.join('; '));
+      }
     }
     return getOrder(id);
   };

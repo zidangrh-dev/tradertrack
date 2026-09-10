@@ -490,7 +490,7 @@ export function reopen(id, actorId) {
   return withMeta(o);
 }
 
-export function deleteOrder(id) {
+export function deleteOrder(id, _actorId = null) {
   const o = findOrder(id);
   db.orders.splice(db.orders.indexOf(o), 1);
 }

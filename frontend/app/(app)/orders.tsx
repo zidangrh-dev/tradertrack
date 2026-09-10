@@ -8,7 +8,7 @@ import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, STATUS_FLOW, webNoOutline } from '../../src/theme';
+import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, statusLabel, STATUS_FLOW, webNoOutline } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
@@ -154,6 +154,9 @@ export default function Orders() {
   // agar tidak ada duplikasi handler maupun perbedaan hak akses.
   const actionItems = (o: OrderView): ActionMenuItem[] => {
     const own = o.trader_id === user?.id && o.status === 'data_masuk';
+    // Admin mengoreksi data order di semua status (aturan ditegakkan server).
+    // Proses pick up tetap hanya pada order Data masuk milik trader sendiri.
+    const bisaUbah = own || isAdmin;
     const items: ActionMenuItem[] = [
       { key: 'detail', label: 'Buka detail', icon: 'open-outline', onPress: () => setSelected(o) },
       {
@@ -173,6 +176,10 @@ export default function Orders() {
     if (own) {
       items.push(
         { key: 'pickup', label: 'Proses pick up', icon: 'arrow-forward-circle-outline', onPress: () => processPickup(o, refresh) },
+      );
+    }
+    if (bisaUbah) {
+      items.push(
         { key: 'edit', label: 'Edit order', icon: 'create-outline', onPress: () => setEditing(o) },
         { key: 'delete', label: 'Hapus order', icon: 'trash-outline', danger: true, separated: true, onPress: () => removeOrder(o, refresh) },
       );
@@ -435,7 +442,12 @@ async function processPickup(o: OrderView, refresh: () => void) {
 }
 
 async function removeOrder(o: OrderView, refresh: () => void) {
-  confirmAsk('Hapus order', `Hapus #${o.order_number}?`, async () => {
+  // Order yang sudah berjalan berisi bukti & riwayat, jadi konfirmasinya
+  // menyebut statusnya agar admin sadar bukan sekadar menghapus entri baru.
+  const pesan = o.status === 'data_masuk'
+    ? `Hapus #${o.order_number}?`
+    : `#${o.order_number} berstatus ${statusLabel[o.status] ?? o.status}. Menghapusnya ikut menghilangkan foto & riwayat order. Lanjutkan?`;
+  confirmAsk('Hapus order', pesan, async () => {
     try { await api.deleteOwnOrder(o.id); refresh(); } catch (e) { notify('Gagal', (e as Error).message); }
   });
 }
