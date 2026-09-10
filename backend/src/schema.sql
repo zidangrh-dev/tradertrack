@@ -71,6 +71,19 @@ DROP TABLE IF EXISTS master_data CASCADE;
 -- Kolom menyusul untuk database yang dibuat sebelum aturan bukti ganda.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS requires_dual_evidence boolean NOT NULL DEFAULT false;
 
+-- Penanda toko yang menerbitkan barcode pick up (Roxy dan sejenisnya).
+-- Order dari toko ini wajib melampirkan barcode + bukti order; toko lain cukup
+-- bukti order saja. Default false supaya toko baru tidak diam-diam mewajibkan
+-- barcode sebelum admin menandainya.
+ALTER TABLE marketplace_stores ADD COLUMN IF NOT EXISTS has_barcode boolean NOT NULL DEFAULT false;
+
+-- Backfill sekali jalan: toko Roxy yang sudah ada ditandai punya barcode.
+-- Dibatasi pada baris yang belum pernah ditandai agar perubahan manual admin
+-- tidak tertimpa setiap kali migrasi dijalankan ulang.
+UPDATE marketplace_stores SET has_barcode = true
+  WHERE has_barcode = false AND name ILIKE '%roxy%'
+    AND NOT EXISTS (SELECT 1 FROM marketplace_stores WHERE has_barcode = true);
+
 -- Kolom menyusul untuk database lama: urutan kanban berbasis perpindahan status.
 -- Backfill memakai jejak waktu terbaik yang ada, bukan now(), agar urutan awal
 -- tidak jadi acak — semua baris lama kebagian stempel yang sama.

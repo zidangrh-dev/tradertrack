@@ -534,7 +534,15 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
     ok(res, await repo.listMarketplaceStores());
   }));
   r.post('/marketplace-stores', requireAdmin, asyncH(async (req, res) => {
-    ok(res, await repo.createMarketplaceStore(req.body?.name), 201);
+    ok(res, await repo.createMarketplaceStore(req.body?.name, req.body?.has_barcode === true), 201);
+  }));
+  // Penanda toko penerbit barcode. Menentukan apakah order dari toko ini wajib
+  // melampirkan barcode pick up selain foto bukti order.
+  r.patch('/marketplace-stores/:id', requireAdmin, asyncH(async (req, res) => {
+    if (typeof req.body?.has_barcode !== 'boolean') {
+      return res.status(400).json({ error: 'Nilai has_barcode wajib true atau false.' });
+    }
+    ok(res, await repo.setStoreBarcode(req.params.id, req.body.has_barcode));
   }));
   r.delete('/marketplace-stores/:id', requireAdmin, asyncH(async (req, res) => {
     ok(res, await repo.deleteMarketplaceStore(req.params.id));

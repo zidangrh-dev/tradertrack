@@ -135,16 +135,18 @@ export function ProductTable({ items, loading, wide, actionsFor }: {
   );
 }
 
-export function StoreTable({ stores, wide, onRemove, onAdd }: {
+export function StoreTable({ stores, wide, onRemove, onAdd, onToggleBarcode }: {
   stores: MarketplaceStore[];
   wide?: boolean;
   onRemove: (store: MarketplaceStore) => void;
   onAdd: () => void;
+  onToggleBarcode: (store: MarketplaceStore) => void;
 }) {
   return (
     <View style={[styles.tableCard, styles.tableSpacing]}>
       <View style={styles.tableHeader}>
         <Text style={[styles.th, { flex: 1 }]}>TOKO MARKETPLACE</Text>
+        <Text style={[styles.th, { width: 96 }]}>BARCODE</Text>
         <Text style={[styles.th, { width: 48, textAlign: 'right' }]}>AKSI</Text>
       </View>
       {stores.length === 0 ? (
@@ -158,10 +160,25 @@ export function StoreTable({ stores, wide, onRemove, onAdd }: {
             <View style={[styles.td, { flex: 1 }]}>
               <Text style={styles.productName} numberOfLines={1}>{store.name}</Text>
             </View>
+            {/* Penanda toko penerbit barcode: menentukan apakah order dari toko
+                ini menampilkan slot barcode dan mewajibkan bukti ganda. */}
+            <View style={[styles.td, { width: 96 }]}>
+              <Text style={store.has_barcode ? styles.barcodeYes : styles.barcodeNo}>
+                {store.has_barcode ? 'Pakai barcode' : 'Tanpa barcode'}
+              </Text>
+            </View>
             <View style={[styles.td, { width: 48, alignItems: 'flex-end' }]}>
               <ActionMenu
                 label={`Aksi toko ${store.name}`}
-                items={[{ key: 'delete', label: 'Hapus toko', icon: 'trash-outline', danger: true, onPress: () => onRemove(store) }]}
+                items={[
+                  {
+                    key: 'barcode',
+                    label: store.has_barcode ? 'Tandai tanpa barcode' : 'Tandai pakai barcode',
+                    icon: 'barcode-outline',
+                    onPress: () => onToggleBarcode(store),
+                  },
+                  { key: 'delete', label: 'Hapus toko', icon: 'trash-outline', danger: true, separated: true, onPress: () => onRemove(store) },
+                ]}
               />
             </View>
           </View>
@@ -233,6 +250,8 @@ const styles = StyleSheet.create({
   td: { paddingVertical: 2 },
   productWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   productName: { fontSize: 13, fontWeight: '700', color: colors.text, flexShrink: 1 },
+  barcodeYes: { fontSize: 12, fontWeight: '700', color: colors.primaryMuted ?? colors.text },
+  barcodeNo: { fontSize: 12, color: colors.muted },
   storeName: { fontSize: 10, color: '#94A3B8', marginTop: 3 },
   quotaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
   quotaNumbers: { fontSize: 11, color: '#334155', fontWeight: '600', flexShrink: 1 },

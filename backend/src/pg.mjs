@@ -168,19 +168,27 @@ export default (pool) => {
   // ---------- Katalog: produk (tipe barang, kuota lintas toko) + toko marketplace ----------
 
   const listMarketplaceStores = async () => {
-    const { rows } = await pool.query(`SELECT id, name, is_active, created_at, updated_at FROM marketplace_stores WHERE is_active = true ORDER BY lower(name)`);
+    const { rows } = await pool.query(`SELECT id, name, is_active, has_barcode, created_at, updated_at FROM marketplace_stores WHERE is_active = true ORDER BY lower(name)`);
     return rows;
   };
 
-  const createMarketplaceStore = async (name) => {
+  const createMarketplaceStore = async (name, hasBarcode = false) => {
     const clean = String(name ?? '').trim();
     if (!clean || clean.length > 100) throw new Error('Nama toko wajib diisi dan maksimal 100 karakter.');
     try {
-      await pool.query(`INSERT INTO marketplace_stores (name) VALUES ($1)`, [clean]);
+      await pool.query(`INSERT INTO marketplace_stores (name, has_barcode) VALUES ($1, $2)`, [clean, !!hasBarcode]);
     } catch (e) {
       if (e.code === '23505') throw new Error('Nama toko sudah terdaftar.');
       throw e;
     }
+    return listMarketplaceStores();
+  };
+
+  const setStoreBarcode = async (id, hasBarcode) => {
+    const { rows } = await pool.query(
+      `UPDATE marketplace_stores SET has_barcode = $2, updated_at = now()
+       WHERE id = $1 AND is_active = true RETURNING id`, [id, !!hasBarcode]);
+    if (!rows[0]) throw new Error('Toko marketplace tidak ditemukan.');
     return listMarketplaceStores();
   };
 
@@ -374,11 +382,13 @@ export default (pool) => {
       if (usedRows[0].used >= p.quota) {
         throw new Error(`Kuota produk ${p.name} sudah habis!`);
       }
-      // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
+      // Bukti ganda hanya untuk toko yang menerbitkan barcode pick up (Roxy dsb).
+      // Toko lain tidak punya barcode, jadi cukup foto bukti order — memaksa
+      // barcode di sana membuat trader mengunggah foto asal ke slot barcode.
       const { rows } = await client.query(
         `INSERT INTO orders (order_number, product_name, store_name, recipient_name, pickup_method, trader_id, product_id, store_id, order_amount, requires_dual_evidence)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true) RETURNING id`,
-        [input.order_number, p.name, st.name, input.recipient_name, input.pickup_method, input.trader_id ?? actorId, p.id, st.id, input.order_amount ?? null],
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        [input.order_number, p.name, st.name, input.recipient_name, input.pickup_method, input.trader_id ?? actorId, p.id, st.id, input.order_amount ?? null, !!st.has_barcode],
       );
       id = rows[0].id;
       await client.query(
@@ -755,7 +765,7 @@ export default (pool) => {
   };
 
   return {
-    settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
+    settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, setStoreBarcode, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
     activeAdminCount, activeSuperadminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
     orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, donePickup, attachBarcode, hasOrderProof, clearBarcode,
     detail, uploadPhoto, deletePhoto, completeOrder, markProblem, clearProblem, reopen, deleteOrder, editOrder, reports,

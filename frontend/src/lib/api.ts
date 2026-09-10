@@ -314,7 +314,9 @@ const remote = {
     return http<Reports>(`/api/reports?${qs.toString()}`);
   },
   listMarketplaceStores: () => http<MarketplaceStore[]>('/api/marketplace-stores'),
-  createMarketplaceStore: (name: string) => http<MarketplaceStore[]>('/api/marketplace-stores', { method: 'POST', body: { name } }),
+  createMarketplaceStore: (name: string, has_barcode = false) => http<MarketplaceStore[]>('/api/marketplace-stores', { method: 'POST', body: { name, has_barcode } }),
+  setStoreBarcode: (id: string, has_barcode: boolean) =>
+    http<MarketplaceStore[]>(`/api/marketplace-stores/${id}`, { method: 'PATCH', body: { has_barcode } }),
   deleteMarketplaceStore: (id: string) => http<MarketplaceStore[]>(`/api/marketplace-stores/${id}`, { method: 'DELETE' }),
   listProducts: () => http<ProductRow[]>('/api/products'),
   createProduct: (input: { name: string; quota: number }) => http<ProductRow[]>('/api/products', { method: 'POST', body: input }),

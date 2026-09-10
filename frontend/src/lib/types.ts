@@ -19,6 +19,8 @@ export interface MarketplaceStore {
   id: string;
   name: string;
   is_active: boolean;
+  /** Toko menerbitkan barcode pick up (Roxy dsb) — order wajib melampirkannya. */
+  has_barcode: boolean;
 }
 
 export interface Product {

@@ -111,6 +111,27 @@ export default function MasterData() {
       notify('Gagal', (e as Error).message);
     }
   };
+  // Mengubah penanda barcode toko. Berlaku untuk order BARU saja: order lama
+  // sudah menyimpan aturannya sendiri di requires_dual_evidence, jadi bukti
+  // yang sudah telanjur diminta tidak berubah surut.
+  const toggleStoreBarcode = async (store: MarketplaceStore) => {
+    const jadi = !store.has_barcode;
+    confirmAsk(
+      jadi ? 'Tandai pakai barcode' : 'Tandai tanpa barcode',
+      jadi
+        ? `Order baru dari "${store.name}" akan wajib melampirkan foto barcode pick up selain bukti order.`
+        : `Order baru dari "${store.name}" cukup melampirkan foto bukti order saja.`,
+      async () => {
+        try {
+          setStores(await api.setStoreBarcode(store.id, jadi));
+          notify('Berhasil', `"${store.name}" ditandai ${jadi ? 'pakai' : 'tanpa'} barcode.`);
+        } catch (e) {
+          notify('Gagal', (e as Error).message);
+        }
+      },
+    );
+  };
+
   const removeStore = async (store: MarketplaceStore) => {
     confirmAsk('Hapus toko marketplace', `Hapus "${store.name}" dari daftar?`, async () => {
       try {
@@ -245,6 +266,7 @@ export default function MasterData() {
           wide={wide}
           stores={stores}
           onRemove={(store) => confirmAsk('Hapus toko marketplace', `Hapus "${store.name}" dari daftar?`, () => removeStore(store))}
+          onToggleBarcode={toggleStoreBarcode}
           onAdd={() => setShowStoreForm(true)}
         />
       </ScrollView>

@@ -12,6 +12,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { Avatar, Button, Sheet, StatusTag } from './ui';
 import { isAdminLevel } from '../lib/roles';
+import { periksaFotoBarcode } from '../lib/barcodeCheck';
 
 /** Kuota foto pengambilan per order — cerminan MAX_PICKUP_EVIDENCE di server. */
 const MAX_FOTO_AMBILAN = 3;
@@ -108,6 +109,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // jadi bukti yang sudah terpasang tidak bisa ditukar setelah order berjalan.
   const bisaLampirBuktiOrder = status === 'data_masuk' || (status === 'proses_pick_up' && !hasOrderProof);
   const dualReady = hasBarcode && hasOrderProof;
+  // Hanya toko penerbit barcode (Roxy dsb) yang menampilkan slot barcode.
+  // Toko lain tidak punya barcode sama sekali, dan slot kosong di sana justru
+  // memancing trader mengunggah foto bukti order ke tempat yang salah.
+  // Order lama yang terlanjur punya barcode tetap ditampilkan agar buktinya
+  // tidak hilang dari layar.
+  const tokoPakaiBarcode = !!order.requires_dual_evidence || !!barcodeTampil;
   const pickupEvidences = detail?.photos.filter((p) => p.source === 'pickup_evidence') ?? [];
   // Foto pengambilan berkuota sendiri (maks 3), lepas dari max_photos yang
   // mengatur foto penyelesaian — samakan dengan MAX_PICKUP_EVIDENCE di server
@@ -136,6 +143,23 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const attachBarcode = async () => {
     const photo = await pickPhoto('Foto barcode pick up');
     if (!photo) return;
+    // Barcode diperiksa sebelum diunggah: slot ini kerap terisi foto bukti
+    // order, dan admin yang menanggung akibatnya saat memilah.
+    setBusy(true);
+    let hasil;
+    try {
+      hasil = await periksaFotoBarcode(photo.uri);
+    } finally {
+      setBusy(false);
+    }
+    if (!hasil.ok) {
+      return notify(
+        'Foto bukan barcode',
+        hasil.alasan === 'GAGAL_PERIKSA'
+          ? 'Pemeriksa barcode tidak tersedia di perangkat ini, jadi foto belum bisa diunggah. Coba lewat aplikasi Android atau peramban lain.'
+          : hasil.alasan,
+      );
+    }
     mutate(() => api.attachBarcode(order.id, photo));
   };
 
@@ -208,20 +232,22 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                 onPick={attachOrderProof}
                 onDelete={orderProof && status === 'data_masuk' ? () => mutate(() => api.deletePhoto(order.id, orderProof.id)) : undefined}
               />
-              <PhotoSlot
-                label="Barcode pick up"
-                filePath={barcodeTampil}
-                locked={!bisaLampirBarcode}
-                lockedReason={
-                  barcodePath
-                    ? 'Barcode hanya bisa diubah saat status Data masuk.'
-                    : 'Barcode hanya bisa dilampirkan saat status Data masuk atau Proses pick up.'
-                }
-                busy={busy}
-                onPreview={(fp) => setPreview(fp)}
-                onPick={attachBarcode}
-                onDelete={barcodePath && status === 'data_masuk' ? () => mutate(() => api.deleteBarcode(order.id)) : undefined}
-              />
+              {tokoPakaiBarcode && (
+                <PhotoSlot
+                  label="Barcode pick up"
+                  filePath={barcodeTampil}
+                  locked={!bisaLampirBarcode}
+                  lockedReason={
+                    barcodePath
+                      ? 'Barcode hanya bisa diubah saat status Data masuk.'
+                      : 'Barcode hanya bisa dilampirkan saat status Data masuk atau Proses pick up.'
+                  }
+                  busy={busy}
+                  onPreview={(fp) => setPreview(fp)}
+                  onPick={attachBarcode}
+                  onDelete={barcodePath && status === 'data_masuk' ? () => mutate(() => api.deleteBarcode(order.id)) : undefined}
+                />
+              )}
             </View>
             {dualRequired && !dualReady && (
               <View style={styles.dualNote}>

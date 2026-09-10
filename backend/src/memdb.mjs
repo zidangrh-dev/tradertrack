@@ -18,11 +18,18 @@ const db = seed();
 
 export const settings = () => ({ ...db.settings });
 export const listMarketplaceStores = () => db.marketplaceStores.filter((s) => s.is_active).sort((a, b) => a.name.localeCompare(b.name));
-export function createMarketplaceStore(name) {
+export function createMarketplaceStore(name, hasBarcode = false) {
   const clean = String(name ?? '').trim();
   if (!clean || clean.length > 100) throw new Error('Nama toko wajib diisi dan maksimal 100 karakter.');
   if (db.marketplaceStores.some((s) => s.name.toLowerCase() === clean.toLowerCase())) throw new Error('Nama toko sudah terdaftar.');
-  db.marketplaceStores.push({ id: uid(), name: clean, is_active: true, created_at: now(), updated_at: now() });
+  db.marketplaceStores.push({ id: uid(), name: clean, is_active: true, has_barcode: !!hasBarcode, created_at: now(), updated_at: now() });
+  return listMarketplaceStores();
+}
+export function setStoreBarcode(id, hasBarcode) {
+  const s = db.marketplaceStores.find((x) => x.id === id && x.is_active);
+  if (!s) throw new Error('Toko marketplace tidak ditemukan.');
+  s.has_barcode = !!hasBarcode;
+  s.updated_at = now();
   return listMarketplaceStores();
 }
 export function deleteMarketplaceStore(id) {
@@ -269,7 +276,7 @@ export function createOrder(input, actorId) {
     order_amount: input.order_amount ?? null, note: null, is_problem: false,
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: now(),
     // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
-    requires_dual_evidence: true,
+    requires_dual_evidence: !!st.has_barcode,
     picked_up_at: null, completed_at: null, status_changed_at: now(), updated_at: now(),
   };
   db.orders.unshift(o);
