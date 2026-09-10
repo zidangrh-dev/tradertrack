@@ -18,6 +18,10 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 await initRepo();
 
 const app = express();
+// Nginx meneruskan IP asli lewat X-Forwarded-For. Tanpa ini req.ip selalu
+// berisi alamat proxy, sehingga pembatas login akan menghitung semua pengguna
+// sebagai satu sumber dan memblokir mereka bersamaan.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 

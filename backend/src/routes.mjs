@@ -7,6 +7,7 @@ import multer from 'multer';
 import { requireAuth, requireAdmin, signToken, isAdminLevel, isSuperadmin } from './auth.mjs';
 import { getRepo } from './repo.mjs';
 import { gateEnabled, isGatedPlatform, versionMatches } from './appVersion.mjs';
+import { cekLogin, catatGagal, resetGagal } from './loginGuard.mjs';
 
 const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
 // proses_pick_up dikecualikan: wajib lewat POST /orders/:id/pickup (butuh foto).
@@ -162,10 +163,22 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
   r.post('/login', asyncH(async (req, res) => {
     const { username, password } = req.body ?? {};
     if (!username || !password) return res.status(400).json({ error: 'Username dan kata sandi wajib diisi.' });
+    // Penebakan kata sandi ditahan sebelum bcrypt dijalankan, jadi percobaan
+    // beruntun tidak sekaligus menjadi beban CPU.
+    const ip = req.ip || req.socket?.remoteAddress || 'tak-dikenal';
+    const tunggu = cekLogin(ip, username);
+    if (tunggu > 0) {
+      res.setHeader('Retry-After', String(tunggu));
+      return res.status(429).json({
+        error: `Terlalu banyak percobaan login gagal. Coba lagi dalam ${Math.ceil(tunggu / 60)} menit.`,
+      });
+    }
     const u = await repo.userByUsername(String(username));
     if (!u || !u.is_active || !(await bcrypt.compare(String(password), u.password_hash))) {
+      catatGagal(ip, username);
       return res.status(401).json({ error: 'Username atau kata sandi salah, atau akun sedang nonaktif.' });
     }
+    resetGagal(ip, username);
     await repo.setLastLogin(u.id);
     const user = { id: u.id, username: u.username, display_name: u.display_name, role: u.role };
     ok(res, { token: signToken(user), user });
