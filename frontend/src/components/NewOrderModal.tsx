@@ -6,6 +6,7 @@ import { pickPhoto, type PickedPhoto } from '../lib/photo';
 import { colors, radius, pickupMethodOptions, webNoOutline } from '../theme';
 import { Button, Field, PasswordField, Select, Sheet, type SelectOption } from './ui';
 import { isAdminLevel } from '../lib/roles';
+import { periksaFotoBarcode } from '../lib/barcodeCheck';
 
 export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolean; onClose: () => void; user: SessionUser | null; onCreated: () => void }) {
   const isAdmin = isAdminLevel(user?.role);
@@ -44,7 +45,25 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   };
   const pickBarcode = async () => {
     const photo = await pickPhoto('Lampirkan barcode pick up');
-    if (photo) setBarcodeImg(photo);
+    if (!photo) return;
+    // Diperiksa sejak form input, bukan cuma di detail order: slot ini kerap
+    // terisi foto bukti order dan admin yang menanggung saat memilah.
+    setBusy(true);
+    let hasil;
+    try {
+      hasil = await periksaFotoBarcode(photo.uri);
+    } finally {
+      setBusy(false);
+    }
+    if (!hasil.ok) {
+      return notify(
+        'Foto bukan barcode',
+        hasil.alasan === 'GAGAL_PERIKSA'
+          ? 'Pemeriksa barcode tidak tersedia di perangkat ini, jadi foto belum bisa dilampirkan. Coba lewat aplikasi Android atau peramban lain.'
+          : hasil.alasan,
+      );
+    }
+    setBarcodeImg(photo);
   };
 
   if (!user) return null;
@@ -63,6 +82,11 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   const storeOptions: SelectOption[] = stores
     .filter((s) => s.is_active)
     .map((s) => ({ value: s.id, label: s.name }));
+
+  // Slot barcode hanya untuk toko penerbit barcode (Roxy dsb). Toko lain tidak
+  // punya barcode sama sekali, dan slot kosong di sana justru memancing trader
+  // mengunggah foto bukti order ke tempat yang salah.
+  const tokoPakaiBarcode = !!stores.find((s) => s.id === storeId)?.has_barcode;
 
   const save = async () => {
     if (!productId || !storeId || !orderNumber.trim() || !recipient.trim()) {
@@ -86,13 +110,17 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
       if (orderImg) {
         try { await api.uploadPhoto(order.id, orderImg, 'order'); } catch { failed.push('foto bukti order'); }
       }
-      if (barcodeImg) {
+      // Barcode diabaikan bila toko tidak menerbitkannya — trader bisa saja
+      // melampirkan lebih dulu lalu berganti toko sebelum menyimpan.
+      if (barcodeImg && tokoPakaiBarcode) {
         try { await api.attachBarcode(order.id, barcodeImg); } catch { failed.push('barcode pick up'); }
       }
       if (failed.length) {
         notify('Order tersimpan, lampiran gagal', `Gagal mengunggah ${failed.join(' dan ')}. Lampirkan ulang dari detail order sebelum pick up.`);
-      } else if (!orderImg || !barcodeImg) {
-        notify('Order tersimpan', 'Lengkapi foto bukti order dan barcode pick up agar pesanan bisa diproses.');
+      } else if (!orderImg || (tokoPakaiBarcode && !barcodeImg)) {
+        notify('Order tersimpan', tokoPakaiBarcode
+          ? 'Lengkapi foto bukti order dan barcode pick up agar pesanan bisa diproses.'
+          : 'Lengkapi foto bukti order agar pesanan bisa diproses.');
       }
       onCreated();
       onClose();
@@ -194,21 +222,24 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
                   onClear={() => setOrderImg(null)}
                 />
               </View>
-              <View style={styles.column}>
-                <AttachSlot
-                  label="Barcode pick up"
-                  hint="Barcode/resi untuk pengambilan paket"
-                  photo={barcodeImg}
-                  onPick={pickBarcode}
-                  onClear={() => setBarcodeImg(null)}
-                />
-              </View>
+              {tokoPakaiBarcode && (
+                <View style={styles.column}>
+                  <AttachSlot
+                    label="Barcode pick up"
+                    hint="Barcode/resi untuk pengambilan paket"
+                    photo={barcodeImg}
+                    onPick={pickBarcode}
+                    onClear={() => setBarcodeImg(null)}
+                  />
+                </View>
+              )}
             </View>
-            {(!orderImg || !barcodeImg) && (
+            {(!orderImg || (tokoPakaiBarcode && !barcodeImg)) && (
               <View style={styles.attachNote}>
                 <Text style={styles.attachNoteText}>
-                  Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lampiran bisa dilengkapi
-                  nanti dari detail order, tetapi harus lengkap sebelum masuk proses pick up.
+                  {tokoPakaiBarcode
+                    ? 'Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lampiran bisa dilengkapi nanti dari detail order, tetapi harus lengkap sebelum masuk proses pick up.'
+                    : 'Toko ini tidak menerbitkan barcode, jadi cukup lampirkan foto bukti order. Lampiran bisa dilengkapi nanti dari detail order, tetapi harus ada sebelum masuk proses pick up.'}
                 </Text>
               </View>
             )}
