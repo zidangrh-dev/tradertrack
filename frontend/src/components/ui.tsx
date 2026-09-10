@@ -584,6 +584,13 @@ export function MultiSelect({
     .map((v) => options.find((o) => o.value === v)?.label)
     .filter((l): l is string => !!l);
 
+  // Merangkai semua nama terpilih membuat tombol memanjang tak beraturan begitu
+  // beberapa toko dicentang. Satu pilihan masih ditulis utuh karena itu yang
+  // paling informatif; lebih dari itu diringkas jadi hitungan yang lebarnya tetap.
+  const ringkasanTerpilih = selectedLabels.length === 1
+    ? selectedLabels[0]
+    : `${selectedLabels.length} ${label.toLowerCase()} dipilih`;
+
   const menuW = Math.min(Math.max(anchor.w, 260), 360);
   const left = Math.max(12, Math.min(anchor.x, winW - menuW - 12));
   const showSearch = options.length >= 8;
@@ -613,7 +620,7 @@ export function MultiSelect({
           <>
             <Text style={[selStyles.caption, compact && selStyles.captionCompact, selStyles.captionActive]}>{label}</Text>
             <Text style={[selStyles.value, compact && selStyles.valueCompact, selStyles.valueActive]} numberOfLines={1}>
-              {selectedLabels.join(', ')}
+              {ringkasanTerpilih}
             </Text>
           </>
         ) : (
@@ -957,13 +964,16 @@ export function DataTable<T extends { id: string }>({
 const selStyles = StyleSheet.create({
   trigger: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    height: 46, paddingHorizontal: 12, alignSelf: 'flex-start', minWidth: 180, maxWidth: '100%',
+    // maxWidth menahan tombol melebar mengikuti panjang teks terpilih; tanpa itu
+    // deretan filter jadi tidak rata karena tiap tombol punya lebar berbeda.
+    height: 46, paddingHorizontal: 12, alignSelf: 'flex-start', minWidth: 180, maxWidth: 260,
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
   },
-  triggerBlock: { alignSelf: 'stretch', width: '100%' },
-  triggerCompact: { height: 34, minWidth: 150, paddingHorizontal: 10 },
+  triggerBlock: { alignSelf: 'stretch', width: '100%', maxWidth: '100%' },
+  triggerCompact: { height: 34, minWidth: 150, maxWidth: 210, paddingHorizontal: 10 },
   // Mode formulir: setinggi & sejajar <Field> (label di luar, input 42 + marginTop 6).
-  triggerField: { height: 42, minWidth: 0, marginTop: 6 },
+  // maxWidth dilepas kembali karena di dalam formulir lebar mengikuti kolom.
+  triggerField: { height: 42, minWidth: 0, maxWidth: '100%', marginTop: 6 },
   // Ritme vertikal sama dengan <Field> (marginBottom 13) agar tidak berdempetan.
   fieldWrap: { marginBottom: 13 },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted },
