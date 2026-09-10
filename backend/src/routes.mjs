@@ -465,9 +465,15 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
       store_name: trimmed(req.body?.store_name),
       order_number: trimmed(req.body?.order_number),
       recipient_name: trimmed(req.body?.recipient_name),
+      pickup_method: trimmed(req.body?.pickup_method),
     };
     if (patch.order_number !== undefined && !patch.order_number) {
       return res.status(400).json({ error: 'Nomor pesanan tidak boleh kosong.' });
+    }
+    // Metode dibatasi whitelist yang sama dengan pembuatan order — nilai bebas
+    // akan lolos ke DB dan merusak label serta filter di seluruh aplikasi.
+    if (patch.pickup_method !== undefined && !METHOD_WHITELIST.includes(patch.pickup_method)) {
+      return res.status(400).json({ error: 'Metode pick up tidak dikenal.' });
     }
     const updated = await repo.editOrder(req.params.id, patch, req.user.id);
     emit();

@@ -459,6 +459,8 @@ function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved 
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { user } = useAuth();
+  const isAdmin = isAdminLevel(user?.role);
   // Produk & toko dipilih dari katalog (bukan teks bebas) agar nama selalu
   // cocok dengan master data — sama seperti form input order.
   const [product, setProduct] = useState(order?.product_name ?? '');
@@ -467,6 +469,7 @@ function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved 
   // mengembalikannya saat menyimpan akan diam-diam mengubah nomor order.
   const [orderNumber, setOrderNumber] = useState(order?.order_number ?? '');
   const [recipient, setRecipient] = useState(order?.recipient_name ?? '');
+  const [method, setMethod] = useState<OrderView['pickup_method'] | ''>(order?.pickup_method ?? '');
   const [busy, setBusy] = useState(false);
 
   if (!order) return null;
@@ -485,11 +488,16 @@ function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved 
       notify('Lengkapi data', 'Produk, toko, nomor pesanan, dan penerima wajib diisi.');
       return;
     }
+    if (!method) {
+      notify('Lengkapi data', 'Metode pick up wajib dipilih.');
+      return;
+    }
     setBusy(true);
     try {
       await api.editOwnOrder(order.id, {
         product_name: product.trim(), store_name: store.trim(),
         order_number: orderNumber.trim(), recipient_name: recipient.trim(),
+        pickup_method: method,
       });
       onSaved();
     } catch (e) {
@@ -521,7 +529,18 @@ function EditOrderModal({ order, productOptions, storeOptions, onClose, onSaved 
       />
       <Field label="Nomor pesanan" value={orderNumber} onChangeText={setOrderNumber} hint="Harus unik — tidak boleh sama dengan order lain." />
       <Field label="Nama penerima" value={recipient} onChangeText={setRecipient} />
-      <Text style={styles.ownerNote}>Hanya order milik Anda yang masih berstatus Data masuk yang dapat diubah.</Text>
+      <Select
+        block
+        field
+        label="Metode pick up"
+        value={method}
+        options={pickupMethodOptions}
+        onChange={(v) => setMethod(v as OrderView['pickup_method'])}
+        placeholder="Pilih metode"
+      />
+      {!isAdmin && (
+        <Text style={styles.ownerNote}>Hanya order milik Anda yang masih berstatus Data masuk yang dapat diubah.</Text>
+      )}
       <Button label={busy ? 'Menyimpan…' : 'Simpan perubahan'} fullWidth disabled={busy} onPress={save} />
     </Sheet>
   );

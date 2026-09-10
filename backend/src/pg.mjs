@@ -656,23 +656,27 @@ export default (pool) => {
     if (dup && dup.id !== id) throw new Error(`Nomor pesanan ${patch.order_number} sudah dipakai order lain.`);
     const sets = [];
     const vals = [];
-    for (const k of ['product_name', 'store_name', 'order_number', 'recipient_name']) {
+    for (const k of ['product_name', 'store_name', 'order_number', 'recipient_name', 'pickup_method']) {
       if (patch[k] !== undefined) { sets.push(`${k} = $${vals.length + 1}`); vals.push(patch[k]); }
     }
     if (sets.length) {
       // Ambil nilai lama sebelum UPDATE supaya jejaknya menyimpan dari->ke.
       const { rows: sebelumRows } = await pool.query(
-        `SELECT product_name, store_name, order_number, recipient_name, status FROM orders WHERE id = $1`, [id]);
+        `SELECT product_name, store_name, order_number, recipient_name, pickup_method, status FROM orders WHERE id = $1`, [id]);
       const sebelum = sebelumRows[0] ?? {};
       vals.push(id);
       await pool.query(`UPDATE orders SET ${sets.join(', ')}, updated_at = now() WHERE id = $${vals.length}`, vals);
       const LABEL = {
         product_name: 'Produk', store_name: 'Toko',
         order_number: 'Nomor order', recipient_name: 'Penerima',
+        pickup_method: 'Metode',
       };
+      // Metode disimpan sebagai kode; tampilkan label manusiawi di riwayat.
+      const METODE = { zaydan_ambilan_gjm: 'Zaydan Ambilan GJM', self_pick_up: 'Self Pick Up' };
+      const tampil = (k, v) => (k === 'pickup_method' ? (METODE[v] ?? v) : v);
       const berubah = Object.keys(LABEL)
         .filter((k) => patch[k] !== undefined && patch[k] !== sebelum[k])
-        .map((k) => `${LABEL[k]}: "${sebelum[k] ?? ''}" -> "${patch[k]}"`);
+        .map((k) => `${LABEL[k]}: "${tampil(k, sebelum[k]) ?? ''}" -> "${tampil(k, patch[k])}"`);
       if (berubah.length) {
         await pushEvent(pool, id, actorId, 'edited', sebelum.status, sebelum.status, berubah.join('; '));
       }
