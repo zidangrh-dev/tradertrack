@@ -2,7 +2,7 @@
   "expo": {
     "name": "ZProject",
     "slug": "zproject",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "scheme": "zproject",
     "orientation": "default",
     "userInterfaceStyle": "light",
@@ -30,6 +30,7 @@
     "icon": "./assets/icon.png",
     "android": {
       "package": "id.zproject.app",
+      "versionCode": 2,
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
