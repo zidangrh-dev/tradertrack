@@ -102,10 +102,15 @@ assert.equal(both2.total, 2, 'dua toko terpilih memuat kedua order');
 const onlyA = await repo.listOrders({ store: [stores[0].id], q: 'TRK-ML-' });
 assert.equal(onlyA.total, 1, 'satu toko hanya memuat order toko itu');
 
-// Aturan bukti ganda di jalur SQL: barcode + foto bukti order wajib untuk order baru.
+// Aturan bukti ganda di jalur SQL: barcode + foto bukti order wajib untuk order
+// baru. Syaratnya diturunkan dari has_barcode toko, jadi pakai toko berbarcode
+// sendiri — toko seed semuanya has_barcode = false.
 const dualProduct = (await repo.listProducts()).find((x) => x.remaining_quota >= 3);
+const tokoBarcode = (await repo.createMarketplaceStore(`Smoke Barcode ${Date.now()}`, true))
+  .find((s) => s.name.startsWith('Smoke Barcode'));
+assert.ok(tokoBarcode?.has_barcode, 'toko uji menandai punya barcode');
 const mkOrder = async (suffix) => repo.createOrder(
-  { order_number: `TRK-DUAL-${suffix}-${Date.now()}`, recipient_name: 'A', pickup_method: 'self_pick_up', product_id: dualProduct.id, store_id: stores[0].id },
+  { order_number: `TRK-DUAL-${suffix}-${Date.now()}`, recipient_name: 'A', pickup_method: 'self_pick_up', product_id: dualProduct.id, store_id: tokoBarcode.id },
   actorId,
 );
 const noneYet = await mkOrder('A');

@@ -912,19 +912,31 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
     assert.equal(status, 400);
   });
 
-  // ---- Order selesai terkunci: tidak bisa diedit/dihapus/fotonya diubah ----
-  test('edit order selesai (oleh admin sekalipun) → tolak', async () => {
+  // ---- Order selesai: foto terkunci, tapi admin boleh mengoreksi data ----
+  test('admin boleh edit order selesai; trader tetap ditolak', async () => {
     const o = await orderSelesai(admin);
     const { status } = await client(admin).patch(`/api/orders/${o.id}`, { recipient_name: 'Revisi' });
-    assert.equal(status, 400);
-    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.recipient_name, 'Penerima Uji', 'data tidak berubah');
+    assert.equal(status, 200, 'admin mengoreksi data di semua status');
+    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.recipient_name, 'Revisi');
+
+    // Trader tetap dibatasi: ordernya sendiri, hanya selama Data masuk.
+    const p = await orderReadyForPickup(trader);
+    await client(trader).post(`/api/orders/${p.id}/pickup`, {});
+    const { status: sTrader } = await client(trader).patch(`/api/orders/${p.id}`, { recipient_name: 'Revisi' });
+    assert.equal(sTrader, 400, 'trader hanya boleh mengubah saat Data masuk');
   });
-  test('hapus order selesai (oleh admin sekalipun) → tolak', async () => {
+  test('admin boleh hapus order selesai; trader tetap ditolak', async () => {
     const o = await orderSelesai(admin);
     const { status } = await client(admin).del(`/api/orders/${o.id}`);
-    assert.equal(status, 400);
-    const { data: still } = await client(admin).get(`/api/orders/${o.id}/detail`);
-    assert.equal(still.status, 'selesai', 'order masih ada');
+    assert.equal(status, 204, 'admin menghapus order di semua status');
+    const sisa = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.ok(sisa.status >= 400, 'order benar-benar hilang');
+
+    // Trader tetap dibatasi: ordernya sendiri, hanya selama Data masuk.
+    const p = await orderReadyForPickup(trader);
+    await client(trader).post(`/api/orders/${p.id}/pickup`, {});
+    const { status: sTrader } = await client(trader).del(`/api/orders/${p.id}`);
+    assert.equal(sTrader, 400, 'trader hanya boleh menghapus saat Data masuk');
   });
   test('upload foto pada order selesai → tolak', async () => {
     const o = await orderSelesai(admin);

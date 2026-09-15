@@ -574,11 +574,13 @@ function seed() {
     { id: 'u-fajar', username: 'fajar', password_hash: hash('trader'), display_name: 'Fajar Rahman', role: 'trader', is_active: true, last_login_at: null, created_at: hoursAgo(180), updated_at: hoursAgo(180) },
   ];
 
+  // has_barcode menentukan aturan bukti ganda per toko (lihat createOrder).
+  // Tanpa kolom ini semua toko jatuh ke false dan syarat barcode mati diam-diam.
   const marketplaceStores = [
-    { id: 'st-tokopedia', name: 'Tokopedia', is_active: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
-    { id: 'st-shopee', name: 'Shopee', is_active: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
-    { id: 'st-lazada', name: 'Lazada', is_active: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
-    { id: 'st-blibli', name: 'Blibli', is_active: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'st-tokopedia', name: 'Tokopedia', is_active: true, has_barcode: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'st-shopee', name: 'Shopee', is_active: true, has_barcode: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'st-lazada', name: 'Lazada', is_active: true, has_barcode: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
+    { id: 'st-blibli', name: 'Blibli', is_active: true, has_barcode: true, created_at: hoursAgo(200), updated_at: hoursAgo(200) },
   ];
 
   const products = [
