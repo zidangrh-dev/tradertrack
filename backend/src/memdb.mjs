@@ -162,7 +162,8 @@ export function addProductQuota(id, amount) {
 
 export function resetProductQuota(id) {
   const p = findProduct(id);
-  p.quota = usedQuotaOf(id);
+  // Samakan dengan pg.mjs: kuota dikosongkan total, order lama tidak disentuh.
+  p.quota = 0;
   p.updated_at = now();
   return listProducts();
 }

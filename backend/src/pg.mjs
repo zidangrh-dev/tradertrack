@@ -278,10 +278,13 @@ export default (pool) => {
       await client.query('BEGIN');
       const { rows } = await client.query(`SELECT id FROM products WHERE id = $1 FOR UPDATE`, [id]);
       if (!rows[0]) throw new Error('Produk tidak ditemukan.');
+      // Kuota dikosongkan total. Sebelumnya kuota disamakan dengan jumlah order
+      // yang sudah masuk, sehingga sisa kuota memang menjadi 0 tetapi kolom
+      // kuota tetap menunjukkan angka besar (mis. 174) dan tampak seperti
+      // reset yang gagal. Order lama tidak disentuh — riwayatnya tetap utuh,
+      // hanya kuotanya yang nol sampai admin menambahkannya lagi.
       await client.query(
-        `UPDATE products p SET quota = used.used, updated_at = now()
-         FROM (SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1) used
-         WHERE p.id = $1`,
+        `UPDATE products SET quota = 0, updated_at = now() WHERE id = $1`,
         [id],
       );
       await client.query('COMMIT');
