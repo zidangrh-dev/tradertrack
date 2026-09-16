@@ -29,16 +29,15 @@ export function MetricsRow({ stats, wide }: { stats: { totalProduk: number; akti
 function QuotaCell({ item, compact }: { item: ProductRow; compact?: boolean }) {
   const usedPct = item.quota > 0 ? Math.min(100, Math.round((item.used_quota / item.quota) * 100)) : 0;
   const isExhausted = item.remaining_quota === 0;
-  // Setelah kuota direset, kuota bernilai 0 sementara order lama tetap
-  // tercatat. Menampilkannya sebagai "174 / 0 terpakai" membingungkan seolah
-  // salah hitung, padahal order itu riwayat masa lalu.
-  const kuotaDikosongkan = item.quota === 0 && item.used_quota > 0;
+  // Setelah kuota dikosongkan, kuota dan terpakai sama-sama 0 sehingga
+  // "0 / 0 terpakai" tidak memberi tahu apa pun. Sebut keadaannya langsung.
+  const kuotaDikosongkan = item.quota === 0 && item.used_quota === 0;
   return (
     <View>
       <View style={styles.quotaHeader}>
         <Text style={styles.quotaNumbers}>
           {kuotaDikosongkan
-            ? `Kuota kosong · ${item.used_quota} order tercatat`
+            ? 'Kuota kosong · tambah kuota untuk mulai'
             : `${item.used_quota} / ${item.quota} terpakai`}
           {compact && !kuotaDikosongkan ? ` · ${isExhausted ? '0' : item.remaining_quota} sisa` : ''}
         </Text>

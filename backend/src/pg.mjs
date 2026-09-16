@@ -202,9 +202,16 @@ export default (pool) => {
   };
 
   const listProducts = async () => {
+    // Order yang dibuat SEBELUM kuota direset tidak lagi dihitung sebagai
+    // terpakai. Tanpa batas ini, menambah kuota setelah reset tidak pernah
+    // menghasilkan sisa: tambah 1 pada produk yang punya 20 order lama tetap
+    // memberi sisa 0 karena 20 order itu terus dikurangkan.
     const { rows } = await pool.query(
       `SELECT p.*, COUNT(o.id)::int AS used_quota
-       FROM products p LEFT JOIN orders o ON o.product_id = p.id
+       FROM products p
+       LEFT JOIN orders o
+         ON o.product_id = p.id
+        AND (p.quota_reset_at IS NULL OR o.created_at > p.quota_reset_at)
        GROUP BY p.id ORDER BY p.created_at`,
     );
     return rows.map((r) => ({
@@ -278,13 +285,12 @@ export default (pool) => {
       await client.query('BEGIN');
       const { rows } = await client.query(`SELECT id FROM products WHERE id = $1 FOR UPDATE`, [id]);
       if (!rows[0]) throw new Error('Produk tidak ditemukan.');
-      // Kuota dikosongkan total. Sebelumnya kuota disamakan dengan jumlah order
-      // yang sudah masuk, sehingga sisa kuota memang menjadi 0 tetapi kolom
-      // kuota tetap menunjukkan angka besar (mis. 174) dan tampak seperti
-      // reset yang gagal. Order lama tidak disentuh — riwayatnya tetap utuh,
-      // hanya kuotanya yang nol sampai admin menambahkannya lagi.
+      // Kuota dikosongkan total sekaligus menandai batas waktunya. Order yang
+      // sudah ada tidak disentuh — riwayatnya tetap utuh — tetapi tidak lagi
+      // dihitung sebagai terpakai, sehingga penambahan kuota setelah reset
+      // langsung menjadi sisa yang bisa dipakai.
       await client.query(
-        `UPDATE products SET quota = 0, updated_at = now() WHERE id = $1`,
+        `UPDATE products SET quota = 0, quota_reset_at = now(), updated_at = now() WHERE id = $1`,
         [id],
       );
       await client.query('COMMIT');
@@ -381,7 +387,14 @@ export default (pool) => {
       const st = storeRows[0];
       if (!st) throw new Error('Toko marketplace tidak ditemukan.');
       if (!st.is_active) throw new Error(`Toko ${st.name} sedang nonaktif.`);
-      const { rows: usedRows } = await client.query(`SELECT COUNT(*)::int AS used FROM orders WHERE product_id = $1`, [p.id]);
+      // Batas reset dipakai sama seperti listProducts, supaya angka sisa yang
+      // dilihat admin dan aturan yang menahan order tidak pernah berbeda.
+      const { rows: usedRows } = await client.query(
+        `SELECT COUNT(*)::int AS used FROM orders
+          WHERE product_id = $1
+            AND ($2::timestamptz IS NULL OR created_at > $2::timestamptz)`,
+        [p.id, p.quota_reset_at],
+      );
       if (usedRows[0].used >= p.quota) {
         throw new Error(`Kuota produk ${p.name} sudah habis!`);
       }

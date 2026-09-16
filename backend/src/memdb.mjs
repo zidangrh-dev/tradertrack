@@ -112,13 +112,20 @@ export function deleteUser(id) {
 
 // ---------- Katalog: produk (tipe barang, kuota lintas toko) + toko marketplace ----------
 
-function usedQuotaOf(productId) {
-  return db.orders.filter((o) => o.product_id === productId).length;
+// Order yang dibuat sebelum kuota direset tidak lagi dihitung terpakai —
+// samakan dengan pg.mjs, kalau tidak penambahan kuota setelah reset tidak
+// pernah menghasilkan sisa.
+function usedQuotaOf(productId, quotaResetAt = null) {
+  return db.orders.filter((o) => {
+    if (o.product_id !== productId) return false;
+    if (!quotaResetAt) return true;
+    return new Date(o.created_at) > new Date(quotaResetAt);
+  }).length;
 }
 
 export const listProducts = () =>
   db.products.map((p) => {
-    const used = usedQuotaOf(p.id);
+    const used = usedQuotaOf(p.id, p.quota_reset_at);
     return { ...p, used_quota: used, remaining_quota: Math.max(0, p.quota - used) };
   });
 
@@ -176,7 +183,7 @@ export function updateProduct(id, patch) {
   }
   if (patch.quota !== undefined) {
     const q = Math.max(0, Math.floor(Number(patch.quota) || 0));
-    if (q < usedQuotaOf(id)) throw new Error('Kuota tidak boleh lebih kecil dari jumlah order yang sudah ada.');
+    if (q < usedQuotaOf(id, p.quota_reset_at)) throw new Error('Kuota tidak boleh lebih kecil dari jumlah order yang sudah ada.');
     p.quota = q;
   }
   if (patch.name) p.name = patch.name;
@@ -266,7 +273,7 @@ export function createOrder(input, actorId) {
   const st = db.marketplaceStores.find((x) => x.id === input.store_id);
   if (!st) throw new Error('Toko marketplace tidak ditemukan.');
   if (!st.is_active) throw new Error(`Toko ${st.name} sedang nonaktif.`);
-  if (usedQuotaOf(p.id) >= p.quota) {
+  if (usedQuotaOf(p.id, p.quota_reset_at) >= p.quota) {
     throw new Error(`Kuota produk ${p.name} sudah habis!`);
   }
   const o = {

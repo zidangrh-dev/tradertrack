@@ -84,6 +84,13 @@ UPDATE marketplace_stores SET has_barcode = true
   WHERE has_barcode = false AND name ILIKE '%roxy%'
     AND NOT EXISTS (SELECT 1 FROM marketplace_stores WHERE has_barcode = true);
 
+-- Penanda kapan kuota produk terakhir dikosongkan. Jumlah terpakai tidak
+-- disimpan sebagai angka melainkan dihitung ulang dari tabel orders, sehingga
+-- tanpa penanda ini order lama terus ikut terhitung setelah reset: admin
+-- menambah 1 kuota tetapi sisanya tetap 0 karena masih dikurangi order lama.
+-- NULL berarti produk belum pernah direset -> seluruh order dihitung.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS quota_reset_at timestamptz;
+
 -- Kolom menyusul untuk database lama: urutan kanban berbasis perpindahan status.
 -- Backfill memakai jejak waktu terbaik yang ada, bukan now(), agar urutan awal
 -- tidak jadi acak — semua baris lama kebagian stempel yang sama.

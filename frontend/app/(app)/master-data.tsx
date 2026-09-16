@@ -336,7 +336,7 @@ export default function MasterData() {
           <View style={styles.confirmIcon}><Text style={styles.confirmIconText}>!</Text></View>
           <Text style={styles.confirmTitle}>Apakah Anda yakin?</Text>
           <Text style={styles.confirmMessage}>
-            Kuota {editingItem?.name ? `"${editingItem.name}" ` : ''}akan dikosongkan menjadi 0. Produk tidak bisa dipesan sampai Anda menambahkan kuota lagi. {editingItem?.used_quota ? `${editingItem.used_quota} order yang sudah tercatat tidak terhapus.` : ''}
+            Kuota {editingItem?.name ? `"${editingItem.name}" ` : ''}akan dikosongkan menjadi 0 dan perhitungan dimulai dari nol. Produk tidak bisa dipesan sampai Anda menambahkan kuota lagi. {editingItem?.used_quota ? `${editingItem.used_quota} order yang sudah tercatat tidak terhapus, hanya berhenti dihitung sebagai kuota terpakai.` : ''}
           </Text>
           <View style={styles.confirmActions}>
             <Button label="Batal" variant="secondary" onPress={() => setResetConfirm(false)} />
