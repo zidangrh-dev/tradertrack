@@ -24,6 +24,7 @@ function toView(row, threshold) {
     updated_at: new Date(rest.updated_at).toISOString(),
     picked_up_at: rest.picked_up_at ? new Date(rest.picked_up_at).toISOString() : null,
     completed_at: rest.completed_at ? new Date(rest.completed_at).toISOString() : null,
+    copied_at: rest.copied_at ? new Date(rest.copied_at).toISOString() : null,
     is_pending: pending,
   };
 }
@@ -352,6 +353,8 @@ export default (pool) => {
     if (query.trader) { conds.push(`o.trader_id = $${vals.length + 1}`); vals.push(query.trader); }
     if (query.from) { conds.push(`o.created_at >= $${vals.length + 1}`); vals.push(query.from); }
     if (query.to) { conds.push(`o.created_at <= $${vals.length + 1}`); vals.push(query.to); }
+    if (query.copied === 'belum') conds.push('o.copied_at IS NULL');
+    if (query.copied === 'sudah') conds.push('o.copied_at IS NOT NULL');
     const where = conds.length ? ` WHERE ${conds.join(' AND ')}` : '';
     const threshold = (await S()).pending_threshold_hours;
 
@@ -682,6 +685,26 @@ export default (pool) => {
     return getOrder(id);
   };
 
+  // Tandai order sudah ikut tersalin ke papan klip. Bukan perubahan data order,
+  // jadi updated_at & status_changed_at sengaja tidak disentuh: menyalin tidak
+  // boleh menggeser urutan kanban maupun me-reset jam tertunda.
+  // traderId != null membatasi penandaan ke order milik trader itu sendiri,
+  // ditegakkan di query supaya 50 id tidak berarti 50 pemeriksaan bolak-balik.
+  const markCopied = async (ids, traderId = null) => {
+    if (!ids.length) return { marked: 0, copied_at: null };
+    const args = [ids];
+    let sql = `UPDATE orders SET copied_at = now() WHERE id = ANY($1::uuid[])`;
+    if (traderId) { args.push(traderId); sql += ` AND trader_id = $2`; }
+    const { rows } = await pool.query(`${sql} RETURNING copied_at`, args);
+    return { marked: rows.length, copied_at: rows[0]?.copied_at ?? null };
+  };
+
+  const clearCopied = async (id) => {
+    await getOrder(id); // pastikan order ada — lempar 'Order tidak ditemukan'
+    await pool.query(`UPDATE orders SET copied_at = NULL WHERE id = $1`, [id]);
+    return getOrder(id);
+  };
+
   const reopen = async (id, actorId) => {
     const o = await getOrder(id);
     if (o.status !== 'selesai') throw new Error('Hanya order Selesai yang dapat dibuka kembali.');
@@ -812,6 +835,6 @@ export default (pool) => {
     settings, settingsPatch, listMarketplaceStores, createMarketplaceStore, setStoreBarcode, deleteMarketplaceStore, users, userByUsername, userById, photoOwner, setLastLogin,
     activeAdminCount, activeSuperadminCount, createUser, updateUser, deleteUser, listProducts, createProduct, addProductQuota, updateProduct, resetProductQuota, deleteProduct,
     orderByNumber, getOrder, listOrders, createOrder, updateStatus, scan, pickupOrder, donePickup, attachBarcode, hasOrderProof, clearBarcode,
-    detail, uploadPhoto, deletePhoto, completeOrder, markProblem, clearProblem, reopen, deleteOrder, editOrder, reports,
+    detail, uploadPhoto, deletePhoto, completeOrder, markProblem, clearProblem, markCopied, clearCopied, reopen, deleteOrder, editOrder, reports,
   };
 };

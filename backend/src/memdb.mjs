@@ -247,6 +247,8 @@ export function listOrders(query = {}) {
   if (query.trader) out = out.filter((o) => o.trader_id === query.trader);
   if (query.from) out = out.filter((o) => o.created_at >= query.from);
   if (query.to) out = out.filter((o) => o.created_at <= query.to);
+  if (query.copied === 'belum') out = out.filter((o) => !o.copied_at);
+  if (query.copied === 'sudah') out = out.filter((o) => !!o.copied_at);
   // Urut berdasarkan perpindahan status terakhir (selaras jalur SQL): kartu yang
   // baru digeser naik ke atas, unggah foto tidak mengubah urutan.
   out.sort((a, b) => {
@@ -285,7 +287,7 @@ export function createOrder(input, actorId) {
     problem_reason: null, barcode_path: null, photo_count: 0, created_at: now(),
     // Order baru mengikuti aturan bukti ganda (barcode + foto bukti order).
     requires_dual_evidence: !!st.has_barcode,
-    picked_up_at: null, completed_at: null, status_changed_at: now(), updated_at: now(),
+    picked_up_at: null, completed_at: null, copied_at: null, status_changed_at: now(), updated_at: now(),
   };
   db.orders.unshift(o);
   pushEvent(o.id, actorId, 'created', null, 'data_masuk', 'Order dibuat');
@@ -507,6 +509,29 @@ export function clearProblem(id, actorId) {
   o.problem_reason = null;
   o.updated_at = now();
   pushEvent(id, actorId, 'problem_cleared', null, null, null);
+  return withMeta(o);
+}
+
+// Tandai order sudah ikut tersalin ke papan klip. Bukan perubahan data order,
+// jadi updated_at & status_changed_at sengaja tidak disentuh: menyalin tidak
+// boleh menggeser urutan kanban maupun me-reset jam tertunda.
+// traderId != null membatasi penandaan ke order milik trader itu sendiri.
+export function markCopied(ids, traderId = null) {
+  const stempel = now();
+  let jumlah = 0;
+  for (const id of ids) {
+    const o = db.orders.find((x) => x.id === id);
+    if (!o) continue; // id tak dikenal diabaikan, bukan error
+    if (traderId && o.trader_id !== traderId) continue;
+    o.copied_at = stempel;
+    jumlah += 1;
+  }
+  return { marked: jumlah, copied_at: stempel };
+}
+
+export function clearCopied(id) {
+  const o = findOrder(id);
+  o.copied_at = null;
   return withMeta(o);
 }
 

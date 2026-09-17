@@ -56,6 +56,9 @@ export interface Order {
   created_at: string;
   picked_up_at: string | null;
   completed_at: string | null;
+  /** Waktu order terakhir ikut tersalin ke papan klip. NULL = belum pernah.
+   *  Dipakai memisahkan daftar yang sudah dikirim ke user dari yang belum. */
+  copied_at: string | null;
   /** Waktu perpindahan status terakhir — dasar urutan kanban & jam tertunda.
    *  Sengaja tidak ikut naik saat unggah foto atau edit order. */
   status_changed_at: string;

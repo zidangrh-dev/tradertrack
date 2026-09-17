@@ -100,6 +100,12 @@ UPDATE orders SET status_changed_at = COALESCE(completed_at, picked_up_at, creat
 ALTER TABLE orders ALTER COLUMN status_changed_at SET DEFAULT now();
 ALTER TABLE orders ALTER COLUMN status_changed_at SET NOT NULL;
 
+-- Penanda kapan order terakhir ikut tersalin ke papan klip. Dipakai memisahkan
+-- daftar yang sudah dikirim ke user dari yang belum, sehingga salinan siang
+-- hari tidak mengulang isi salinan pagi. NULL = belum pernah disalin, jadi
+-- order lama otomatis dianggap belum (tidak perlu backfill).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS copied_at timestamptz;
+
 -- Role superadmin: constraint lama hanya mengizinkan admin/trader, jadi harus
 -- diganti sebelum ada baris ber-role superadmin.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
@@ -113,6 +119,8 @@ ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('data_ma
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_status_changed_at ON orders(status_changed_at DESC);
+-- Parsial: yang dicari selalu "belum disalin", baris tersalin tidak perlu diindeks.
+CREATE INDEX IF NOT EXISTS idx_orders_belum_disalin ON orders(created_at) WHERE copied_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_trader_id ON orders(trader_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);

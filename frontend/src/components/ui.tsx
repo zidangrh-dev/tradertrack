@@ -775,7 +775,12 @@ export function OrderCard({
       {/* Identitas: nomor pesanan memimpin; status & menu terkunci di kanan. */}
       <View style={styles.orderTop}>
         <View style={styles.orderIdent}>
-          <Text style={styles.orderNumber} numberOfLines={1}>{order.order_number}</Text>
+          <View style={styles.orderNumberRow}>
+            <Text style={styles.orderNumber} numberOfLines={1}>{order.order_number}</Text>
+            {!!order.copied_at && (
+              <Text style={styles.copiedMark} accessibilityLabel="Sudah disalin">✓</Text>
+            )}
+          </View>
           <Text style={styles.orderMeta} numberOfLines={1}>
             {order.store_name} · {order.recipient_name} · {pickupMethodLabel[order.pickup_method]}
           </Text>
@@ -1138,6 +1143,9 @@ const styles = StyleSheet.create({
   orderTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
   // Nomor pesanan marketplace (18 digit) memimpin hirarki: dipakai saat
   // mencocokkan resi fisik. Angka tabular agar berbaris antar-kartu.
+  orderNumberRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  // Penanda sudah disalin — senada dengan penanda bukti lengkap.
+  copiedMark: { fontSize: 12, fontWeight: '800', color: proofOkColor },
   orderNumber: {
     fontSize: 15, fontWeight: '800', color: colors.text,
     fontVariant: ['tabular-nums'], letterSpacing: -0.1,

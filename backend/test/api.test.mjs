@@ -2050,3 +2050,98 @@ describe('CF14 Zaydan Ambilan GJM: barcode tidak wajib', () => {
     assert.equal(status, 200);
   });
 });
+
+describe('CF15 Penanda salin: daftar siang tidak mengulang salinan pagi', () => {
+  let admin, trader, produkSl;
+  before(async () => {
+    admin = await login('admin', 'admin');
+    trader = await login('nabila', 'trader');
+    await initOrderDefaults(admin);
+    const nama = `Produk Salin ${Date.now()}`;
+    const { data } = await client(admin).post('/api/products', { name: nama, quota: 60 });
+    produkSl = data.find((p) => p.name === nama).id;
+  });
+
+  const buatOrder = async (token = admin) => {
+    const { data } = await client(token).post('/api/orders', order({ product_id: produkSl }));
+    return data;
+  };
+
+  test('tandai salin → copied_at terisi, filter belum mengecualikannya', async () => {
+    const pagi = await buatOrder();
+    const { data: awal } = await client(admin).get(`/api/orders/${pagi.id}/detail`);
+    assert.equal(awal.copied_at, null, 'order baru belum pernah disalin');
+
+    const { status, data } = await client(admin).post('/api/orders/mark-copied', { ids: [pagi.id] });
+    assert.equal(status, 200);
+    assert.equal(data.marked, 1);
+
+    const { data: sesudah } = await client(admin).get(`/api/orders/${pagi.id}/detail`);
+    assert.ok(sesudah.copied_at, 'copied_at terisi');
+
+    // Inti fitur: salinan siang tidak lagi memuat order pagi.
+    const { data: belum } = await client(admin).get('/api/orders?copied=belum&per_page=200');
+    assert.ok(!belum.items.some((x) => x.id === pagi.id), 'order pagi tidak muncul di daftar belum disalin');
+    const { data: sudah } = await client(admin).get('/api/orders?copied=sudah&per_page=200');
+    assert.ok(sudah.items.some((x) => x.id === pagi.id), 'muncul di daftar sudah disalin');
+  });
+
+  test('batal tandai mengembalikan order ke daftar belum disalin', async () => {
+    const o = await buatOrder();
+    await client(admin).post('/api/orders/mark-copied', { ids: [o.id] });
+
+    const { status, data } = await client(admin).del(`/api/orders/${o.id}/copied`);
+    assert.equal(status, 200);
+    assert.equal(data.copied_at, null, 'penanda dicabut');
+
+    const { data: belum } = await client(admin).get('/api/orders?copied=belum&per_page=200');
+    assert.ok(belum.items.some((x) => x.id === o.id), 'muncul lagi di daftar belum disalin');
+  });
+
+  test('menandai TIDAK menggeser urutan maupun jam tertunda', async () => {
+    const o = await buatOrder();
+    const { data: sebelum } = await client(admin).get(`/api/orders/${o.id}/detail`);
+
+    await client(admin).post('/api/orders/mark-copied', { ids: [o.id] });
+    const { data: sesudah } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.equal(sesudah.status_changed_at, sebelum.status_changed_at, 'stempel status tidak bergerak');
+    assert.equal(sesudah.updated_at, sebelum.updated_at, 'updated_at tidak bergerak');
+  });
+
+  test('beberapa order sekaligus + id tak dikenal diabaikan', async () => {
+    const a = await buatOrder();
+    const b = await buatOrder();
+    const { status, data } = await client(admin).post('/api/orders/mark-copied', {
+      ids: [a.id, b.id, '00000000-0000-0000-0000-000000000000'],
+    });
+    assert.equal(status, 200);
+    assert.equal(data.marked, 2, 'id tak dikenal diabaikan, bukan error');
+  });
+
+  test('daftar id kosong → 400', async () => {
+    const { status } = await client(admin).post('/api/orders/mark-copied', { ids: [] });
+    assert.equal(status, 400);
+  });
+
+  test('trader tidak bisa menandai order milik orang lain', async () => {
+    const milikAdmin = await buatOrder(admin);
+    const { data } = await client(trader).post('/api/orders/mark-copied', { ids: [milikAdmin.id] });
+    assert.equal(data.marked, 0, 'order orang lain tidak ikut tertandai');
+
+    const { data: cek } = await client(admin).get(`/api/orders/${milikAdmin.id}/detail`);
+    assert.equal(cek.copied_at, null, 'penanda tidak berubah');
+  });
+
+  test('trader bisa menandai ordernya sendiri', async () => {
+    const milikTrader = await buatOrder(trader);
+    const { data } = await client(trader).post('/api/orders/mark-copied', { ids: [milikTrader.id] });
+    assert.equal(data.marked, 1);
+  });
+
+  test('batal tandai order orang lain → 403', async () => {
+    const milikAdmin = await buatOrder(admin);
+    await client(admin).post('/api/orders/mark-copied', { ids: [milikAdmin.id] });
+    const { status } = await client(trader).del(`/api/orders/${milikAdmin.id}/copied`);
+    assert.equal(status, 403);
+  });
+});

@@ -227,13 +227,34 @@ const uploadTransfer = makeUpload(MAX_TRANSFER_PROOF);
   // ---------- Orders ----------
   // Trader hanya melihat order miliknya sendiri; admin melihat semua (filter trader opsional).
   r.get('/orders', requireAuth, asyncH(async (req, res) => {
-    const { q, status, pickup_method, page, per_page, from, to } = req.query;
+    const { q, status, pickup_method, page, per_page, from, to, copied } = req.query;
     // Toko boleh multi (koma): ?store=A,B → array. Tunggal tetap didukung.
     const store = req.query.store ? String(req.query.store).split(',').filter(Boolean) : undefined;
     // Produk juga multi (koma): ?product=A,B → array. Tunggal tetap didukung.
     const product = req.query.product ? String(req.query.product).split(',').filter(Boolean) : undefined;
     const trader = isAdminLevel(req.user.role) ? req.query.trader : req.user.id;
-    ok(res, await repo.listOrders({ q, status, pickup_method, store, product, trader, page, per_page, from, to }));
+    ok(res, await repo.listOrders({ q, status, pickup_method, store, product, trader, page, per_page, from, to, copied }));
+  }));
+
+  // Tandai order sudah ikut tersalin ke papan klip. Dipakai memisahkan daftar
+  // yang sudah dikirim ke user dari yang belum — salinan siang tidak mengulang
+  // isi salinan pagi. Trader hanya boleh menandai order miliknya sendiri.
+  r.post('/orders/mark-copied', requireAuth, asyncH(async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Daftar id order wajib diisi.' });
+    // Batas sejajar per_page maksimum: satu halaman daftar order.
+    if (ids.length > 200) return res.status(400).json({ error: 'Maksimal 200 order sekali tandai.' });
+    const hasil = await repo.markCopied(ids, isAdminLevel(req.user.role) ? null : req.user.id);
+    emit();
+    ok(res, hasil);
+  }));
+
+  // Batal tandai — daftar bisa dikirim ulang bila ada koreksi.
+  r.delete('/orders/:id/copied', requireAuth, asyncH(async (req, res) => {
+    await orderFor(req, req.params.id);
+    const order = await repo.clearCopied(req.params.id);
+    emit();
+    ok(res, order);
   }));
 
   r.post('/orders', requireAuth, asyncH(async (req, res) => {

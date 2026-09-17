@@ -314,6 +314,11 @@ const remote = {
   markProblem: (id: string, reason: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'PATCH', body: { reason } }),
   /** Cabut tanda bermasalah — idempoten, aman dipanggil tanpa cek lebih dulu. */
   clearProblem: (id: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'DELETE' }),
+  /** Tandai order sudah ikut tersalin ke papan klip. */
+  markCopied: (ids: string[]) =>
+    http<{ marked: number; copied_at: string | null }>('/api/orders/mark-copied', { method: 'POST', body: { ids } }),
+  /** Batal tandai — daftar bisa dikirim ulang bila ada koreksi. */
+  clearCopied: (id: string) => http<OrderView>(`/api/orders/${id}/copied`, { method: 'DELETE' }),
   reopen: (id: string) => http<OrderView>(`/api/orders/${id}/reopen`, { method: 'PATCH' }),
   deleteOwnOrder: (id: string) => http<void>(`/api/orders/${id}`, { method: 'DELETE' }),
   editOwnOrder: (id: string, patch: Partial<Order>) => http<OrderView>(`/api/orders/${id}`, { method: 'PATCH', body: patch }),

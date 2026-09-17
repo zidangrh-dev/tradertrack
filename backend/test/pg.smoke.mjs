@@ -318,3 +318,34 @@ assert.notEqual(
   'perpindahan status menggeser status_changed_at',
 );
 assert.ok(await posisiUrut(urutA.id) < await posisiUrut(urutB.id), 'setelah digeser A naik di atas B');
+
+// Penanda salin di jalur SQL: memisahkan daftar yang sudah dikirim ke user
+// dari yang belum. Bukan perubahan data order, jadi tidak menggeser urutan.
+const slnA = await mkFlow('SLN-A');
+const slnB = await mkFlow('SLN-B');
+const sebelumSalin = await repo.getOrder(slnA.id);
+assert.equal(sebelumSalin.copied_at, null, 'order baru belum pernah disalin');
+
+const hasilSalin = await repo.markCopied([slnA.id, '00000000-0000-0000-0000-000000000000']);
+assert.equal(hasilSalin.marked, 1, 'id tak dikenal diabaikan');
+const sesudahSalin = await repo.getOrder(slnA.id);
+assert.ok(sesudahSalin.copied_at, 'copied_at terisi');
+assert.equal(
+  sesudahSalin.status_changed_at, sebelumSalin.status_changed_at,
+  'menandai tidak menggeser status_changed_at',
+);
+assert.equal(sesudahSalin.updated_at, sebelumSalin.updated_at, 'updated_at juga tidak bergerak');
+
+const belumSalin = await repo.listOrders({ copied: 'belum', per_page: 200 });
+assert.ok(!belumSalin.items.some((x) => x.id === slnA.id), 'yang sudah disalin tersaring keluar');
+assert.ok(belumSalin.items.some((x) => x.id === slnB.id), 'yang belum tetap muncul');
+
+const sudahSalin = await repo.listOrders({ copied: 'sudah', per_page: 200 });
+assert.ok(sudahSalin.items.some((x) => x.id === slnA.id), 'filter sudah disalin bekerja');
+
+const dicabut = await repo.clearCopied(slnA.id);
+assert.equal(dicabut.copied_at, null, 'penanda bisa dicabut untuk kirim ulang');
+
+// Penandaan trader dibatasi ke ordernya sendiri (ditegakkan di query).
+const asing = await repo.markCopied([slnB.id], '00000000-0000-0000-0000-000000000001');
+assert.equal(asing.marked, 0, 'order milik orang lain tidak ikut tertandai');
