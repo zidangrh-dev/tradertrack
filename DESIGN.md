@@ -31,6 +31,28 @@ sudah hafal jalannya. Bukan halaman jualan, bukan etalase.
 - **Tanpa dekorasi.** Tidak ada gradien, ilustrasi, ikon dekoratif, atau animasi
   yang tidak menjelaskan apa pun.
 
+## Dial
+
+`ENERGY 2 / RHYTHM 2 / MOTION 1`
+
+Padat bukan berarti rata. Halaman yang setiap elemennya berbobot sama menuntut
+mata bekerja lebih keras, bukan lebih ringan: kalau semuanya penting, tidak ada
+yang penting.
+
+- **ENERGY 2.** Satu angka boleh besar bila ia memang induk dari angka lain.
+  Analytics memakai 44px untuk total order karena total adalah jumlah dari empat
+  status di bawahnya. Bobot itu tidak boleh diberikan dua kali dalam satu layar.
+- **RHYTHM 2.** Bagian boleh berbeda komposisi bila isinya memang berbeda bobot.
+  Panel yang menuntut tindakan menaikkan nada; panel rekap tidak. Perbedaan
+  datang dari keadaan data, bukan dari selera per halaman.
+- **MOTION 1.** Tidak berubah. Gerak hanya untuk menjelaskan perpindahan
+  keadaan. Angka yang berhitung naik dan batang yang tumbuh saat dimuat adalah
+  gerak tanpa penjelasan, dan keduanya sudah dicabut.
+
+Yang tetap terlarang: aksen warna kedua, gradien, bayangan pada permukaan yang
+tidak mengambang, dan ruang kosong tanpa alasan. Naik ke ENERGY 2 dikerjakan
+lewat hierarki dan penahanan diri, bukan lewat tambahan hiasan.
+
 ## Warna
 
 Sumber: `theme.ts`. Palet terang, kontras tinggi, satu warna merek.
@@ -49,7 +71,13 @@ Sumber: `theme.ts`. Palet terang, kontras tinggi, satu warna merek.
 | `faint` | `#8995A3` | hint, placeholder, meta |
 
 Status memakai warna yang sengaja diredam agar tidak berteriak di antara ratusan
-baris: `amber #7A6540`, `blue #1F4B7A`, `green #3E6654`, `red #A34848`.
+baris: `amber #7A6540`, `blue #1F4B7A`, `green #3E6654`, `red #A34848`,
+`teal #0F766E` (done pickup).
+
+Badge Bermasalah dan Tertunda SELALU memakai `problemPalette` dan
+`pendingPalette`, tidak pernah heksadesimal lokal. Analytics pernah memakai
+`#C1433A` sementara halaman lain memakai `#B23E35`, sehingga badge yang sama
+tampil berbeda tergantung halaman.
 
 Badge Bermasalah dan Tertunda punya pasangan sendiri (`problemPalette`,
 `pendingPalette`) — latar sangat terang dengan teks pekat, supaya terbaca tanpa
@@ -68,6 +96,13 @@ Skala padat, karena kepadatan informasi lebih penting daripada keluasan.
 | 11px | label field, badge |
 | 12-13px | isi utama, teks tombol, nilai tabel |
 | 14-15px | judul bagian, keadaan kosong |
+| 19-22px | angka status, angka pengecualian |
+| 24px | judul halaman |
+| 44px | angka induk, satu per layar |
+
+Tiga tingkat teratas adalah perkakas hierarki, bukan gaya. 44px hanya sah untuk
+angka yang merangkum angka lain di layar yang sama, dan tidak boleh muncul dua
+kali. Tanpa aturan itu, skala besar berubah jadi dekorasi.
 
 Bobot bekerja lebih keras daripada ukuran: 600 untuk isi, 700 untuk label dan
 tombol, 800 untuk caption uppercase dan badge. Caption memakai `letterSpacing`
@@ -90,7 +125,14 @@ menggandakan jarak — ini pernah terjadi dan sudah diperbaiki.
 Batas garis 1px `colors.line` dipakai di hampir semua permukaan. Bayangan hanya
 untuk lapisan yang benar-benar mengambang: dropdown dan modal
 (`shadowOpacity` 0.14-0.16, `elevation` 10-12). Kotak pencarian memakai bayangan
-yang nyaris tak terlihat (0.03) yang menguat saat fokus.
+yang nyaris tak terlihat (0.03) yang menguat saat fokus. Warnanya dari
+`shadowColor` di `theme.ts`. Panel dan kartu tidak mengambang, jadi tidak
+berbayang: panel Analytics pernah memakainya dan membuat seluruh halaman
+seperti melayang tanpa ada lapisan yang benar-benar di atas.
+
+Warna bayangan selalu lewat token `shadowColor`. Nilai `#0F162A` pernah
+tertulis langsung di sembilan berkas dan itu bukan pilihan, melainkan salinan
+yang menumpuk.
 
 ## Komponen
 
@@ -104,6 +146,27 @@ yang nyaris tak terlihat (0.03) yang menguat saat fokus.
 - **Table** — header uppercase 10px, baris putih, pemisah 1px.
 - **EmptyState** — kotak bergaris dengan padding vertikal lega (56), satu-satunya
   tempat ruang kosong dipakai dengan sengaja.
+- **Panel** — judul, pil jumlah baris, subjudul opsional. `alert` menambah garis
+  tepi kiri tebal dan menaikkan nada judul, dipakai HANYA saat daftarnya berisi.
+
+## Ikon
+
+Ionicons (`@expo/vector-icons`), sudah menjadi dependensi sejak awal. Glyph
+Unicode seperti `◒` dan `⌗` sempat dipakai sebagai ikon dan itu keliru: bentuknya
+bergantung pada font sistem, jadi rupanya berubah antar perangkat dan antara web
+dengan APK.
+
+Ikon harus menerangkan isinya, bukan menghias. Keadaan aktif memakai varian
+pejal, keadaan diam memakai `-outline`. `Button` dan `EmptyState` menerima nama
+Ionicons maupun satu karakter glyph; yang mengandung tanda hubung dibaca sebagai
+nama ikon.
+
+Tidak ada lagi glyph Unicode yang berperan sebagai ikon di seluruh aplikasi.
+`…` dan `·` tetap dipakai karena keduanya tanda baca, bukan ikon.
+
+Ikon navigasi tinggal di `src/lib/navIcons.ts`, satu peta untuk `Sidebar` (layar
+lebar) dan `FloatingTabBar` (HP). Sebelumnya keduanya menyimpan daftar sendiri
+dan sudah menyimpang satu sama lain.
 
 ## Bahasa
 
@@ -118,6 +181,26 @@ barcode tidak akan diproses."*
 Label tombol menyesuaikan keadaan bila artinya berubah — misalnya
 "Tandai sudah diambil" versus "Lampirkan foto & tandai diambil".
 
+## Terjangkau tanpa tetikus
+
+Sasaran sentuh minimal 44px di layar sempit. Ini mengikat elemen yang terlihat
+kecil sekalipun: pil legend Analytics dulu setinggi 24px dan praktis tidak bisa
+disentuh.
+
+Setiap kendali yang memakai `webNoOutline` wajib punya penanda fokus pengganti,
+karena properti itu mencabut outline bawaan browser. `Field` memakai garis tepi
+warna merek dengan latar `primarySoft`; `SearchBox` memakai `searchBoxFocused`.
+Tanpa penanda pengganti, formulir hanya bisa dipakai dengan tetikus.
+
+Kontras minimal 4.5:1 untuk teks kecil. Yang sering lolos dari perhatian adalah
+teks `faint` di atas `surfaceAlt` (hanya 4.03:1) dan teks kecil di atas latar
+badge yang sudah berwarna.
+
+`Pressable` tanpa `onPress` dilarang. Di web ia memasang `cursor: pointer` dan
+`tabindex="0"`, sehingga baris yang hanya dekoratif ikut menjadi perhentian Tab
+yang tidak melakukan apa-apa. Umpan balik baris juga tidak boleh bergantung pada
+`onHoverIn`, karena hover tidak pernah aktif di APK.
+
 ## Jangkauan layar
 
 Web dipakai di desktop dan tablet, APK di ponsel. Titik patah ditentukan di
@@ -127,6 +210,11 @@ komponen lewat `useWindowDimensions`, bukan lewat nilai global:
   gulir mendatar saat ruang kurang.
 - Baris dua kolom pada form menumpuk jadi satu kolom di layar sempit.
 - Sasaran sentuh mengikuti tinggi kendali yang sudah dipatok.
+
+Komponen yang membaca `useWindowDimensions` untuk memutuskan dirinya tidak
+dirender harus menaruh `return null` di BAWAH seluruh hook. `FloatingTabBar`
+pernah memulangkan `null` sebelum `useState`, dan melewati titik patah 900px
+membuat jumlah hook berubah sehingga React membuang seluruh pohon.
 
 ## Yang tidak dilakukan
 
