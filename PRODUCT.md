@@ -4,11 +4,11 @@
 
 ## Platform
 
-web
+web + Android
 
 ## Stack
 
-static HTML/CSS
+Expo React Native (React Native Web untuk browser, APK untuk Android) dengan expo-router. Backend Express + PostgreSQL, realtime lewat Socket.IO.
 
 ## Users
 

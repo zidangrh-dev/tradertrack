@@ -23,9 +23,19 @@ data_masuk ──proses pick up──▶ proses_pick_up ──tandai diambil─�
 ```
 
 1. **Trader input order** → memilih **produk** (dari katalog) dan **toko marketplace** dari dua dropdown terpisah, mengisi nomor pesanan & penerima. Kuota produk dicek saat itu.
-2. **Trader (atau admin) proses pick up** → order berpindah ke `proses_pick_up`. Syarat: order sudah punya ≥1 bukti (foto barcode yang dilampirkan saat input, atau foto yang diunggah saat proses). Pemilik order juga bisa mengunggah/menghapus foto bukti lewat modal detail, persis seperti admin.
+2. **Trader (atau admin) proses pick up** → order berpindah ke `proses_pick_up`. Syarat buktinya bergantung pada **toko** dan **metode pengambilan** (lihat matriks di bawah). Pemilik order juga bisa mengunggah/menghapus foto bukti lewat modal detail, persis seperti admin.
+
+   **Matriks bukti pick up**
+
+   | Toko | Metode | Barcode | Foto bukti order |
+   |---|---|---|---|
+   | `has_barcode: true` | Self Pick Up | **wajib** | **wajib** |
+   | `has_barcode: true` | **Zaydan Ambilan GJM** | tidak wajib | **wajib** |
+   | `has_barcode: false` | keduanya | tidak wajib | ≥1 foto apa saja |
+
+   Zaydan Ambilan GJM mengambil barang tanpa melewati loket penerbit barcode, jadi barcodenya memang tidak pernah ada. Aturan ini **dievaluasi saat pick up**, bukan dibekukan saat order dibuat, sehingga mengubah metode lewat Edit Order langsung berlaku dan tidak menyisakan celah.
 3. **Admin tandai sudah diambil** → wajib ada **1-3 foto pengambilan** (`source: pickup_evidence`) lewat `POST /orders/:id/done-pickup`. Foto boleh dilampirkan **lebih dulu** lewat galeri modal detail (`POST /orders/:id/photos`); yang sudah ada **ikut dihitung**, jadi tombol tandai bisa dipanggil tanpa berkas baru. Jalur `PATCH /orders/:id/status` ke `done_pickup` **ditolak**. Foto pengambilan **hanya boleh diinput admin** — trader dapat melihatnya (read-only) tapi tidak mengunggah/menghapus. Foto itu **terkunci** bagi semua orang begitu order masuk `done_pickup`.
-4. **Admin selesaikan order** → wajib `photo_count >= min_photos` (default 1). Trader **tidak** boleh menyelesaikan order.
+4. **Admin selesaikan order** → wajib melampirkan **bukti transfer** (`source: transfer_proof`, tepat 1) lewat `POST /orders/:id/complete`. Bukti boleh dilampirkan lebih dulu lewat galeri modal detail saat `done_pickup`, lalu tombol Selesaikan tinggal diklik. Jalur `PATCH /orders/:id/status` ke `selesai` **ditolak**. Trader **tidak** boleh menyelesaikan order, tapi **bisa melihat** bukti transfernya (read-only) sebagai tanda pembayaran sudah dikirim. Bukti **terkunci** begitu order `selesai`.
 5. Order bisa ditandai **bermasalah** (alasan wajib) dan tandanya bisa **dicabut** lagi lewat `DELETE /orders/:id/problem`; order `selesai` bisa **dibuka kembali** (reopen) oleh admin.
 
 ### Barcode susulan (tambalan order warisan)
@@ -55,6 +65,7 @@ admin — semua yang bisa dilakukan admin, ditambah kewenangan khusus di bawah.
 | Proses pick up order | Semua | Semua | Miliknya saja |
 | Unggah/hapus foto bukti | Semua (non-selesai) | Semua (non-selesai) | Miliknya saja (non-selesai) |
 | Unggah/hapus **foto pengambilan** (`pickup_evidence`) | ✔ (saat `proses_pick_up`) | ✔ (saat `proses_pick_up`) | ✗ (hanya melihat) |
+| Unggah/hapus **bukti transfer** (`transfer_proof`) | ✔ (saat `done_pickup`) | ✔ (saat `done_pickup`) | ✗ (hanya melihat) |
 | Tandai sudah diambil (done pickup) | ✔ | ✔ | ✗ |
 | Selesaikan order / tandai bermasalah / reopen | ✔ | ✔ | ✗ |
 | Scan resi | ✔ | ✔ | ✗ |
@@ -110,9 +121,9 @@ Kedua repo menghadirkan interface yang sama.
 | `products` | `name` (unik, case-insensitive), `quota` (int ≥ 0), `is_active` — **kuota menempel di sini** |
 | `marketplace_stores` | `name` (unik, case-insensitive), `is_active` |
 | `orders` | `order_number` (unik), `product_name`/`store_name` (denormalisasi utk tampilan), `product_id`/`store_id` (FK), `trader_id`, `status`, `order_amount`, `note`, `is_problem`, `barcode_path`, `photo_count`, waktu (`created_at`, `picked_up_at`, `completed_at`, `status_changed_at`, `updated_at`) |
-| `order_photos` | bukti foto (`file_path`, `source`: `order`/`pickup`/`pickup_evidence`/`kamera`/`berkas`, `uploaded_by`) |
+| `order_photos` | bukti foto (`file_path`, `source`: `order`/`pickup`/`pickup_evidence`/`transfer_proof`/`kamera`/`berkas`, `uploaded_by`) |
 | `order_events` | riwayat status (actor + note + timestamp) |
-| `app_settings` | `pending_threshold_hours`, `min_photos`, `max_photos`, `max_file_mb` |
+| `app_settings` | `pending_threshold_hours`, `max_photos`, `max_file_mb` (`min_photos` masih ada di tabel tapi tidak lagi dipakai: syarat selesai kini bukti transfer) |
 
 `used_quota`/`remaining_quota` produk **bukan kolom** — dihitung dari `COUNT(order)` per `product_id`.
 
@@ -146,10 +157,11 @@ Autentikasi: `POST /login` → JWT → header `Authorization: Bearer <token>`. F
 | `POST /orders/:id/pickup` | pemilik/admin | proses pick up; butuh bukti bila belum ada |
 | `POST /orders/:id/done-pickup` | admin | tandai sudah diambil; total foto pengambilan wajib **1-3** (field `photo`, 0-3 berkas — yang sudah tersimpan ikut dihitung) |
 | `GET /orders/:id/detail` | pemilik/admin | order + foto + riwayat events |
-| `POST /orders/:id/photos` · `DELETE /orders/:id/photos/:photoId` | pemilik/admin | kelola bukti (terkunci saat `selesai`; dibatasi `max_photos`). Foto `pickup_evidence`: unggah/hapus **admin saja**, hanya selama `proses_pick_up`, berkuota sendiri **maks 3** (lepas dari `max_photos`) |
-| `PATCH /orders/:id/status` | admin | `data_masuk` ↔ `selesai` (bukan `proses_pick_up`/`done_pickup` — pakai endpoint khusus) |
+| `POST /orders/:id/photos` · `DELETE /orders/:id/photos/:photoId` | pemilik/admin | kelola bukti (terkunci saat `selesai`; dibatasi `max_photos`). Foto `pickup_evidence`: unggah/hapus **admin saja**, hanya selama `proses_pick_up`, kuota sendiri **maks 3**. Foto `transfer_proof`: unggah/hapus **admin saja**, hanya selama `done_pickup`, kuota sendiri **maks 1**. Keduanya lepas dari `max_photos` |
+| `PATCH /orders/:id/status` | admin | hanya ke `data_masuk`. Tiga status lain punya endpoint sendiri karena mewajibkan bukti foto |
 | `POST /orders/:id/barcode` | pemilik/admin | lampirkan foto barcode pengambilan. Saat `data_masuk` bebas; saat `proses_pick_up` **hanya bila `barcode_path` masih kosong** (tambalan order warisan — lihat §2) |
-| `PATCH /orders/:id/complete` · `:id/problem` · `:id/reopen` | admin | selesaikan / tandai masalah (alasan wajib) / buka kembali |
+| `POST /orders/:id/complete` | admin | selesaikan order; wajib ada **bukti transfer** (field `photo`, 0-1 berkas — yang sudah tersimpan ikut dihitung) |
+| `PATCH /orders/:id/problem` · `:id/reopen` | admin | tandai masalah (alasan wajib) / buka kembali |
 | `DELETE /orders/:id/problem` | admin | cabut tanda bermasalah (alasan dikosongkan, idempoten) |
 | `DELETE /orders/:id` · `PATCH /orders/:id` | pemilik | hapus/edit order sendiri saat `data_masuk` |
 | `GET /reports?range=` | admin | totals, per-trader, rekap per produk, tertunda/bermasalah |
