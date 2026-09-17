@@ -57,7 +57,9 @@ export function Button({
         style,
       ]}
     >
-      {!!icon && <Text style={[styles.buttonIcon, { color: v.fg, fontSize: BTN_FONT[size] + 3 }]}>{icon}</Text>}
+      {!!icon && (icon.includes('-')
+        ? <Ionicons name={icon as React.ComponentProps<typeof Ionicons>['name']} size={BTN_FONT[size] + 3} color={v.fg} />
+        : <Text style={[styles.buttonIcon, { color: v.fg, fontSize: BTN_FONT[size] + 3 }]}>{icon}</Text>)}
       <Text style={[styles.buttonText, { color: v.fg, fontSize: BTN_FONT[size] }]}>{label}</Text>
     </Pressable>
   );
@@ -738,11 +740,18 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   );
 }
 
+// `icon` menerima nama Ionicons ATAU satu karakter glyph. Nama Ionicons selalu
+// mengandung tanda hubung, jadi pembedanya tidak perlu prop tambahan dan
+// pemakaian glyph di halaman lain tetap jalan tanpa disentuh.
 export function EmptyState({ icon, text }: { icon: string; text: string }) {
   return (
     <View style={styles.empty}>
       <View style={styles.emptyIconBox}>
-        <Text style={styles.emptyIcon}>{icon}</Text>
+        {icon.includes('-') ? (
+          <Ionicons name={icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color={colors.primary} />
+        ) : (
+          <Text style={styles.emptyIcon}>{icon}</Text>
+        )}
       </View>
       <Text style={styles.emptyText}>{text}</Text>
     </View>

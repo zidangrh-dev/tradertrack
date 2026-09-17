@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { api, type Reports } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, space, type Status } from '../../src/theme';
+import { colors, pendingPalette, problemPalette, radius, space, type Status } from '../../src/theme';
 import { money } from '../../src/lib/format';
 import { Button, EmptyState, PageHeader, Sheet } from '../../src/components/ui';
 import { Calendar, fmtDate, keyOf, parseKey } from '../../src/components/DateRangePicker';
@@ -12,34 +13,9 @@ import { isAdminLevel } from '../../src/lib/roles';
 const STATUS_META: { key: Status; label: string; color: string }[] = [
   { key: 'data_masuk', label: 'Data masuk', color: colors.amber },
   { key: 'proses_pick_up', label: 'Proses pick up', color: colors.blue },
-  { key: 'done_pickup', label: 'Done pickup', color: '#0F766E' },
+  { key: 'done_pickup', label: 'Done pickup', color: colors.teal },
   { key: 'selesai', label: 'Selesai', color: colors.green },
 ];
-
-/* ---------- Hover helper (web) ---------- */
-
-function Hover({ children, style, hoverStyle }: { children: ReactNode; style?: StyleProp<ViewStyle>; hoverStyle?: StyleProp<ViewStyle> }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <Pressable onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} style={[style, hovered && hoverStyle]}>
-      {children}
-    </Pressable>
-  );
-}
-
-/* ---------- Count-up ---------- */
-
-function useCountUp(target: number, duration = 550) {
-  const anim = useRef(new Animated.Value(0)).current;
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    anim.setValue(0);
-    Animated.timing(anim, { toValue: target, duration, useNativeDriver: false }).start();
-    const id = anim.addListener(({ value }) => setDisplay(Math.round(value)));
-    return () => anim.removeListener(id);
-  }, [target, anim, duration]);
-  return display;
-}
 
 // Pill rentang tanggal — di header kanan (lebar) atau baris aksi sendiri (HP).
 function RangePill({ fromKey, toKey, onPress, flex }: { fromKey: string; toKey: string; onPress: () => void; flex?: boolean }) {
@@ -50,63 +26,68 @@ function RangePill({ fromKey, toKey, onPress, flex }: { fromKey: string; toKey: 
       style={({ pressed }) => [styles.rangePill, flex && styles.rangePillFlex, pressed && { opacity: 0.85 }]}
     >
       <View style={styles.rangePillGlyphBox}>
-        <Text style={styles.rangePillGlyph}>▦</Text>
+        <Ionicons name="calendar-outline" size={13} color={colors.primary} />
       </View>
       <View style={styles.rangePillText}>
         <Text style={styles.rangePillLabel}>Rentang tanggal</Text>
-        <Text style={styles.rangePillValue} numberOfLines={1}>{fmtDate(parseKey(fromKey))} — {fmtDate(parseKey(toKey))}</Text>
+        <Text style={styles.rangePillValue} numberOfLines={1}>{fmtDate(parseKey(fromKey))} s/d {fmtDate(parseKey(toKey))}</Text>
       </View>
-      <Text style={styles.rangePillCaret}>▾</Text>
+      <Ionicons name="chevron-down" size={12} color={colors.faint} />
     </Pressable>
   );
 }
 
-/* ---------- KPI card ---------- */
+/* ---------- Ringkasan status ---------- */
 
-function MetricCard({ label, value, color, danger, wide, dangerSpan }: { label: string; value: number; color: string; danger?: boolean; wide?: boolean; dangerSpan?: boolean }) {
-  const shown = useCountUp(value);
+// Satu angka per status. Ukurannya seragam DI ANTARA sesamanya karena keempatnya
+// memang setara; yang membedakan mereka dari total ada di StatusSummary.
+function StatusFigure({ label, value, pct, color, wide }: { label: string; value: number; pct: number; color: string; wide?: boolean }) {
   return (
-    <Hover
-      style={[
-        styles.metric,
-        !wide && styles.metricMobile,
-        dangerSpan && styles.metricDangerSpan,
-        danger && styles.metricDanger,
-      ]}
-      hoverStyle={styles.metricHover}
-    >
-      <View style={[styles.metricDot, { backgroundColor: color }]} />
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, !wide && styles.metricValueMobile, danger && { color: colors.red }]}>{shown}</Text>
-    </Hover>
+    <View style={[styles.figure, !wide && styles.figureMobile]}>
+      <View style={[styles.figureRule, { backgroundColor: color }]} />
+      <View style={styles.figureRow}>
+        <Text style={styles.figureValue}>{value}</Text>
+        <Text style={styles.figurePct}>{pct}%</Text>
+      </View>
+      <Text style={styles.figureLabel} numberOfLines={1}>{label}</Text>
+    </View>
   );
 }
 
-/* ---------- Animated bar ---------- */
+/* ---------- Bar ---------- */
 
+// Lebar batang langsung dari data, tanpa animasi: refresh realtime terjadi tiap
+// kali ada mutasi order, dan batang yang tumbuh ulang setiap kali membuat
+// seluruh panel bergoyang tanpa menjelaskan apa pun.
 function Bar({ pct, color }: { pct: number; color: string }) {
-  const w = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(w, { toValue: pct, duration: 600, useNativeDriver: false }).start();
-  }, [pct, w]);
   return (
     <View style={styles.barTrack}>
-      <Animated.View
-        style={[
-          styles.barFill,
-          { backgroundColor: color, width: w.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
-        ]}
-      />
+      <View style={[styles.barFill, { backgroundColor: color, width: `${pct}%` }]} />
     </View>
   );
 }
 
 /* ---------- Panel ---------- */
 
-function Panel({ title, subtitle, children, wide }: { title: string; subtitle?: string; children: ReactNode; wide?: boolean }) {
+// `count` dan `alert` memberi panel bobot yang berbeda-beda: RHYTHM 2 menuntut
+// bagian tidak semuanya berkomposisi sama. Panel yang menuntut tindakan menaikkan
+// nada hanya saat benar-benar ada isinya.
+function Panel({ title, subtitle, count, alert, children, wide }: {
+  title: string;
+  subtitle?: string;
+  count?: number;
+  alert?: boolean;
+  children: ReactNode;
+  wide?: boolean;
+}) {
   return (
-    <View style={[styles.panel, !wide && styles.panelMobile]}>
-      <Text style={styles.panelTitle}>{title}</Text>
+    <View style={[styles.panel, !wide && styles.panelMobile, alert && styles.panelAlert]}>
+      <View style={styles.panelHead}>
+        <Text style={[styles.panelTitle, alert && { color: problemPalette.fg }]}>{title}</Text>
+        {count !== undefined && count > 0 && (
+          <Text style={[styles.panelCount, alert && styles.panelCountAlert]}>{count}</Text>
+        )}
+      </View>
       {!!subtitle && <Text style={styles.panelSub} numberOfLines={wide ? undefined : 2}>{subtitle}</Text>}
       {children}
     </View>
@@ -225,59 +206,75 @@ export default function Analytics() {
 
       {renderCal()}
 
-      <View style={[styles.metrics, !wide && styles.metricsMobile]}>
-        <MetricCard label="Total order" value={t.total} color={colors.primary} wide={wide} />
-        <MetricCard label="Data masuk" value={t.data_masuk} color={colors.amber} wide={wide} />
-        <MetricCard label="Proses pick up" value={t.proses_pick_up} color={colors.blue} wide={wide} />
-        <MetricCard label="Done pickup" value={t.done_pickup} color="#0F766E" wide={wide} />
-        <MetricCard label="Selesai" value={t.selesai} color={colors.green} wide={wide} />
-        <MetricCard label="Bermasalah" value={t.bermasalah} color={colors.red} danger dangerSpan wide={wide} />
-      </View>
-
-      <Panel wide={wide} title="Distribusi status" subtitle="Proporsi seluruh order pada rentang terpilih">
-        <View style={styles.distBar}>
-          {STATUS_META.map((s) => {
-            const val = t[s.key];
-            return val > 0 ? <View key={s.key} style={[styles.distSegment, { backgroundColor: s.color, flex: val }]} /> : null;
-          })}
+      {/* Satu focal point halaman: total order, dengan sebarannya sebagai anak
+          kalimat. Enam kartu sebobot dulu menyembunyikan fakta bahwa total
+          adalah JUMLAH dari empat status di bawahnya. */}
+      <View style={[styles.summary, !wide && styles.summaryMobile]}>
+        <View style={styles.summaryHead}>
+          <View style={styles.summaryTotal}>
+            <Text style={styles.summaryCaption}>Total order</Text>
+            <Text style={[styles.summaryValue, !wide && styles.summaryValueMobile]}>{t.total}</Text>
+            <Text style={styles.summaryRange} numberOfLines={1}>
+              {fmtDate(parseKey(fromKey))} s/d {fmtDate(parseKey(toKey))}
+            </Text>
+          </View>
+          {/* Bermasalah hanya muncul saat ada. Kartu permanen bernilai 0 melatih
+              mata untuk mengabaikannya, justru saat isinya paling perlu dilihat. */}
+          {t.bermasalah > 0 && (
+            <View style={styles.summaryProblem}>
+              <Text style={styles.summaryProblemValue}>{t.bermasalah}</Text>
+              <Text style={styles.summaryProblemLabel}>Bermasalah</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.legend}>
+
+        {statusTotal > 0 ? (
+          <View style={styles.distBar}>
+            {STATUS_META.map((s) => {
+              const val = t[s.key];
+              return val > 0 ? <View key={s.key} style={[styles.distSegment, { backgroundColor: s.color, flex: val }]} /> : null;
+            })}
+          </View>
+        ) : (
+          <View style={styles.distBarEmpty} />
+        )}
+
+        <View style={[styles.figures, !wide && styles.figuresMobile]}>
           {STATUS_META.map((s) => (
-            <Hover key={s.key} style={styles.legendItem} hoverStyle={styles.legendItemHover}>
-              <View style={[styles.legendDot, { backgroundColor: s.color }]} />
-              <Text style={styles.legendLabel}>{s.label}</Text>
-              <Text style={styles.legendValue}>{t[s.key]}</Text>
-              <Text style={styles.legendPct}>{pct(t[s.key])}%</Text>
-            </Hover>
+            <StatusFigure key={s.key} label={s.label} value={t[s.key]} pct={pct(t[s.key])} color={s.color} wide={wide} />
           ))}
         </View>
-      </Panel>
+      </View>
 
       {/* Perbandingan antar-trader khusus admin; trader hanya melihat datanya sendiri. */}
       {isAdmin && (
-        <Panel wide={wide} title="Jumlah order per trader" subtitle="Diurutkan menurun · batang = proporsi terhadap total order terbanyak">
-          {data.perTrader.map((r) => (
-            <Hover key={r.trader} style={[styles.traderRow, !wide && styles.traderRowMobile]} hoverStyle={styles.traderRowHover}>
-              <Text style={[styles.traderName, !wide && styles.traderNameMobile]} numberOfLines={1}>{r.trader}</Text>
-              <View style={styles.traderBarWrap}>
-                <Bar pct={Math.round((r.total / maxTrader) * 100)} color={colors.primary} />
-                <View style={styles.traderCounts}>
-                  <Text style={styles.countSelesai}>{r.selesai} selesai</Text>
-                  <Text style={styles.countBelum}>{r.belum_selesai} belum</Text>
+        <Panel wide={wide} title="Jumlah order per trader" count={data.perTrader.length} subtitle="Diurutkan menurun">
+          {data.perTrader.length === 0 ? (
+            <EmptyState icon="people-outline" text="Belum ada order dari trader mana pun pada rentang ini." />
+          ) : (
+            data.perTrader.map((r) => (
+              <View key={r.trader} style={[styles.traderRow, !wide && styles.traderRowMobile]}>
+                <Text style={[styles.traderName, !wide && styles.traderNameMobile]} numberOfLines={1}>{r.trader}</Text>
+                <View style={styles.traderBarWrap}>
+                  <Bar pct={Math.round((r.total / maxTrader) * 100)} color={colors.primary} />
+                  <View style={styles.traderCounts}>
+                    <Text style={styles.countSelesai}>{r.selesai} selesai</Text>
+                    <Text style={styles.countBelum}>{r.belum_selesai} belum</Text>
+                  </View>
                 </View>
+                <Text style={styles.traderTotal}>{r.total}</Text>
               </View>
-              <Text style={styles.traderTotal}>{r.total}</Text>
-            </Hover>
-          ))}
+            ))
+          )}
         </Panel>
       )}
 
-      <Panel wide={wide} title="Rekap performa produk" subtitle="Rekap order per tipe barang (kuota lintas toko) · batang = proporsi nominal terbesar">
+      <Panel wide={wide} title="Rekap performa produk" count={data.perProduk.length} subtitle="Kuota menempel di produk, berlaku lintas toko">
         {data.perProduk.length === 0 ? (
-          <EmptyState icon="▤" text="Belum ada data produk pada rentang ini." />
+          <EmptyState icon="cube-outline" text="Belum ada data produk pada rentang ini." />
         ) : (
           data.perProduk.map((r) => (
-            <Hover key={r.product_name} style={styles.rekapRow} hoverStyle={styles.traderRowHover}>
+            <View key={r.product_name} style={styles.rekapRow}>
               <View style={styles.rekapMain}>
                 <Text style={styles.rekapName} numberOfLines={1}>{r.product_name}</Text>
                 <Text style={styles.rekapSub}>{r.used_quota} order · Sisa kuota {r.remaining_quota}/{r.quota}</Text>
@@ -288,18 +285,24 @@ export default function Analytics() {
                   <Bar pct={Math.round((r.amount / maxAmount) * 100)} color={colors.green} />
                 </View>
               </View>
-            </Hover>
+            </View>
           ))
         )}
       </Panel>
 
-      <Panel wide={wide} title="Order tertunda atau bermasalah" subtitle="Diurutkan dari yang paling lama">
+      <Panel
+        wide={wide}
+        title="Order tertunda atau bermasalah"
+        count={data.delayed.length}
+        alert={data.delayed.length > 0}
+        subtitle="Diurutkan dari yang paling lama"
+      >
         {data.delayed.length === 0 ? (
-          <EmptyState icon="✓" text="Tidak ada order tertunda atau bermasalah pada rentang ini." />
+          <EmptyState icon="checkmark-circle-outline" text="Tidak ada order tertunda atau bermasalah pada rentang ini." />
         ) : (
           data.delayed.map((d, i) =>
             wide ? (
-              <Hover key={i} style={styles.delayedRow} hoverStyle={styles.traderRowHover}>
+              <View key={i} style={styles.delayedRow}>
                 <Text style={styles.delayedOrder} numberOfLines={1}>{d.order_number}</Text>
                 <Text style={styles.delayedProduct} numberOfLines={1}>{d.product_name}</Text>
                 <Text style={styles.delayedTrader} numberOfLines={1}>{d.trader}</Text>
@@ -307,9 +310,9 @@ export default function Analytics() {
                 <Text style={[styles.delayedStatus, d.is_problem ? styles.problemText : styles.pendingText]}>
                   {d.is_problem ? 'Bermasalah' : 'Tertunda'}
                 </Text>
-              </Hover>
+              </View>
             ) : (
-              <Hover key={i} style={styles.delayedCard} hoverStyle={styles.traderRowHover}>
+              <View key={i} style={styles.delayedCard}>
                 <View style={styles.delayedCardTop}>
                   <Text style={styles.delayedCardOrder} numberOfLines={1}>{d.order_number}</Text>
                   <Text style={styles.delayedCardDuration}>{d.duration}</Text>
@@ -320,7 +323,7 @@ export default function Analytics() {
                 <Text style={styles.delayedCardMeta} numberOfLines={1}>
                   {d.product_name} · {d.trader}
                 </Text>
-              </Hover>
+              </View>
             ),
           )
         )}
@@ -330,7 +333,7 @@ export default function Analytics() {
 }
 
 function ExportBtn({ onPress, disabled }: { onPress?: () => void; disabled?: boolean }) {
-  return <Button label="Export CSV" icon="↓" variant="secondary" onPress={onPress ?? (() => undefined)} disabled={disabled} />;
+  return <Button label="Export CSV" icon="download-outline" variant="secondary" onPress={onPress ?? (() => undefined)} disabled={disabled} />;
 }
 
 function downloadCsv(content: string, filename: string) {
@@ -359,66 +362,84 @@ const styles = StyleSheet.create({
   mobileActions: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   // Pill rentang tanggal (pemicu modal kalender) — setinggi tombol Export CSV.
   rangePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, height: 40,
+    flexDirection: 'row', alignItems: 'center', gap: 8, height: 44,
     paddingHorizontal: 12, backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.full,
-    shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
   rangePillFlex: { flex: 1, minWidth: 0 },
   rangePillGlyphBox: { width: 24, height: 24, borderRadius: radius.sm, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  rangePillGlyph: { fontSize: 11, color: colors.primary },
   rangePillText: { flexShrink: 1, minWidth: 0 },
-  rangePillLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.7, color: colors.faint, textTransform: 'uppercase' },
+  // 9px = batas bawah skala caption DESIGN.md. 8px sebelumnya di bawah skala.
+  rangePillLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.7, color: colors.faint, textTransform: 'uppercase' },
   rangePillValue: { fontSize: 11, fontWeight: '700', color: colors.text },
-  rangePillCaret: { fontSize: 9, color: colors.faint },
 
   // Kalender mini di dalam modal
 
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginBottom: space.lg },
-  // HP: dua kolom rata; kartu Bermasalah membentang penuh di bawah.
-  metricsMobile: { gap: 8, paddingHorizontal: 12 },
-  metric: {
-    flexGrow: 1, flexBasis: 180, minWidth: 150,
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line,
-    padding: 14, position: 'relative', overflow: 'hidden',
+  // Blok ringkasan: satu-satunya permukaan halaman yang boleh berteriak.
+  summary: {
+    backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line,
+    marginHorizontal: 20, marginBottom: space.lg, padding: 20, gap: 16,
   },
-  metricMobile: { flexBasis: '46%', minWidth: 0, padding: 12 },
-  metricDangerSpan: { flexBasis: '100%', minWidth: 0 },
-  metricDanger: { backgroundColor: '#FFF7F6', borderColor: '#F5DAD5' },
-  metricHover: { backgroundColor: '#F5F6FA' },
-  metricDot: { width: 8, height: 8, borderRadius: 4, position: 'absolute', top: 12, left: 12 },
-  metricLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, marginLeft: 14 },
-  metricValue: { fontSize: 26, fontWeight: '800', color: colors.text, marginTop: 6, letterSpacing: -0.5 },
-  metricValueMobile: { fontSize: 20 },
+  summaryMobile: { marginHorizontal: 12, padding: 16, gap: 14 },
+  summaryHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  summaryTotal: { flex: 1, minWidth: 0 },
+  summaryCaption: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, color: colors.muted, textTransform: 'uppercase' },
+  // 44px: satu-satunya angka sebesar ini di seluruh aplikasi. Itu yang membuatnya
+  // terbaca sebagai induk, bukan sebagai kartu keenam.
+  summaryValue: { fontSize: 44, fontWeight: '800', color: colors.text, letterSpacing: -1.4, marginTop: 2 },
+  summaryValueMobile: { fontSize: 34, letterSpacing: -1 },
+  summaryRange: { fontSize: 10, color: colors.muted, marginTop: 2 },
+  summaryProblem: {
+    alignItems: 'flex-end', paddingLeft: 16,
+    borderLeftWidth: 1, borderLeftColor: colors.line,
+  },
+  summaryProblemValue: { fontSize: 22, fontWeight: '800', color: problemPalette.fg, letterSpacing: -0.5 },
+  summaryProblemLabel: { fontSize: 10, fontWeight: '700', color: problemPalette.fg, marginTop: 2 },
+
+  // Empat status setara: garis warna tipis di atas angka, tanpa kotak sendiri.
+  // Kartu bergaris penuh dulu memberi bobot yang sama dengan blok induk.
+  figures: { flexDirection: 'row', gap: 20 },
+  figuresMobile: { flexWrap: 'wrap', gap: 14 },
+  figure: { flex: 1, minWidth: 68, gap: 4 },
+  figureMobile: { flexBasis: '44%', flexGrow: 1 },
+  figureRule: { height: 3, borderRadius: radius.full, width: 26 },
+  figureRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  figureValue: { fontSize: 19, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
+  figurePct: { fontSize: 10, fontWeight: '700', color: colors.muted },
+  figureLabel: { fontSize: 10, fontWeight: '600', color: colors.muted },
 
   panel: {
     backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line,
     padding: 18, marginHorizontal: 20, marginBottom: space.lg,
-    shadowColor: '#0F162A', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 1,
   },
+  panelHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   panelTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  // Jumlah baris sebagai pil kecil: menjawab "berapa banyak" tanpa menambah baris teks.
+  panelCount: {
+    fontSize: 10, fontWeight: '800', color: colors.muted, backgroundColor: colors.canvas,
+    borderRadius: radius.full, paddingHorizontal: 7, paddingVertical: 2, overflow: 'hidden',
+  },
+  panelCountAlert: { color: problemPalette.fg, backgroundColor: problemPalette.bg },
   panelSub: { fontSize: 10, color: colors.muted, marginTop: 3, marginBottom: 12 },
   panelMobile: { marginHorizontal: 12, padding: 14 },
+  // Panel yang menuntut tindakan: garis tepi kiri tebal sebagai penanda keadaan,
+  // bukan hiasan. Hanya aktif saat daftarnya benar-benar berisi.
+  panelAlert: { borderLeftWidth: 3, borderLeftColor: problemPalette.fg },
 
-  distBar: { flexDirection: 'row', height: 12, borderRadius: radius.full, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
-  distSegment: { height: 12 },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: 11, paddingVertical: 6 },
-  legendItemHover: { backgroundColor: '#E9ECF3' },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 10, color: colors.muted },
-  legendValue: { fontSize: 11, fontWeight: '800', color: colors.text },
-  legendPct: { fontSize: 10, fontWeight: '700', color: colors.faint },
+  distBar: { flexDirection: 'row', height: 8, borderRadius: radius.full, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
+  distSegment: { height: 8 },
+  // Rentang tanpa order: track kosong tetap dirender supaya tinggi blok tidak
+  // melompat saat data pertama masuk.
+  distBarEmpty: { height: 8, borderRadius: radius.full, backgroundColor: colors.surfaceAlt },
 
   traderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceAlt },
   traderRowMobile: { gap: 8 },
-  traderRowHover: { backgroundColor: '#F7F8FC' },
   traderName: { width: 110, fontSize: 12, fontWeight: '700', color: colors.text },
   traderNameMobile: { flex: 0.6, width: undefined, minWidth: 0 },
   traderBarWrap: { flex: 1, gap: 5 },
   traderCounts: { flexDirection: 'row', gap: 10 },
-  countSelesai: { fontSize: 9, color: '#1F7A4D', fontWeight: '700' },
-  countBelum: { fontSize: 9, color: '#A8610F', fontWeight: '700' },
+  countSelesai: { fontSize: 9, color: colors.green, fontWeight: '700' },
+  countBelum: { fontSize: 9, color: pendingPalette.fg, fontWeight: '700' },
   traderTotal: { fontSize: 15, fontWeight: '800', color: colors.text, minWidth: 28, textAlign: 'right' },
 
   barTrack: { height: 8, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
@@ -436,15 +457,17 @@ const styles = StyleSheet.create({
   delayedOrder: { fontSize: 11, fontWeight: '800', color: colors.primaryMuted, width: 120 },
   delayedProduct: { flex: 1, fontSize: 11, color: colors.muted },
   delayedTrader: { width: 90, fontSize: 10, color: colors.faint },
-  delayedDuration: { fontSize: 10, fontWeight: '700', color: '#C1433A', width: 56, textAlign: 'right' },
+  delayedDuration: { fontSize: 10, fontWeight: '700', color: problemPalette.fg, width: 56, textAlign: 'right' },
   delayedStatus: { fontSize: 9, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
-  problemText: { color: '#C1433A', backgroundColor: '#FCE9E6' },
-  pendingText: { color: '#A8610F', backgroundColor: '#FCF1DE' },
+  // Token bersama, bukan hex lokal: badge yang sama pernah tampil beda warna di
+  // Analytics (#C1433A) dibanding halaman lain (#B23E35).
+  problemText: { color: problemPalette.fg, backgroundColor: problemPalette.bg },
+  pendingText: { color: pendingPalette.fg, backgroundColor: pendingPalette.bg },
 
   // HP: item tertunda jadi kartu dua baris agar tidak sesak satu lajur.
   delayedCard: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceAlt, gap: 4 },
   delayedCardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   delayedCardOrder: { flex: 1, fontSize: 11, fontWeight: '800', color: colors.primaryMuted, minWidth: 0 },
-  delayedCardDuration: { fontSize: 10, fontWeight: '700', color: '#C1433A' },
+  delayedCardDuration: { fontSize: 10, fontWeight: '700', color: problemPalette.fg },
   delayedCardMeta: { fontSize: 10, color: colors.faint },
 });

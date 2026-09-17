@@ -26,7 +26,14 @@ export const colors = {
   blue: '#1F4B7A',
   green: '#3E6654',
   red: '#A34848',
+  // Done pickup: satu-satunya status tanpa warna sendiri sebelum ini, dulu
+  // ditulis langsung sebagai heksadesimal di analytics.tsx.
+  teal: '#0F766E',
 };
+
+// Bayangan bersama. Dipakai HANYA oleh lapisan yang benar-benar mengambang
+// (dropdown, modal, dock) sesuai DESIGN.md. Panel dan kartu tidak memakainya.
+export const shadowColor = '#0F162A';
 
 // Permukaan gelap: latar panggung pratinjau foto + glyph penggantinya.
 export const previewStage = { bg: '#1B2432', glyph: '#93A3B8' };
