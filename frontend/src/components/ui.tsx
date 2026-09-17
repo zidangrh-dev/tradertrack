@@ -106,12 +106,21 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
 
 /* ---------- Form ---------- */
 
-export function Field({ label, hint, style, ...rest }: TextInputProps & { label: string; hint?: string }) {
+export function Field({ label, hint, style, onFocus, onBlur, ...rest }: TextInputProps & { label: string; hint?: string }) {
+  // `webNoOutline` mencabut outline bawaan browser, jadi fokus keyboard WAJIB
+  // punya penanda pengganti. Tanpa ini field hanya bisa dipakai dengan tetikus.
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
-      <TextInput style={[styles.input, webNoOutline, style]} placeholderTextColor={colors.faint} {...rest} />
+      <TextInput
+        style={[styles.input, webNoOutline, focused && styles.inputFocused, style]}
+        placeholderTextColor={colors.faint}
+        onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+        onBlur={(e) => { setFocused(false); onBlur?.(e); }}
+        {...rest}
+      />
     </View>
   );
 }
@@ -1119,6 +1128,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
   },
+  inputFocused: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   // Field kata sandi: wrapper + tombol mata di sisi kanan.
   // Margin pindah ke wrapper supaya toggle (top:0/bottom:0) pas di tengah input.
   pwWrap: { position: 'relative', marginTop: 6 },
