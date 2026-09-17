@@ -437,21 +437,18 @@ export default (pool) => {
       // Jalur proses pick up mewajibkan foto barcode — pakai POST /orders/:id/pickup.
       throw new Error('Foto barcode pengambilan wajib diunggah untuk memproses pick up.');
     }
-    const s = await S();
     const { rows } = await pool.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     const o = rows[0];
     if (!o) throw new Error('Order tidak ditemukan');
     // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai
     // hanya dari done_pickup — order tidak boleh melompati verifikasi.
     if (to === 'done_pickup') {
-      // Jalur wajib lewat unggahan 2 foto pengambilan — POST /orders/:id/done-pickup.
-      throw new Error('Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.');
+      // Jalur wajib lewat unggahan foto pengambilan — POST /orders/:id/done-pickup.
+      throw new Error('Gunakan unggahan foto pengambilan untuk menandai order sudah diambil.');
     }
-    if (to === 'selesai' && o.status !== 'done_pickup') {
-      throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
-    }
-    if (to === 'selesai' && o.photo_count < s.min_photos) {
-      throw new Error(`Minimal ${s.min_photos} foto bukti sebelum order selesai.`);
+    if (to === 'selesai') {
+      // Jalur wajib lewat unggahan bukti transfer — POST /orders/:id/complete.
+      throw new Error('Gunakan unggahan bukti transfer untuk menyelesaikan order.');
     }
     const from = o.status;
     const sets = ['status = $1', 'status_changed_at = now()', 'updated_at = now()'];
@@ -469,7 +466,8 @@ export default (pool) => {
     if (dual?.required) {
       // Aturan bukti ganda (order sejak perubahan alur): barcode pick up DAN
       // foto bukti order harus ada. File di request dihitung sebagai bukti order.
-      if (!dual.hasBarcode) {
+      // Zaydan Ambilan GJM dikecualikan dari barcode; bukti order tetap wajib.
+      if (dual.wajibBarcode && !dual.hasBarcode) {
         throw new Error('Barcode pick up belum dilampirkan. Pesanan tanpa barcode tidak akan diproses.');
       }
       if (!file && !dual.hasOrderProof) {
@@ -501,13 +499,21 @@ export default (pool) => {
   };
 
   // Status bukti untuk aturan ganda: barcode terpasang + ada foto source 'order'.
+  // wajibBarcode dibaca dari metode pengambilan saat pick up (bukan dibekukan
+  // saat order dibuat) supaya perubahan metode lewat Edit Order langsung
+  // berlaku: Zaydan Ambilan GJM tidak melewati loket penerbit barcode.
   const dualState = async (o) => {
     if (!o.requires_dual_evidence) return null;
     const { rows } = await pool.query(
       `SELECT 1 FROM order_photos WHERE order_id = $1 AND source = 'order' LIMIT 1`,
       [o.id],
     );
-    return { required: true, hasBarcode: !!o.barcode_path, hasOrderProof: !!rows[0] };
+    return {
+      required: true,
+      wajibBarcode: o.pickup_method !== 'zaydan_ambilan_gjm',
+      hasBarcode: !!o.barcode_path,
+      hasOrderProof: !!rows[0],
+    };
   };
 
   const scan = async (code, actorId, file = null) => {
@@ -568,7 +574,7 @@ export default (pool) => {
     const o = await getOrder(orderId);
     // Foto pengambilan punya kuota sendiri (ditegakkan di routes): bukti wajib
     // tidak boleh terhalang setelan max_photos yang mengatur foto penyelesaian.
-    if (source !== 'pickup_evidence' && o.photo_count >= s.max_photos) {
+    if (source !== 'pickup_evidence' && source !== 'transfer_proof' && o.photo_count >= s.max_photos) {
       throw new Error(`Maksimal ${s.max_photos} foto per order.`);
     }
     const path = file ? `/uploads/${file.filename}` : `/uploads/demo-${orderId.slice(0, 4)}.jpg`;
@@ -626,17 +632,39 @@ export default (pool) => {
     }
   };
 
-  const completeOrder = async (id, note, actorId) => {
-    const s = await S();
+  // Selesaikan order — syaratnya bukti transfer (divalidasi di routes), bukan
+  // lagi min_photos. `file` boleh null bila buktinya sudah dilampirkan lebih
+  // dulu lewat galeri. Satu transaksi agar foto & status tidak pernah terpisah.
+  const completeOrder = async (id, note, file, actorId) => {
     const o = await getOrder(id);
     if (o.status !== 'done_pickup') {
       throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
     }
-    if (o.photo_count < s.min_photos) throw new Error(`Minimal ${s.min_photos} foto bukti wajib diunggah.`);
     const from = o.status;
-    await pool.query(`UPDATE orders SET status = 'selesai', note = $1, completed_at = now(), status_changed_at = now(), updated_at = now() WHERE id = $2`, [note, id]);
-    await pushEvent(pool, id, actorId, 'completed', from, 'selesai', note);
-    return getOrder(id);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE orders SET status = 'selesai', note = $1, photo_count = photo_count + $2,
+           completed_at = now(), status_changed_at = now(), updated_at = now() WHERE id = $3`,
+        [note, file ? 1 : 0, id],
+      );
+      if (file) {
+        await client.query(
+          `INSERT INTO order_photos (order_id, file_path, file_name, mime_type, file_size, source, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,'transfer_proof',$6)`,
+          [id, `/uploads/${file.filename}`, file.originalname, file.mimetype, file.size, actorId],
+        );
+      }
+      await pushEvent(client, id, actorId, 'completed', from, 'selesai', note);
+      await client.query('COMMIT');
+      return getOrder(id);
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   };
 
   const markProblem = async (id, reason, actorId) => {

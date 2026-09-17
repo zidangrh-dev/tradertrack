@@ -17,7 +17,9 @@ export async function migrate(pool) {
   await pool.query(
     `INSERT INTO app_settings (setting_key, setting_value, description) VALUES
       ('pending_threshold_hours', '3', 'Ambang waktu tertunda (jam)'),
-      ('min_photos', '1', 'Jumlah minimal foto bukti penyelesaian'),
+      -- Warisan: tidak lagi dipakai sebagai syarat menyelesaikan order (kini
+      -- bukti transfer). Dipertahankan agar data & klien lama tidak pecah.
+      ('min_photos', '1', 'Tidak dipakai lagi — syarat selesai kini bukti transfer'),
       ('max_photos', '3', 'Jumlah maksimal foto per order'),
       ('max_file_mb', '20', 'Ukuran maksimal per berkas foto (MB)'),
       ('required_app_version', '', 'Versi APK wajib; kosong = gerbang versi mati'),

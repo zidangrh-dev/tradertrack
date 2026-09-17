@@ -280,7 +280,7 @@ const remote = {
   deleteBarcode: (id: string) => http<OrderView>(`/api/orders/${id}/barcode`, { method: 'DELETE' }),
   detail: (id: string) => http<OrderDetail>(`/api/orders/${id}/detail`),
   /** source 'order' menandai foto bukti order (syarat pick up bersama barcode). */
-  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order' | 'pickup_evidence') => {
+  uploadPhoto: async (id: string, file?: { uri: string; name: string; type: string }, source?: 'order' | 'pickup_evidence' | 'transfer_proof') => {
     if (!file) return http<OrderView>(`/api/orders/${id}/photos`, { method: 'POST' });
     return http<OrderView>(`/api/orders/${id}/photos`, {
       method: 'POST',
@@ -299,7 +299,18 @@ const remote = {
     return http<OrderView>(`/api/orders/${id}/done-pickup`, { method: 'POST', form });
   },
   deletePhoto: (orderId: string, photoId: string) => http<OrderView>(`/api/orders/${orderId}/photos/${photoId}`, { method: 'DELETE' }),
-  completeOrder: (id: string, note: string) => http<OrderView>(`/api/orders/${id}/complete`, { method: 'PATCH', body: { note } }),
+  /** Selesaikan order — wajib ada bukti transfer. Foto opsional bila buktinya
+   *  sudah dilampirkan lebih dulu lewat galeri. */
+  completeOrder: async (id: string, note: string, file?: { uri: string; name: string; type: string }) => {
+    let form: FormData;
+    if (file) {
+      form = await photoForm(file, { note });
+    } else {
+      form = new FormData();
+      form.append('note', note);
+    }
+    return http<OrderView>(`/api/orders/${id}/complete`, { method: 'POST', form });
+  },
   markProblem: (id: string, reason: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'PATCH', body: { reason } }),
   /** Cabut tanda bermasalah — idempoten, aman dipanggil tanpa cek lebih dulu. */
   clearProblem: (id: string) => http<OrderView>(`/api/orders/${id}/problem`, { method: 'DELETE' }),

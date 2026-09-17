@@ -1,12 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { api, type OrderView } from '../../src/lib/api';
 import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
-import { useSettings } from '../../src/hooks/useSettings';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
-import { colors, radius, statusLabel, STATUS_FLOW, webNoOutline, type Status } from '../../src/theme';
+import { colors, pendingPalette, proofChipPalette, radius, statusLabel, STATUS_FLOW, type Status } from '../../src/theme';
 import { durationLabel, isToday, statusColor } from '../../src/lib/format';
 import { Avatar, Button, EmptyState, FlagBadge, PageHeader, SearchInput } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
@@ -66,7 +65,6 @@ function DraggableCard({
         style={({ pressed }) => [
           styles.card,
           order.is_problem && styles.cardProblem,
-          order.status === 'proses_pick_up' && styles.cardPicked,
           pressed && { opacity: 0.92 },
         ]}
       >
@@ -135,7 +133,6 @@ export default function Kanban() {
   const [selected, setSelected] = useState<OrderView | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
-  const settings = useSettings();
 
   const byStatus = useMemo(() => {
     const m = Object.fromEntries(COLUMNS.map((c) => [c, [] as OrderView[]])) as Record<Status, OrderView[]>;
@@ -155,22 +152,24 @@ export default function Kanban() {
   const searching = search.trim().length > 0;
 
   const move = async (o: OrderView, to: Status) => {
-    // Perpindahan ke Selesai — foto bukti cukup → selesaikan langsung; kurang → buka modal.
+    // Perpindahan ke Selesai wajib bukti transfer. Sudah ada → selesaikan
+    // langsung; belum → buka modal agar admin bisa melampirkannya.
     if (to === 'selesai') {
-      if (o.photo_count >= settings.min_photos) {
-        try {
-          await api.completeOrder(o.id, '');
-          refresh();
-        } catch (e) {
-          notify('Gagal', (e as Error).message);
+      try {
+        const { photos } = await api.detail(o.id);
+        if (!photos.some((p) => p.source === 'transfer_proof')) {
+          setSelected(o);
+          return;
         }
-        return;
+        await api.completeOrder(o.id, '');
+        refresh();
+      } catch (e) {
+        notify('Gagal', (e as Error).message);
       }
-      setSelected(o);
       return;
     }
     if (to === 'done_pickup') {
-      // Wajib lampirkan 2 foto pengambilan → buka modal detail untuk alurnya.
+      // Wajib lampirkan foto pengambilan → buka modal detail untuk alurnya.
       setSelected(o);
       return;
     }
@@ -330,7 +329,6 @@ const styles = StyleSheet.create({
     padding: 12, shadowColor: '#0F162A', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 3 }, shadowRadius: 10, elevation: 1,
   },
   cardProblem: { borderTopWidth: 3, borderTopColor: colors.red },
-  cardPicked: { borderColor: '#C9DAF5', backgroundColor: '#FAFCFF' },
   // minHeight menyamakan tinggi kartu dalam satu kolom: ruang badge & nama
   // produk 2 baris direservasi walau kartu tidak memilikinya.
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6, minHeight: 24 },
@@ -349,11 +347,11 @@ const styles = StyleSheet.create({
     fontSize: 9, color: colors.faint, fontWeight: '700',
     backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden',
   },
-  durationPending: { color: '#A8610F', backgroundColor: '#FCF1DE' },
+  durationPending: { color: pendingPalette.fg, backgroundColor: pendingPalette.bg },
   // actionZone: tinggi kartu konsisten — kolom data_masuk & proses_pick_up
   // memakai area ini untuk tombol sm 32px (margin 10 atas), kolom selesai
   // memakai chip foto yang lebih pendek, jadi tinggi area dipatok 32px.
   actionZone: { height: 32, justifyContent: 'flex-end', marginTop: 10 },
   proofChip: { alignSelf: 'flex-start' },
-  proofText: { fontSize: 9, fontWeight: '800', color: '#1F7A4D', backgroundColor: '#E3F5EC', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: 'hidden' },
+  proofText: { fontSize: 9, fontWeight: '800', color: proofChipPalette.fg, backgroundColor: proofChipPalette.bg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, overflow: 'hidden' },
 });

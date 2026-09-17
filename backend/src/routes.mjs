@@ -10,10 +10,12 @@ import { gateEnabled, isGatedPlatform, versionMatches } from './appVersion.mjs';
 import { cekLogin, catatGagal, resetGagal } from './loginGuard.mjs';
 
 const METHOD_WHITELIST = ['zaydan_ambilan_gjm', 'self_pick_up'];
-// proses_pick_up dikecualikan: wajib lewat POST /orders/:id/pickup (butuh foto).
-const STATUS_WHITELIST = ['data_masuk', 'done_pickup', 'selesai'];
+// Hanya data_masuk yang boleh lewat PATCH /status. Tiga status lain punya
+// endpoint sendiri karena masing-masing mewajibkan bukti foto:
+// proses_pick_up → /pickup, done_pickup → /done-pickup, selesai → /complete.
+const STATUS_WHITELIST = ['data_masuk'];
 // 'order' menandai foto bukti order — syarat pick up bersama barcode.
-const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas', 'pickup_evidence'];
+const PHOTO_SOURCE_WHITELIST = ['order', 'kamera', 'berkas', 'pickup_evidence', 'transfer_proof'];
 
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/bmp']);
 const MAX_MULTER_MB = 50; // pagar keras DoS; batas bisnis diambil dari setting max_file_mb.
@@ -116,6 +118,9 @@ const upload = makeUpload(1);
 // Foto pengambilan: 1-3 per order (batas sendiri, lepas dari max_photos).
 const MAX_PICKUP_EVIDENCE = 3;
 const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
+// Bukti transfer: tepat 1 per order, syarat wajib sebelum order diselesaikan.
+const MAX_TRANSFER_PROOF = 1;
+const uploadTransfer = makeUpload(MAX_TRANSFER_PROOF);
 
   const r = Router();
 
@@ -307,7 +312,11 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
       return res.status(400).json({ error: 'Gunakan unggahan foto barcode untuk memproses pick up.' });
     }
     if (to === 'done_pickup') {
-      return res.status(400).json({ error: 'Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.' });
+      return res.status(400).json({ error: 'Gunakan unggahan foto pengambilan untuk menandai order sudah diambil.' });
+    }
+    // Tanpa ini jalur status jadi pintu belakang yang melewati syarat bukti transfer.
+    if (to === 'selesai') {
+      return res.status(400).json({ error: 'Gunakan unggahan bukti transfer untuk menyelesaikan order.' });
     }
     if (!STATUS_WHITELIST.includes(to)) return res.status(400).json({ error: 'Status tujuan tidak valid.' });
     const order = await repo.updateStatus(req.params.id, to, req.user.id);
@@ -393,6 +402,20 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
         return res.status(400).json({ error: `Maksimal ${MAX_PICKUP_EVIDENCE} foto pengambilan per order.` });
       }
     }
+    // Bukti transfer milik admin juga: trader hanya boleh melihatnya. Dilampirkan
+    // saat Done pickup (boleh menyicil sebelum menekan Selesaikan), lalu membeku.
+    if (source === 'transfer_proof') {
+      if (!isAdminLevel(req.user.role)) {
+        return res.status(403).json({ error: 'Hanya admin yang boleh melampirkan bukti transfer.' });
+      }
+      if (order.status !== 'done_pickup') {
+        return res.status(400).json({ error: 'Bukti transfer hanya bisa dilampirkan saat order berstatus Done pickup.' });
+      }
+      const { photos } = await repo.detail(req.params.id);
+      if (photos.filter((p) => p.source === 'transfer_proof').length >= MAX_TRANSFER_PROOF) {
+        return res.status(400).json({ error: 'Order ini sudah memiliki bukti transfer.' });
+      }
+    }
     const updated = await repo.uploadPhoto(req.params.id, req.user.id, req.file, source);
     emit();
     ok(res, updated);
@@ -416,15 +439,43 @@ const uploadAmbilan = makeUpload(MAX_PICKUP_EVIDENCE);
         return res.status(400).json({ error: 'Foto pengambilan hanya bisa dihapus saat order masih Proses pick up.' });
       }
     }
+    // Bukti transfer: aturan sejajar, hanya admin dan hanya selagi Done pickup.
+    if (foto?.source === 'transfer_proof') {
+      if (!isAdminLevel(req.user.role)) {
+        return res.status(403).json({ error: 'Hanya admin yang boleh menghapus bukti transfer.' });
+      }
+      if (order.status !== 'done_pickup') {
+        return res.status(400).json({ error: 'Bukti transfer hanya bisa dihapus saat order berstatus Done pickup.' });
+      }
+    }
     const updated = await repo.deletePhoto(req.params.id, req.params.photoId);
     emit();
     ok(res, updated);
   }));
 
-  r.patch('/orders/:id/complete', requireAdmin, asyncH(async (req, res) => {
-    const order = await repo.completeOrder(req.params.id, String(req.body?.note ?? '').trim(), req.user.id);
+  // Selesaikan order — wajib ada bukti transfer. Bukti yang sudah dilampirkan
+  // lebih dulu lewat galeri ikut dihitung, jadi tombol selesai bisa dipanggil
+  // tanpa berkas baru. Multipart, karena itu POST (klien lama wajib update).
+  r.post('/orders/:id/complete', requireAdmin, uploadTransfer.single('photo'), asyncH(async (req, res) => {
+    const order = await orderFor(req, req.params.id);
+    if (order.status !== 'done_pickup') {
+      return res.status(400).json({ error: 'Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.' });
+    }
+    const { photos } = await repo.detail(req.params.id);
+    const sudahAda = photos.filter((p) => p.source === 'transfer_proof').length;
+    const total = sudahAda + (req.file ? 1 : 0);
+    if (total < 1) {
+      return res.status(400).json({ error: 'Wajib melampirkan bukti transfer sebelum menyelesaikan order.' });
+    }
+    if (total > MAX_TRANSFER_PROOF) {
+      return res.status(400).json({ error: 'Order ini sudah memiliki bukti transfer.' });
+    }
+    if (req.file) await validateImage(req.file, uploadDir);
+    const updated = await repo.completeOrder(
+      req.params.id, String(req.body?.note ?? '').trim(), req.file ?? null, req.user.id,
+    );
     emit();
-    ok(res, order);
+    ok(res, updated);
   }));
 
   r.patch('/orders/:id/problem', requireAdmin, asyncH(async (req, res) => {

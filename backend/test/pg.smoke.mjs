@@ -134,6 +134,33 @@ const cleared = await repo.clearBarcode(removable.id);
 assert.equal(cleared.barcode_path, null, 'barcode dikosongkan');
 await assert.rejects(() => repo.pickupOrder(removable.id, actorId), /barcode/i, 'tanpa barcode kembali ditolak');
 
+// Zaydan Ambilan GJM tidak melewati loket penerbit barcode: barcode tidak
+// wajib, bukti order tetap wajib. Dievaluasi saat pick up, jadi mengubah
+// metode lewat editOrder langsung berlaku (tidak ada celah).
+const mkZaydan = async (suffix) => repo.createOrder(
+  { order_number: `TRK-ZD-${suffix}-${Date.now()}`, recipient_name: 'A', pickup_method: 'zaydan_ambilan_gjm', product_id: dualProduct.id, store_id: tokoBarcode.id },
+  actorId,
+);
+const zdTanpaBukti = await mkZaydan('A');
+await assert.rejects(
+  () => repo.pickupOrder(zdTanpaBukti.id, actorId), /bukti order/i,
+  'Zaydan tetap butuh bukti order',
+);
+
+const zdLengkap = await mkZaydan('B');
+await repo.uploadPhoto(zdLengkap.id, actorId, null, 'order');
+const zdPicked = await repo.pickupOrder(zdLengkap.id, actorId);
+assert.equal(zdPicked.status, 'proses_pick_up', 'Zaydan diproses tanpa barcode');
+
+// Ubah metode → barcode kembali wajib, tanpa menyentuh requires_dual_evidence.
+const zdUbah = await mkZaydan('C');
+await repo.uploadPhoto(zdUbah.id, actorId, null, 'order');
+await repo.editOrder(zdUbah.id, { pickup_method: 'self_pick_up' }, actorId);
+await assert.rejects(
+  () => repo.pickupOrder(zdUbah.id, actorId), /barcode/i,
+  'setelah jadi Self Pick Up, barcode kembali wajib',
+);
+
 await pool.end();
 await db.close();
 console.log('Smoke test pg.mjs (products + kuota rebutan lintas toko): LULUS');
@@ -200,7 +227,7 @@ const lompat = await mkFlow('A');
 await repo.attachBarcode(lompat.id, '/uploads/flow-a.jpg');
 await repo.uploadPhoto(lompat.id, actorId, null, 'order');
 await repo.pickupOrder(lompat.id, actorId);
-await assert.rejects(() => repo.completeOrder(lompat.id, '', actorId), /Done pickup/i, 'tidak boleh langsung selesai');
+await assert.rejects(() => repo.completeOrder(lompat.id, '', null, actorId), /Done pickup/i, 'tidak boleh langsung selesai');
 await assert.rejects(() => repo.updateStatus(lompat.id, 'selesai', actorId), /Done pickup/i, 'jalur status juga ditolak');
 
 // Rantai penuh berhasil: done_pickup via repo.donePickup (2 foto, transaksi).
@@ -216,15 +243,23 @@ const done = await repo.donePickup(penuh.id, duaFoto, actorId);
 assert.equal(done.status, 'done_pickup', 'CHECK constraint menerima done_pickup');
 assert.equal(done.photo_count, 3, '2 foto pengambilan + 1 bukti order');
 assert.ok(done.picked_up_at, 'waktu pengambilan tercatat');
-const beres = await repo.completeOrder(penuh.id, 'ok', actorId);
+// Selesaikan dengan bukti transfer — photo_count naik 1, foto tersimpan.
+const buktiTf = { filename: 'flow-tf.jpg', originalname: 'tf.jpg', mimetype: 'image/jpeg', size: 1 };
+const beres = await repo.completeOrder(penuh.id, 'ok', buktiTf, actorId);
 assert.equal(beres.status, 'selesai');
+assert.equal(beres.photo_count, 4, 'bukti transfer menambah photo_count');
+const fotoTf = (await repo.detail(penuh.id)).photos.filter((p) => p.source === 'transfer_proof');
+assert.equal(fotoTf.length, 1, 'bukti transfer tersimpan di jalur SQL');
 
 // done_pickup hanya dari proses_pick_up.
 const langsung = await mkFlow('C');
 await assert.rejects(() => repo.donePickup(langsung.id, duaFoto, actorId), /Proses pick up/i);
 
 // updateStatus ke done_pickup ditolak — jalur wajib lewat donePickup.
-await assert.rejects(() => repo.updateStatus(penuh.id, 'done_pickup', actorId), /2 foto pengambilan/i);
+await assert.rejects(() => repo.updateStatus(penuh.id, 'done_pickup', actorId), /foto pengambilan/i);
+
+// updateStatus ke selesai ditolak — jalur wajib lewat completeOrder (bukti transfer).
+await assert.rejects(() => repo.updateStatus(penuh.id, 'selesai', actorId), /bukti transfer/i);
 
 // donePickup tanpa berkas baru: bukti sudah dilampirkan lebih dulu lewat galeri
 // (uploadPhoto source pickup_evidence). photo_count hanya menghitung yang nyata.

@@ -294,11 +294,18 @@ export function createOrder(input, actorId) {
 
 export const getOrder = (id) => withMeta(findOrder(id));
 
+/** Barcode wajib kecuali metode Zaydan Ambilan GJM — lihat applyPickup. */
+const wajibBarcode = (o) => o.pickup_method !== 'zaydan_ambilan_gjm';
+
 function applyPickup(o, actorId, file, note) {
   if (o.requires_dual_evidence) {
     // Aturan bukti ganda (order sejak perubahan alur): barcode pick up DAN foto
     // bukti order harus ada. File di request dihitung sebagai bukti order.
-    if (!o.barcode_path) {
+    // Pengecualian: Zaydan Ambilan GJM mengambil barang tanpa melewati loket
+    // penerbit barcode, jadi barcodenya memang tidak pernah ada. Dievaluasi
+    // saat pick up (bukan dibekukan saat order dibuat) supaya perubahan metode
+    // lewat Edit Order langsung berlaku dan tidak menyisakan celah.
+    if (wajibBarcode(o) && !o.barcode_path) {
       throw new Error('Barcode pick up belum dilampirkan. Pesanan tanpa barcode tidak akan diproses.');
     }
     const hasOrderProof = file || db.photos.some((p) => p.order_id === o.id && p.source === 'order');
@@ -336,14 +343,12 @@ export function updateStatus(id, to, actorId) {
   // Alur wajib berurutan: done_pickup hanya dari proses_pick_up, selesai hanya
   // dari done_pickup — order tidak boleh melompati verifikasi.
   if (to === 'done_pickup') {
-    // Jalur wajib lewat unggahan 2 foto pengambilan — POST /orders/:id/done-pickup.
-    throw new Error('Gunakan unggahan 2 foto pengambilan untuk menandai order sudah diambil.');
+    // Jalur wajib lewat unggahan foto pengambilan — POST /orders/:id/done-pickup.
+    throw new Error('Gunakan unggahan foto pengambilan untuk menandai order sudah diambil.');
   }
-  if (to === 'selesai' && o.status !== 'done_pickup') {
-    throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
-  }
-  if (to === 'selesai' && o.photo_count < db.settings.min_photos) {
-    throw new Error(`Minimal ${db.settings.min_photos} foto bukti sebelum order selesai.`);
+  if (to === 'selesai') {
+    // Jalur wajib lewat unggahan bukti transfer — POST /orders/:id/complete.
+    throw new Error('Gunakan unggahan bukti transfer untuk menyelesaikan order.');
   }
   const from = o.status;
   o.status = to;
@@ -405,7 +410,7 @@ export function uploadPhoto(orderId, actorId, file = null, source = null) {
   const o = findOrder(orderId);
   // Foto pengambilan punya kuota sendiri (ditegakkan di routes): bukti wajib
   // tidak boleh terhalang setelan max_photos yang mengatur foto penyelesaian.
-  if (source !== 'pickup_evidence' && o.photo_count >= db.settings.max_photos) {
+  if (source !== 'pickup_evidence' && source !== 'transfer_proof' && o.photo_count >= db.settings.max_photos) {
     throw new Error(`Maksimal ${db.settings.max_photos} foto per order.`);
   }
   o.photo_count += 1;
@@ -457,12 +462,24 @@ export function donePickup(id, files, actorId) {
   return withMeta(o);
 }
 
-export function completeOrder(id, note, actorId) {
+// Selesaikan order — syaratnya bukti transfer (divalidasi di routes), bukan
+// lagi min_photos. `file` boleh null bila buktinya sudah dilampirkan lebih dulu.
+export function completeOrder(id, note, file, actorId) {
   const o = findOrder(id);
   if (o.status !== 'done_pickup') {
     throw new Error('Order harus ditandai sudah diambil (Done pickup) sebelum diselesaikan.');
   }
-  if (o.photo_count < db.settings.min_photos) throw new Error(`Minimal ${db.settings.min_photos} foto bukti wajib diunggah.`);
+  if (file) {
+    db.photos.push({
+      id: uid(), order_id: id,
+      file_path: `/uploads/${file.filename}`,
+      file_name: file.originalname,
+      mime_type: file.mimetype,
+      file_size: file.size,
+      source: 'transfer_proof', uploaded_by: actorId, created_at: now(),
+    });
+    o.photo_count += 1;
+  }
   const from = o.status;
   o.status = 'selesai';
   o.note = note;

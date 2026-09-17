@@ -7,10 +7,9 @@ import { notify, confirmAsk } from '../lib/notify';
 import { pickPhoto } from '../lib/photo';
 import { dateTime } from '../lib/format';
 import { useFileUrl } from '../hooks/useFileUrl';
-import { colors, pickupMethodLabel, radius } from '../theme';
+import { colors, notePalette, pendingPalette, pickupMethodLabel, previewStage, problemPalette, radius, slotPalette } from '../theme';
 import { useAuth } from '../hooks/useAuth';
-import { useSettings } from '../hooks/useSettings';
-import { Avatar, Button, Sheet, StatusTag } from './ui';
+import { Button, Sheet, StatusTag } from './ui';
 import { isAdminLevel } from '../lib/roles';
 import { periksaFotoBarcode } from '../lib/barcodeCheck';
 
@@ -29,6 +28,10 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  // Gagal muat harus terlihat di dalam modal, bukan cuma lewat notify yang
+  // hilang: tanpa ini pengguna menatap skeleton selamanya tanpa jalan keluar.
+  const [gagalMuat, setGagalMuat] = useState<string | null>(null);
+  const [muatUlang, setMuatUlang] = useState(0);
 
   // Modal ini tidak pernah di-unmount (selalu dirender dengan prop order), jadi
   // state HARUS dibersihkan saat order berganti — kalau tidak, detail order
@@ -46,15 +49,16 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     setNote('');
     setProblem(false);
     setReason('');
+    setGagalMuat(null);
     if (!orderId) return;
     let cancelled = false;
     api.detail(orderId)
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch((e) => { if (!cancelled) notify('Gagal memuat detail', (e as Error).message); });
+      .catch((e) => { if (!cancelled) setGagalMuat((e as Error).message || 'Detail order tidak bisa dimuat.'); });
     // Respons yang datang terlambat diabaikan — cegah detail order lama
     // menimpa order yang sedang dibuka (race saat berpindah cepat).
     return () => { cancelled = true; };
-  }, [orderId]);
+  }, [orderId, muatUlang]);
 
   useEffect(() => {
     if (!detail) return;
@@ -79,13 +83,11 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     }
   }, [orderId, onChanged]);
 
-  const settings = useSettings();
 
   if (!order) return null;
   // Status tampilan diambil dari detail terbaru (di-refresh setelah setiap mutasi)
   // agar modal otomatis berubah ke step selanjutnya tanpa tutup-buka.
   const status = detail?.status ?? order.status;
-  const canComplete = !!detail && detail.photo_count >= settings.min_photos && isAdmin;
 
   // Aturan bukti ganda: order baru wajib barcode pick up + foto bukti order.
   const dualRequired = !!order.requires_dual_evidence && status === 'data_masuk';
@@ -108,13 +110,16 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // bukti order tetap boleh dilengkapi. Menutup sendiri begitu buktinya ada,
   // jadi bukti yang sudah terpasang tidak bisa ditukar setelah order berjalan.
   const bisaLampirBuktiOrder = status === 'data_masuk' || (status === 'proses_pick_up' && !hasOrderProof);
-  const dualReady = hasBarcode && hasOrderProof;
+  // Zaydan Ambilan GJM mengambil barang tanpa melewati loket penerbit barcode,
+  // jadi barcodenya memang tidak pernah ada. Bukti order tetap wajib.
+  const barcodeWajib = order.pickup_method !== 'zaydan_ambilan_gjm';
+  const dualReady = (hasBarcode || !barcodeWajib) && hasOrderProof;
   // Hanya toko penerbit barcode (Roxy dsb) yang menampilkan slot barcode.
   // Toko lain tidak punya barcode sama sekali, dan slot kosong di sana justru
   // memancing trader mengunggah foto bukti order ke tempat yang salah.
   // Order lama yang terlanjur punya barcode tetap ditampilkan agar buktinya
   // tidak hilang dari layar.
-  const tokoPakaiBarcode = !!order.requires_dual_evidence || !!barcodeTampil;
+  const tokoPakaiBarcode = (!!order.requires_dual_evidence && barcodeWajib) || !!barcodeTampil;
   const pickupEvidences = detail?.photos.filter((p) => p.source === 'pickup_evidence') ?? [];
   // Foto pengambilan berkuota sendiri (maks 3), lepas dari max_photos yang
   // mengatur foto penyelesaian — samakan dengan MAX_PICKUP_EVIDENCE di server
@@ -134,6 +139,17 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
       : jumlahAmbilan === 0
         ? 'Belum ada foto pengambilan. Wajib minimal 1 sebelum menandai sudah diambil.'
         : `Sudah ${jumlahAmbilan} foto pengambilan.`;
+
+  // Bukti transfer: syarat menyelesaikan order. Hanya admin yang melampirkan;
+  // trader melihatnya read-only sebagai bukti pembayaran sudah dikirim.
+  const transferProof = detail?.photos.find((p) => p.source === 'transfer_proof') ?? null;
+  const bisaKelolaTransfer = isAdmin && status === 'done_pickup';
+  const canComplete = !!detail && isAdmin && !!transferProof;
+  const hintTransfer = !isAdmin
+    ? transferProof ? 'Bukti transfer tersedia.' : 'Bukti transfer belum dilampirkan admin.'
+    : transferProof
+      ? status === 'done_pickup' ? 'Bukti transfer siap. Order bisa diselesaikan.' : 'Bukti transfer terkunci.'
+      : 'Lampirkan bukti transfer sebelum menyelesaikan order.';
 
   const attachOrderProof = async () => {
     const photo = await pickPhoto('Foto bukti order');
@@ -173,7 +189,18 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
     mutate(() => api.donePickup(order.id, [foto]));
   };
 
-  const finish = () => mutate(() => api.completeOrder(order.id, note.trim()));
+  // Bukti transfer sudah ada → langsung selesaikan; belum → minta fotonya dulu.
+  const finish = async () => {
+    if (transferProof) return mutate(() => api.completeOrder(order.id, note.trim()));
+    const foto = await pickPhoto('Bukti transfer');
+    if (!foto) return notify('Bukti wajib', 'Wajib melampirkan bukti transfer untuk menyelesaikan order.');
+    mutate(() => api.completeOrder(order.id, note.trim(), foto));
+  };
+  const attachTransfer = async () => {
+    const foto = await pickPhoto('Bukti transfer');
+    if (!foto) return;
+    mutate(() => api.uploadPhoto(order.id, foto, 'transfer_proof'));
+  };
   const saveProblem = () => mutate(() => api.markProblem(order.id, reason.trim()));
   // Menyalakan hanya membuka form (perlu alasan lalu Simpan); mematikan langsung
   // dikirim ke server — kalau hanya state lokal, tandanya balik lagi saat modal
@@ -200,10 +227,24 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
           <DetailItem label="Penerima" value={order.recipient_name} />
           <DetailItem label="Trader (checkout)" value={order.trader_name} />
           <DetailItem label="Metode" value={pickupMethodLabel[order.pickup_method]} />
-          <DetailItem label="Produk" value={`${order.product_name} · ${order.store_name}`} />
         </View>
 
-        {isAdmin && (
+        {/* Gagal muat: sebutkan sebabnya dan beri jalan keluar, jangan biarkan
+            skeleton menggantung tanpa akhir. */}
+        {!!gagalMuat && !detail && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Detail order gagal dimuat</Text>
+            <Text style={styles.errorText}>{gagalMuat}</Text>
+            <Button
+              label="Coba lagi"
+              variant="secondary"
+              size="sm"
+              onPress={() => { setGagalMuat(null); setMuatUlang((n) => n + 1); }}
+            />
+          </View>
+        )}
+
+        {isAdmin && !gagalMuat && (
           <>
             <Text style={styles.section}>Catatan penyelesaian</Text>
             {detail ? (
@@ -252,8 +293,9 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
             {dualRequired && !dualReady && (
               <View style={styles.dualNote}>
                 <Text style={styles.dualNoteText}>
-                  Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lengkapi keduanya
-                  agar order bisa masuk proses pick up.
+                  {tokoPakaiBarcode
+                    ? 'Pesanan tanpa barcode pick up dan foto bukti order tidak akan diproses. Lengkapi keduanya agar order bisa masuk proses pick up.'
+                    : 'Foto bukti order belum dilampirkan. Lengkapi agar order bisa masuk proses pick up.'}
                 </Text>
               </View>
             )}
@@ -288,6 +330,34 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
                 <Text style={styles.evidenceHint}>{hintAmbilan}</Text>
               </View>
             )}
+
+            {/* Bukti transfer — syarat menyelesaikan order. Trader melihatnya
+                read-only sebagai bukti pembayaran sudah dikirim. */}
+            {(status === 'done_pickup' || status === 'selesai') && (
+              <View style={styles.evidenceBlock}>
+                <Text style={styles.section}>Bukti transfer</Text>
+                <View style={styles.evidenceRow}>
+                  {!!transferProof && (
+                    <EvidenceThumb
+                      filePath={transferProof.file_path}
+                      onPreview={() => setPreview(transferProof.file_path)}
+                      onDelete={bisaKelolaTransfer ? () => mutate(() => api.deletePhoto(order.id, transferProof.id)) : undefined}
+                    />
+                  )}
+                  {!transferProof && bisaKelolaTransfer && (
+                    <Pressable
+                      onPress={attachTransfer}
+                      style={({ pressed }) => [styles.evidenceAdd, pressed && { opacity: 0.85 }]}
+                      disabled={busy}
+                      accessibilityLabel="Lampirkan bukti transfer"
+                    >
+                      <Text style={styles.evidenceAddText}>＋</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Text style={styles.evidenceHint}>{hintTransfer}</Text>
+              </View>
+            )}
           </>
         )}
 
@@ -318,10 +388,11 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
               </>
             ) : status === 'proses_pick_up' ? (
               <>
-                {/* Tandai sudah diambil — hanya admin, wajib ada foto pengambilan. */}
+                {/* Tandai sudah diambil — hanya admin, wajib ada foto pengambilan.
+                    Label tetap; syarat foto disampaikan lewat hint galeri di atas
+                    agar lebar tombol tidak berubah-ubah. */}
                 <Button
-                  label={pickupEvidences.length > 0 ? 'Tandai sudah diambil' : 'Lampirkan foto & tandai diambil'}
-                  icon="→"
+                  label="Tandai sudah diambil"
                   variant="soft"
                   onPress={markDonePickup}
                   disabled={busy || !detail}
@@ -332,9 +403,9 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
             ) : status === 'done_pickup' ? (
               <>
                 <Button
-                  label={canComplete ? 'Selesaikan order' : `Unggah minimal ${settings.min_photos} foto untuk selesai`}
+                  label="Selesaikan order"
                   onPress={finish}
-                  disabled={!canComplete || busy}
+                  disabled={busy || !detail}
                   style={{ flex: 1 }}
                 />
                 <Button label="Tutup" variant="secondary" onPress={onClose} />
@@ -344,9 +415,19 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
             )}
           </View>
         )}
+        {/* Syarat tombol disampaikan di luar label agar lebar tombol tetap. */}
+        {isAdmin && status === 'done_pickup' && detail && !canComplete && (
+          <Text style={styles.syaratHint}>
+            Menekan Selesaikan order akan meminta bukti transfer bila belum dilampirkan.
+          </Text>
+        )}
 
         <Text style={styles.section}>Riwayat status</Text>
-        {!detail && <Text style={styles.loadingText}>Memuat detail order…</Text>}
+        {!detail && (
+          <Text style={styles.loadingText}>
+            {gagalMuat ? 'Riwayat tidak tersedia karena detail gagal dimuat.' : 'Memuat riwayat…'}
+          </Text>
+        )}
         {detail?.events.map((e) => (
           <View key={e.id} style={styles.eventRow}>
             <View style={[styles.eventDot, e.event_type === 'completed' && { backgroundColor: colors.green }, e.event_type === 'problem' && { backgroundColor: colors.red }]} />
@@ -419,7 +500,9 @@ function PhotoSlot({ label, filePath, locked, lockedReason, busy, onPreview, onP
             {uri && !failed ? (
               <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" onError={() => setFailed(true)} />
             ) : (
-              <View style={styles.slotFallback}><Text style={styles.slotFallbackGlyph}>▣</Text></View>
+              <View style={styles.slotFallback}>
+                <Text style={styles.slotFallbackText}>{failed ? 'Foto gagal dimuat' : 'Memuat…'}</Text>
+              </View>
             )}
           </Pressable>
           {!locked && (
@@ -447,7 +530,9 @@ function PhotoSlot({ label, filePath, locked, lockedReason, busy, onPreview, onP
           disabled={busy}
           accessibilityLabel={locked ? `${label} terkunci` : `Lampirkan ${label}`}
         >
-          <Text style={[styles.slotPlus, locked && styles.slotPlusLocked]}>{locked ? '\u{1F512}' : '+'}</Text>
+          {/* Glyph geometris, bukan emoji: rendering emoji berbeda antara
+              Android dan web dan ukurannya sulit dikendalikan. */}
+          <Text style={[styles.slotPlus, locked && styles.slotPlusLocked]}>{locked ? '\u2013' : '+'}</Text>
           <Text style={[styles.slotHint, locked && styles.slotHintLocked]} numberOfLines={2}>
             {locked ? (lockedReason ?? 'Terkunci') : 'Kamera / Berkas'}
           </Text>
@@ -457,11 +542,11 @@ function PhotoSlot({ label, filePath, locked, lockedReason, busy, onPreview, onP
   );
 }
 
-function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.item}>
       <Text style={styles.itemLabel}>{label}</Text>
-      <Text style={[styles.itemValue, mono && { fontFamily: undefined as never, fontWeight: '700', color: '#2E6EB5' }]}>{value}</Text>
+      <Text style={styles.itemValue}>{value}</Text>
     </View>
   );
 }
@@ -494,7 +579,9 @@ function EvidenceThumb({ filePath, onPreview, onDelete }: {
         {uri && !failed ? (
           <Image source={{ uri }} style={styles.slotImage} resizeMode="cover" onError={() => setFailed(true)} />
         ) : (
-          <View style={styles.slotFallback}><Text style={styles.slotFallbackGlyph}>▣</Text></View>
+          <View style={styles.slotFallback}>
+            <Text style={styles.thumbFallbackText}>{failed ? 'Gagal' : '…'}</Text>
+          </View>
         )}
       </Pressable>
       {!!onDelete && (
@@ -603,7 +690,9 @@ function ZoomableImage({ uri }: { uri: string | null }) {
             <Image source={{ uri }} style={styles.previewImg} resizeMode="contain" onError={() => setFailed(true)} />
           ) : (
             <View style={styles.previewEmpty}>
-              <Text style={styles.previewPlaceholder}>▣</Text>
+              <Text style={styles.previewFailText}>
+                {failed ? 'Foto gagal dimuat. Periksa koneksi, lalu buka ulang pratinjau.' : 'Memuat foto…'}
+              </Text>
             </View>
           )}
         </Animated.View>
@@ -614,50 +703,70 @@ function ZoomableImage({ uri }: { uri: string | null }) {
 
 const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  problemTag: { fontSize: 9, fontWeight: '800', color: '#C1433A', backgroundColor: '#FCE9E6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
+  problemTag: {
+    fontSize: 9, fontWeight: '800', color: problemPalette.fg, backgroundColor: problemPalette.bg,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden',
+  },
   metaRight: { marginLeft: 'auto', fontSize: 9, color: colors.faint },
   product: { fontSize: 19, fontWeight: '800', color: colors.text, marginTop: 10, marginBottom: 4 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0, borderWidth: 1, borderColor: colors.line, borderRadius: 10, marginTop: 10, overflow: 'hidden' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, marginTop: 10, overflow: 'hidden' },
   item: { width: '50%', padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.surfaceAlt },
   itemLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.6, color: colors.muted, textTransform: 'uppercase' },
   itemValue: { fontSize: 12, color: colors.text, marginTop: 4 },
   section: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, color: colors.muted, textTransform: 'uppercase', marginTop: 18, marginBottom: 8 },
-  textarea: { borderWidth: 1, borderColor: colors.line, borderRadius: 9, minHeight: 68, padding: 11, fontSize: 12, color: colors.text, textAlignVertical: 'top', backgroundColor: '#fff' },
-  problemBox: { marginTop: 14, backgroundColor: '#FFF9F2', borderRadius: 9, padding: 12, gap: 10, borderWidth: 1, borderColor: '#F3E2CF' },
+  textarea: {
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, minHeight: 68, padding: 11,
+    fontSize: 12, color: colors.text, textAlignVertical: 'top', backgroundColor: colors.surface,
+  },
+  problemBox: {
+    marginTop: 14, backgroundColor: pendingPalette.bg, borderRadius: radius.sm, padding: 12, gap: 10,
+    borderWidth: 1, borderColor: notePalette.bg,
+  },
   problemToggle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   problemCheckbox: { fontSize: 16, color: colors.red },
   problemLabel: { fontSize: 12, color: colors.muted },
   eventRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.surfaceAlt },
+  // borderRadius 4 = setengah dari 8: lingkaran, bukan radius kotak.
   eventDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.blue, marginTop: 4 },
   eventTitle: { fontSize: 12, color: colors.text, fontWeight: '700' },
   eventActor: { color: colors.muted, fontWeight: '400' },
-  eventNote: { fontSize: 10, color: '#7E8B98', marginTop: 2 },
+  eventNote: { fontSize: 10, color: colors.faint, marginTop: 2 },
   eventTime: { fontSize: 9, color: colors.faint },
   // Placeholder saat detail order belum tiba (mencegah data order lain terlihat).
-  skeletonBox: { minHeight: 68, borderRadius: 9, backgroundColor: colors.surfaceAlt, marginTop: 2 },
-  loadingText: { fontSize: 11, color: colors.faint, paddingVertical: 10 },
+  skeletonBox: { minHeight: 68, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt, marginTop: 2 },
+  loadingText: { fontSize: 11, color: colors.muted, paddingVertical: 10 },
+  errorBox: {
+    marginTop: 14, padding: 12, gap: 8, alignItems: 'flex-start',
+    backgroundColor: problemPalette.bg, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: problemPalette.fg,
+  },
+  errorTitle: { fontSize: 12, fontWeight: '800', color: problemPalette.fg },
+  errorText: { fontSize: 11, color: colors.text, lineHeight: 16 },
   // Lampiran pick up: dua slot foto berlabel, ukuran identik.
   slotRow: { flexDirection: 'row', gap: 10 },
   slot: { flex: 1, minWidth: 0 },
   slotLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, marginBottom: 6 },
   slotEmpty: {
-    height: 108, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed',
-    borderColor: '#B9C8DA', backgroundColor: '#F4F8FD',
+    height: 108, borderRadius: radius.md, borderWidth: 1.5, borderStyle: 'dashed',
+    borderColor: slotPalette.border, backgroundColor: slotPalette.bg,
     alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 8,
   },
   slotEmptyLocked: { borderStyle: 'solid', borderColor: colors.line, backgroundColor: colors.surfaceAlt },
   slotPlus: { fontSize: 24, color: colors.primaryMuted, lineHeight: 26 },
   slotPlusLocked: { fontSize: 15, lineHeight: 20 },
-  slotHintLocked: { color: colors.faint },
+  // muted (bukan faint) di atas surfaceAlt: 4.99:1, sedangkan faint hanya 4.03:1.
+  slotHintLocked: { color: colors.muted },
   slotHint: { fontSize: 9, color: colors.muted, textAlign: 'center' },
   slotFilled: {
-    height: 108, borderRadius: 10, borderWidth: 1, borderColor: colors.line,
-    backgroundColor: '#F4F8FD', overflow: 'hidden',
+    height: 108, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: slotPalette.bg, overflow: 'hidden',
   },
   slotImageWrap: { flex: 1 },
   slotImage: { width: '100%', height: '100%' },
-  slotFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  slotFallbackGlyph: { fontSize: 26, color: colors.primaryMuted },
+  // Pengganti gambar menyebut sebabnya, bukan glyph yang tak berkata apa-apa.
+  slotFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  slotFallbackText: { fontSize: 10, color: colors.muted, textAlign: 'center' },
+  thumbFallbackText: { fontSize: 9, color: colors.muted, textAlign: 'center' },
   // Galeri Lampiran Pick Up
   evidenceBlock: { marginTop: 16 },
   evidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
@@ -670,7 +779,7 @@ const styles = StyleSheet.create({
     width: 18, height: 18, borderRadius: radius.full, backgroundColor: 'rgba(15,22,42,.72)',
     alignItems: 'center', justifyContent: 'center',
   },
-  evidenceDelText: { color: '#fff', fontSize: 9, fontWeight: '800', lineHeight: 11 },
+  evidenceDelText: { color: colors.onPrimary, fontSize: 9, fontWeight: '800', lineHeight: 11 },
   evidenceAdd: {
     width: 72, height: 72, borderRadius: radius.sm, borderWidth: 1, borderStyle: 'dashed',
     borderColor: colors.line, alignItems: 'center', justifyContent: 'center',
@@ -684,18 +793,23 @@ const styles = StyleSheet.create({
   },
   slotAction: { fontSize: 10, fontWeight: '700', color: colors.primary },
   slotActionDanger: { fontSize: 10, fontWeight: '700', color: colors.red },
+  // Garis kiri berwarna menandai keadaan nyata (bukti belum lengkap), bukan
+  // hiasan — senada penanda Tertunda di layar lain.
   dualNote: {
-    marginTop: 10, backgroundColor: '#FCF3E3', borderRadius: 8,
-    borderLeftWidth: 3, borderLeftColor: '#A8610F', paddingVertical: 9, paddingHorizontal: 11,
+    marginTop: 10, backgroundColor: notePalette.bg, borderRadius: radius.sm,
+    borderLeftWidth: 3, borderLeftColor: notePalette.accent, paddingVertical: 9, paddingHorizontal: 11,
   },
-  dualNoteText: { fontSize: 10, color: '#8A5310', lineHeight: 15 },
+  dualNoteText: { fontSize: 10, color: notePalette.fg, lineHeight: 15 },
   actions: { flexDirection: 'row', gap: 9, marginTop: 18 },
-  actionsChild: { flex: 1 },
+  syaratHint: { fontSize: 10, color: colors.muted, marginTop: 8, lineHeight: 15 },
   previewBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 8 },
-  previewStage: { width: '100%', height: 340, overflow: 'hidden', borderRadius: 10, backgroundColor: '#1B2432', alignItems: 'center', justifyContent: 'center' },
-  previewEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  previewStage: {
+    width: '100%', height: 340, overflow: 'hidden', borderRadius: radius.md,
+    backgroundColor: previewStage.bg, alignItems: 'center', justifyContent: 'center',
+  },
+  previewEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 24 },
   previewImg: { width: '100%', height: '100%' },
-  previewPlaceholder: { fontSize: 60, color: '#5A6B82' },
+  previewFailText: { fontSize: 12, color: previewStage.glyph, textAlign: 'center', lineHeight: 17 },
   previewCaption: { fontSize: 11, color: colors.muted },
   previewHint: { fontSize: 9, color: colors.faint },
 });

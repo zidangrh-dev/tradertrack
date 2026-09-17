@@ -6,7 +6,7 @@ import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
 import { colors, radius, space } from '../../src/theme';
 import { ActionMenu, Avatar, Button, Field, PageHeader, SelectField, Sheet, type ActionMenuItem } from '../../src/components/ui';
-import { isAdminLevel, isSuperadmin, roleLabel } from '../../src/lib/roles';
+import { isSuperadmin, roleLabel } from '../../src/lib/roles';
 
 export default function Settings() {
   useAdminOnly();
@@ -54,11 +54,10 @@ export default function Settings() {
         <NumField label="Durasi maksimum (jam)" value={String(settings.pending_threshold_hours)} onChange={(v) => save({ pending_threshold_hours: Number(v) || 0 })} />
       </Panel>
 
-      <Panel title="Bukti foto penyelesaian" note="Order tidak boleh berpindah ke Selesai sebelum jumlah minimal foto terunggah. Tombol Selesaikan Order nonaktif sampai syarat terpenuhi.">
-        <NumField label="Jumlah minimal foto per order" value={String(settings.min_photos)} onChange={(v) => save({ min_photos: Math.max(1, Number(v) || 1) })} />
+      <Panel title="Batas unggahan foto" note="Berlaku untuk foto bukti umum. Bukti wajib (barcode, foto pengambilan, bukti transfer) punya kuota sendiri dan tidak dibatasi setelan ini.">
         <NumField label="Jumlah maksimal foto per order" value={String(settings.max_photos)} onChange={(v) => save({ max_photos: Number(v) || 0 })} />
         <NumField label="Ukuran maksimal per berkas (MB)" value={String(settings.max_file_mb)} onChange={(v) => save({ max_file_mb: Number(v) || 0 })} />
-        <Text style={styles.rule}>Aturan: jumlah minimal foto tidak boleh disetel nol.</Text>
+        <Text style={styles.rule}>Syarat menyelesaikan order: bukti transfer wajib dilampirkan admin.</Text>
       </Panel>
 
       {superadmin && (

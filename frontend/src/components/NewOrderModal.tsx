@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '../lib/api';
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
@@ -86,7 +86,10 @@ export function NewOrderModal({ open, onClose, user, onCreated }: { open: boolea
   // Slot barcode hanya untuk toko penerbit barcode (Roxy dsb). Toko lain tidak
   // punya barcode sama sekali, dan slot kosong di sana justru memancing trader
   // mengunggah foto bukti order ke tempat yang salah.
-  const tokoPakaiBarcode = !!stores.find((s) => s.id === storeId)?.has_barcode;
+  // Zaydan Ambilan GJM juga dikecualikan: barang diambil tanpa melewati loket
+  // penerbit barcode, jadi barcodenya memang tidak pernah ada.
+  const tokoPakaiBarcode = !!stores.find((s) => s.id === storeId)?.has_barcode
+    && method !== 'zaydan_ambilan_gjm';
 
   const save = async () => {
     if (!productId || !storeId || !orderNumber.trim() || !recipient.trim()) {

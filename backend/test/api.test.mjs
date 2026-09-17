@@ -72,9 +72,11 @@ async function initOrderDefaults(token) {
   orderDefaults.store_id = stores[0].id;
 }
 
+// Default self_pick_up: metode inilah yang menuntut barcode, jadi aturan bukti
+// ganda benar-benar teruji. Zaydan Ambilan GJM dikecualikan (lihat CF14).
 const order = (over = {}) => ({
   product_name: 'Produk Uji', store_name: 'Toko Uji', order_number: `TRK-IT-${Date.now()}-${seq++}`,
-  recipient_name: 'Penerima Uji', pickup_method: 'zaydan_ambilan_gjm',
+  recipient_name: 'Penerima Uji', pickup_method: 'self_pick_up',
   product_id: orderDefaults.product_id, store_id: orderDefaults.store_id,
   ...over,
 });
@@ -133,10 +135,25 @@ async function orderDonePickup(token, over = {}) {
   return o;
 }
 
+/** Selesaikan order — wajib bukti transfer. `withFile=false` mengirim tanpa
+ *  berkas, dipakai menguji bukti yang sudah dilampirkan lewat galeri. */
+async function completeOrder(token, orderId, note = 'x', withFile = true) {
+  const fd = new FormData();
+  fd.append('note', note);
+  if (withFile) fd.append('photo', jpegBlob('transfer.jpg'), 'transfer.jpg');
+  const res = await fetch(`${BASE}/api/orders/${orderId}/complete`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  return { status: res.status, data };
+}
+
 /** Bawa order sampai selesai (lewat done_pickup, sesuai alur baru). */
 async function orderSelesai(token, note = 'x', over = {}) {
   const o = await orderDonePickup(token, over);
-  const r = await client(token).patch(`/api/orders/${o.id}/complete`, { note });
+  const r = await completeOrder(token, o.id, note);
   assert.equal(r.status, 200, 'order sampai selesai');
   return o;
 }
@@ -822,27 +839,24 @@ describe('CF5 Detail & penyelesaian dengan foto', () => {
     const { status } = await client(trader).del(`/api/orders/${o.id}/photos/${d.photos[0].id}`);
     assert.equal(status, 403);
   });
-  test('complete tanpa foto minimal → tolak', async () => {
-    // Order di done_pickup selalu punya 2 foto pengambilan (tak bisa dihapus),
-    // jadi naikkan min_photos sementara agar syarat foto gagal.
+  test('complete tanpa bukti transfer → tolak', async () => {
     const o = await orderDonePickup(admin);
-    await client(admin).patch('/api/settings', { min_photos: 5 });
-    try {
-      const { status, data: err } = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
-      assert.equal(status, 400);
-      assert.match(err.error, /foto bukti/);
-    } finally {
-      await client(admin).patch('/api/settings', { min_photos: 1 });
-    }
+    const { status, data: err } = await completeOrder(admin, o.id, 'x', false);
+    assert.equal(status, 400);
+    assert.match(err.error, /bukti transfer/i);
+    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.status, 'done_pickup', 'status tidak berubah');
   });
-  test('complete dengan foto → selesai + note + event', async () => {
+  test('complete dengan bukti transfer → selesai + note + event + foto tersimpan', async () => {
     const o = await orderDonePickup(admin);
-    const { status, data: r } = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'Barang bagus' });
+    const { data: sebelum } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    const { status, data: r } = await completeOrder(admin, o.id, 'Barang bagus');
     assert.equal(status, 200);
     assert.equal(r.status, 'selesai');
     assert.equal(r.note, 'Barang bagus');
+    assert.equal(r.photo_count, sebelum.photo_count + 1, 'bukti transfer menambah photo_count');
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
     assert.ok(d.events.some((e) => e.event_type === 'completed'));
+    assert.equal(d.photos.filter((p) => p.source === 'transfer_proof').length, 1, 'bukti transfer tersimpan');
   });
   test('hapus foto → photo_count turun', async () => {
     const { data: o } = await client(admin).post('/api/orders', order());
@@ -1204,7 +1218,7 @@ describe('CF8 Produk, toko marketplace & pengaturan', () => {
     const up = await postMultipart(admin, `/api/orders/${o2.data.id}/photos`, { file: "bukti-selesai.jpg" }); assert.equal(up.status, 200);
     const dp = await markDonePickup(admin, o2.data.id);
     assert.equal(dp.status, 200);
-    const comp = await client(admin).patch(`/api/orders/${o2.data.id}/complete`, { note: 'x' });
+    const comp = await completeOrder(admin, o2.data.id, 'x');
     assert.equal(comp.status, 200);
     const delDone = await client(admin).del(`/api/products/${pDone.id}`);
     assert.equal(delDone.status, 200);
@@ -1506,7 +1520,7 @@ describe('CF11 Alur done pickup', () => {
     assert.equal(dp.data.status, 'done_pickup');
     assert.ok(dp.data.picked_up_at, 'waktu pengambilan tercatat');
 
-    const sel = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'ok' });
+    const sel = await completeOrder(admin, o.id, 'ok');
     assert.equal(sel.data.status, 'selesai');
 
     const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
@@ -1518,7 +1532,7 @@ describe('CF11 Alur done pickup', () => {
     await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     await postMultipart(admin, `/api/orders/${o.id}/photos`, { file: 'bukti.jpg' });
 
-    const viaComplete = await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const viaComplete = await completeOrder(admin, o.id, 'x');
     assert.equal(viaComplete.status, 400);
     assert.match(viaComplete.data.error, /Done pickup/i);
 
@@ -1637,7 +1651,7 @@ describe('CF11 Alur done pickup', () => {
     );
 
     // Reopen (hanya dari selesai) mengembalikan ke proses_pick_up → cair lagi.
-    assert.equal((await client(admin).patch(`/api/orders/${o.id}/complete`, { note: 'x' })).status, 200);
+    assert.equal((await completeOrder(admin, o.id, 'x')).status, 200);
     const ro = await client(admin).patch(`/api/orders/${o.id}/reopen`);
     assert.equal(ro.status, 200);
     assert.equal(ro.data.status, 'proses_pick_up');
@@ -1652,7 +1666,7 @@ describe('CF11 Alur done pickup', () => {
     assert.equal(dp.status, 403, 'hanya admin yang boleh menandai sudah diambil');
 
     assert.equal((await markDonePickup(admin, o.id)).status, 200, 'admin menandai');
-    const sel = await client(trader).patch(`/api/orders/${o.id}/complete`, { note: 'x' });
+    const sel = await completeOrder(trader, o.id, 'x');
     assert.equal(sel.status, 403, 'hanya admin yang boleh menyelesaikan');
   });
 
@@ -1680,13 +1694,20 @@ describe('CF11 Alur done pickup', () => {
     const { status } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done' });
     assert.equal(status, 400);
   });
-  test('PATCH /status ke done_pickup → 400 (wajib lewat unggahan 2 foto)', async () => {
+  test('PATCH /status ke done_pickup → 400 (wajib lewat unggahan foto pengambilan)', async () => {
     const o = await orderReadyForPickup(admin, { product_id: produkUji });
     await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     const { status, data } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'done_pickup' });
     assert.equal(status, 400);
-    assert.match(data.error, /2 foto pengambilan/i);
+    assert.match(data.error, /foto pengambilan/i);
     assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.status, 'proses_pick_up');
+  });
+  test('PATCH /status ke selesai → 400 (wajib lewat unggahan bukti transfer)', async () => {
+    const o = await orderDonePickup(admin, { product_id: produkUji });
+    const { status, data } = await client(admin).patch(`/api/orders/${o.id}/status`, { to_status: 'selesai' });
+    assert.equal(status, 400);
+    assert.match(data.error, /bukti transfer/i);
+    assert.equal((await client(admin).get(`/api/orders/${o.id}/detail`)).data.status, 'done_pickup', 'status tidak berubah');
   });
   /** Unggah foto dengan source tertentu sebagai aktor mana pun. */
   const unggahFoto = async (token, orderId, source, name = 'ambilan.jpg') => {
@@ -1749,6 +1770,125 @@ describe('CF11 Alur done pickup', () => {
     const o = await orderReadyForPickup(trader, { product_id: produkUji });
     await client(trader).post(`/api/orders/${o.id}/pickup`, {});
     assert.equal(await unggahFoto(trader, o.id, null, 'bukti-biasa.jpg'), 200, 'foto bukti biasa tidak terdampak');
+  });
+});
+
+describe('CF13 Bukti transfer: syarat menyelesaikan order', () => {
+  let admin, trader, produkTf;
+  before(async () => {
+    admin = await login('admin', 'admin');
+    trader = await login('nabila', 'trader');
+    await initOrderDefaults(admin);
+    const nama = `Produk Transfer ${Date.now()}`;
+    const { data } = await client(admin).post('/api/products', { name: nama, quota: 60 });
+    produkTf = data.find((p) => p.name === nama).id;
+  });
+
+  /** Order milik trader, dibawa ke done_pickup oleh admin (trader tidak boleh). */
+  const orderMilikTrader = async () => {
+    const o = await orderReadyForPickup(trader, { product_id: produkTf });
+    await client(trader).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal((await markDonePickup(admin, o.id)).status, 200);
+    return o;
+  };
+
+  const unggahTransfer = async (token, orderId, name = 'tf.jpg') => {
+    const fd = new FormData();
+    fd.append('photo', jpegBlob(name), name);
+    fd.append('source', 'transfer_proof');
+    const res = await fetch(`${BASE}/api/orders/${orderId}/photos`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    return { status: res.status, data };
+  };
+
+  test('admin boleh menyicil bukti transfer, lalu selesaikan tanpa berkas baru', async () => {
+    const o = await orderDonePickup(admin, { product_id: produkTf });
+    assert.equal((await unggahTransfer(admin, o.id)).status, 200, 'bukti dilampirkan lebih dulu');
+
+    const { data: sebelum } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    const jumlahSebelum = sebelum.photo_count;
+
+    // Inti perbaikan: bukti yang sudah ada dihitung, tidak minta foto lagi.
+    const sel = await completeOrder(admin, o.id, 'ok', false);
+    assert.equal(sel.status, 200);
+    assert.equal(sel.data.status, 'selesai');
+    assert.equal(sel.data.photo_count, jumlahSebelum, 'photo_count tidak naik tanpa berkas baru');
+
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    assert.equal(d.photos.filter((p) => p.source === 'transfer_proof').length, 1, 'bukti tidak terduplikasi');
+  });
+
+  test('bukti transfer dibatasi 1 per order', async () => {
+    const o = await orderDonePickup(admin, { product_id: produkTf });
+    assert.equal((await unggahTransfer(admin, o.id, 'tf1.jpg')).status, 200);
+    const kedua = await unggahTransfer(admin, o.id, 'tf2.jpg');
+    assert.equal(kedua.status, 400, 'bukti kedua ditolak');
+    assert.match(kedua.data.error, /sudah memiliki bukti transfer/i);
+
+    // Sudah ada 1; kirim 1 lagi lewat complete → total 2, ditolak.
+    const lebih = await completeOrder(admin, o.id, 'x', true);
+    assert.equal(lebih.status, 400);
+    assert.match(lebih.data.error, /sudah memiliki bukti transfer/i);
+  });
+
+  test('trader ditolak melampirkan & menghapus bukti transfer', async () => {
+    const o = await orderMilikTrader();
+    const tolak = await unggahTransfer(trader, o.id);
+    assert.equal(tolak.status, 403);
+    assert.match(tolak.data.error, /Hanya admin/i);
+
+    assert.equal((await unggahTransfer(admin, o.id)).status, 200, 'admin boleh');
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    const bukti = d.photos.find((p) => p.source === 'transfer_proof');
+    const del = await client(trader).del(`/api/orders/${o.id}/photos/${bukti.id}`);
+    assert.equal(del.status, 403, 'trader tidak boleh menghapus bukti transfer');
+  });
+
+  test('trader BISA melihat bukti transfer di order miliknya', async () => {
+    const o = await orderMilikTrader();
+    assert.equal((await unggahTransfer(admin, o.id)).status, 200);
+    assert.equal((await completeOrder(admin, o.id, 'lunas', false)).status, 200);
+
+    const { status, data } = await client(trader).get(`/api/orders/${o.id}/detail`);
+    assert.equal(status, 200);
+    const bukti = data.photos.filter((p) => p.source === 'transfer_proof');
+    assert.equal(bukti.length, 1, 'trader melihat bukti transfer (read-only)');
+    assert.ok(bukti[0].file_path, 'file_path tersedia untuk pratinjau');
+  });
+
+  test('bukti transfer membeku setelah order selesai', async () => {
+    const o = await orderDonePickup(admin, { product_id: produkTf });
+    assert.equal((await completeOrder(admin, o.id, 'x', true)).status, 200);
+
+    // Selesai → tidak bisa menambah maupun menghapus.
+    const tambah = await unggahTransfer(admin, o.id, 'tf-lagi.jpg');
+    assert.equal(tambah.status, 400);
+    const { data: d } = await client(admin).get(`/api/orders/${o.id}/detail`);
+    const bukti = d.photos.find((p) => p.source === 'transfer_proof');
+    const del = await client(admin).del(`/api/orders/${o.id}/photos/${bukti.id}`);
+    assert.equal(del.status, 400, 'bukti transfer terkunci setelah selesai');
+  });
+
+  test('bukti transfer hanya bisa dilampirkan saat Done pickup', async () => {
+    const o = await orderReadyForPickup(admin, { product_id: produkTf });
+    const awal = await unggahTransfer(admin, o.id);
+    assert.equal(awal.status, 400, 'ditolak saat Data masuk');
+    assert.match(awal.data.error, /Done pickup/i);
+
+    await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    const saatProses = await unggahTransfer(admin, o.id);
+    assert.equal(saatProses.status, 400, 'ditolak saat Proses pick up');
+  });
+
+  test('trader tidak bisa menyelesaikan order walau bukti sudah ada', async () => {
+    const o = await orderMilikTrader();
+    assert.equal((await unggahTransfer(admin, o.id)).status, 200);
+    const sel = await completeOrder(trader, o.id, 'x', false);
+    assert.equal(sel.status, 403, 'hanya admin yang boleh menyelesaikan');
   });
 });
 
@@ -1822,5 +1962,91 @@ describe('CF12 Urutan kanban: geser status naik, unggah foto tidak', () => {
     await client(admin).post(`/api/orders/${o.id}/pickup`, {});
     const { data: digeser } = await client(admin).get(`/api/orders/${o.id}/detail`);
     assert.notEqual(digeser.status_changed_at, stamp, 'stempel status bergerak saat status berubah');
+  });
+});
+
+describe('CF14 Zaydan Ambilan GJM: barcode tidak wajib', () => {
+  let admin, trader, produkZd, tokoBarcode, tokoBiasa;
+  before(async () => {
+    admin = await login('admin', 'admin');
+    trader = await login('nabila', 'trader');
+    await initOrderDefaults(admin);
+    const nama = `Produk Zaydan ${Date.now()}`;
+    const { data: p } = await client(admin).post('/api/products', { name: nama, quota: 60 });
+    produkZd = p.find((x) => x.name === nama).id;
+
+    const namaTb = `Toko Barcode ${Date.now()}`;
+    const { data: s1 } = await client(admin).post('/api/marketplace-stores', { name: namaTb, has_barcode: true });
+    tokoBarcode = s1.find((x) => x.name === namaTb).id;
+
+    const namaTn = `Toko Tanpa Barcode ${Date.now()}`;
+    const { data: s2 } = await client(admin).post('/api/marketplace-stores', { name: namaTn, has_barcode: false });
+    tokoBiasa = s2.find((x) => x.name === namaTn).id;
+  });
+
+  /** Buat order + lampirkan bukti order saja (tanpa barcode). */
+  const orderDenganBuktiSaja = async (metode, storeId) => {
+    const { status, data: o } = await client(admin).post('/api/orders', order({
+      product_id: produkZd, store_id: storeId, pickup_method: metode,
+    }));
+    assert.equal(status, 201, 'order uji dibuat');
+    assert.equal(await attachOrderProof(admin, o.id), 200, 'bukti order dilampirkan');
+    return o;
+  };
+
+  test('toko berbarcode + Self Pick Up → pick up tanpa barcode ditolak', async () => {
+    const o = await orderDenganBuktiSaja('self_pick_up', tokoBarcode);
+    const { status, data } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 400);
+    assert.match(data.error, /barcode/i);
+  });
+
+  test('toko berbarcode + Zaydan → pick up tanpa barcode DITERIMA', async () => {
+    const o = await orderDenganBuktiSaja('zaydan_ambilan_gjm', tokoBarcode);
+    const { status, data } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 200, 'Zaydan tidak melewati loket penerbit barcode');
+    assert.equal(data.status, 'proses_pick_up');
+  });
+
+  test('toko berbarcode + Zaydan → bukti order tetap wajib', async () => {
+    const { data: o } = await client(admin).post('/api/orders', order({
+      product_id: produkZd, store_id: tokoBarcode, pickup_method: 'zaydan_ambilan_gjm',
+    }));
+    const { status, data } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 400, 'tanpa bukti order tetap ditolak');
+    assert.match(data.error, /bukti order/i);
+  });
+
+  test('toko tanpa barcode + Zaydan → jalur lama tidak berubah', async () => {
+    const o = await orderDenganBuktiSaja('zaydan_ambilan_gjm', tokoBiasa);
+    const { status } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 200);
+  });
+
+  test('ubah metode Zaydan → Self Pick Up menutup celah barcode', async () => {
+    const o = await orderDenganBuktiSaja('zaydan_ambilan_gjm', tokoBarcode);
+    // Aturan dievaluasi saat pick up, bukan dibekukan saat order dibuat.
+    const ubah = await client(admin).patch(`/api/orders/${o.id}`, { pickup_method: 'self_pick_up' });
+    assert.equal(ubah.status, 200, 'metode diubah lewat Edit Order');
+
+    const { status, data } = await client(admin).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 400, 'setelah jadi Self Pick Up, barcode kembali wajib');
+    assert.match(data.error, /barcode/i);
+  });
+
+  test('scan resi juga mengikuti aturan metode', async () => {
+    const o = await orderDenganBuktiSaja('zaydan_ambilan_gjm', tokoBarcode);
+    const { status, data } = await client(admin).post('/api/orders/scan', { code: o.order_number });
+    assert.equal(status, 200, 'scan Zaydan tanpa barcode diterima');
+    assert.equal(data.status, 'proses_pick_up');
+  });
+
+  test('trader memproses order Zaydan miliknya tanpa barcode', async () => {
+    const { data: o } = await client(trader).post('/api/orders', order({
+      product_id: produkZd, store_id: tokoBarcode, pickup_method: 'zaydan_ambilan_gjm',
+    }));
+    assert.equal(await attachOrderProof(trader, o.id), 200);
+    const { status } = await client(trader).post(`/api/orders/${o.id}/pickup`, {});
+    assert.equal(status, 200);
   });
 });
