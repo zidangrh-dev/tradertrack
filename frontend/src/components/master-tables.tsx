@@ -1,7 +1,7 @@
 // Komponen tabel & metrik Master Data — dipisah dari halaman agar halaman hanya berisi logika.
 // Berada di src/components (di luar app/) agar tidak dipindai expo-router sebagai rute.
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '../theme';
+import { colors, problemPalette, radius, tablePalette } from '../theme';
 import type { MarketplaceStore, ProductRow } from '../lib/api';
 import { ActionMenu, type ActionMenuItem } from './ui';
 
@@ -17,7 +17,7 @@ export function MetricsRow({ stats, wide }: { stats: { totalProduk: number; akti
       {items.map((it) => (
         <View key={it.label} style={[styles.metricCard, !wide && styles.metricCardMobile]}>
           <Text style={styles.metricLabel}>{it.label}</Text>
-          <Text style={[styles.metricValue, it.dark && { color: '#0F172A' }]}>{it.value}</Text>
+          <Text style={[styles.metricValue, it.dark && { color: colors.text }]}>{it.value}</Text>
           <Text style={styles.metricSub}>{it.sub}</Text>
         </View>
       ))}
@@ -192,6 +192,8 @@ export function StoreTable({ stores, wide, onRemove, onAdd, onToggleBarcode }: {
       <View style={styles.addStoreWrap}>
         <Pressable
           onPress={onAdd}
+          hitSlop={4}
+          accessibilityRole="button"
           style={({ pressed }) => [styles.addStoreBtn, !wide && styles.addStoreBtnFull, pressed && { opacity: 0.85 }]}
         >
           <Text style={styles.addStoreBtnText}>+ Tambah toko marketplace</Text>
@@ -213,86 +215,88 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: 150,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.line,
   },
   metricCardMobile: { flexBasis: '47%', minWidth: 0, padding: 12 },
-  metricLabel: { fontSize: 9, fontWeight: '800', color: '#64748B', letterSpacing: 0.5 },
+  metricLabel: { fontSize: 9, fontWeight: '800', color: colors.muted, letterSpacing: 0.5 },
   metricValue: { fontSize: 22, fontWeight: '800', color: colors.primary, marginTop: 6 },
-  metricSub: { fontSize: 10, color: '#94A3B8', marginTop: 4 },
+  metricSub: { fontSize: 10, color: colors.faint, marginTop: 4 },
 
   tableCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.line,
     overflow: 'hidden',
   },
   tableSpacing: { marginTop: 16 },
   tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: tablePalette.headerBg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: colors.line,
     paddingHorizontal: 14,
     height: 40,
   },
-  th: { fontSize: 10, fontWeight: '800', color: '#64748B', letterSpacing: 0.5 },
+  th: { fontSize: 10, fontWeight: '800', color: tablePalette.headerText, letterSpacing: 0.5 },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E9EDF2',
+    borderBottomColor: tablePalette.rowLine,
   },
-  rowEven: { backgroundColor: '#FFFFFF' },
-  rowOdd: { backgroundColor: '#FAFBFC' },
+  rowEven: { backgroundColor: colors.surface },
+  rowOdd: { backgroundColor: tablePalette.rowAlt },
   td: { paddingVertical: 2 },
   productWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   productName: { fontSize: 13, fontWeight: '700', color: colors.text, flexShrink: 1 },
-  barcodeYes: { fontSize: 12, fontWeight: '700', color: colors.primaryMuted ?? colors.text },
+  barcodeYes: { fontSize: 12, fontWeight: '700', color: colors.primaryMuted },
   barcodeNo: { fontSize: 12, color: colors.muted },
-  storeName: { fontSize: 10, color: '#94A3B8', marginTop: 3 },
+  // muted (bukan faint): faint di atas rowAlt hanya 4.38:1, di bawah ambang AA.
+  storeName: { fontSize: 10, color: colors.muted, marginTop: 3 },
   quotaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
-  quotaNumbers: { fontSize: 11, color: '#334155', fontWeight: '600', flexShrink: 1 },
-  quotaPct: { fontSize: 10, color: '#94A3B8', fontWeight: '700' },
-  progressBarBg: { height: 6, backgroundColor: '#E9EDF2', borderRadius: radius.full, marginTop: 6, overflow: 'hidden' },
+  quotaNumbers: { fontSize: 11, color: colors.text, fontWeight: '600', flexShrink: 1 },
+  quotaPct: { fontSize: 10, color: colors.muted, fontWeight: '700' },
+  progressBarBg: { height: 6, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, marginTop: 6, overflow: 'hidden' },
   progressBarFill: { height: 6, borderRadius: radius.full },
   fillNormal: { backgroundColor: colors.primary },
-  fillExhausted: { backgroundColor: '#C1433A' },
+  fillExhausted: { backgroundColor: problemPalette.fg },
   remainingText: { fontSize: 11, color: colors.text, fontWeight: '700' },
-  tagExhausted: { backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' },
-  tagExhaustedText: { fontSize: 9, fontWeight: '800', color: '#991B1B' },
+  tagExhausted: { backgroundColor: problemPalette.bg, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' },
+  tagExhaustedText: { fontSize: 9, fontWeight: '800', color: problemPalette.fg },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     borderRadius: radius.full, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start',
     borderWidth: 1,
   },
-  badgeActive: { backgroundColor: '#ECFDF5', borderColor: '#BBF7D0' },
-  badgeInactive: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  badgeActive: { backgroundColor: colors.surface, borderColor: colors.green },
+  badgeInactive: { backgroundColor: tablePalette.headerBg, borderColor: colors.line },
   statusDot: { width: 6, height: 6, borderRadius: radius.full },
   dot: { width: 6, height: 6, borderRadius: radius.full },
-  dotActive: { backgroundColor: '#10B981' },
-  dotInactive: { backgroundColor: '#94A3B8' },
+  dotActive: { backgroundColor: colors.green },
+  dotInactive: { backgroundColor: colors.muted },
   statusText: { fontSize: 10, fontWeight: '700' },
-  textActive: { color: '#059669' },
-  textInactive: { color: '#64748B' },
+  textActive: { color: colors.green },
+  textInactive: { color: colors.muted },
 
   emptyTable: { paddingVertical: 40, alignItems: 'center' },
-  emptyTitle: { fontSize: 13, fontWeight: '700', color: '#475569' },
-  emptySub: { fontSize: 11, color: '#94A3B8', marginTop: 4, textAlign: 'center', paddingHorizontal: 24 },
+  emptyTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  emptySub: { fontSize: 11, color: colors.muted, marginTop: 4, textAlign: 'center', paddingHorizontal: 24 },
 
   addStoreWrap: { padding: 12 },
+  // Tinggi 36 + hitSlop 4 pada Pressable = area sentuh 44px.
   addStoreBtn: {
     height: 36, paddingHorizontal: 14, borderRadius: radius.md,
-    borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
   },
   addStoreBtnFull: { alignSelf: 'stretch' },
-  addStoreBtnText: { fontSize: 12, fontWeight: '700', color: '#334155' },
+  addStoreBtnText: { fontSize: 12, fontWeight: '700', color: colors.primary },
 });

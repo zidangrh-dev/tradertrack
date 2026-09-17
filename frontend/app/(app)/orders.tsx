@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle, useWindowDimensions,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { api, type OrderView } from '../../src/lib/api';
@@ -8,7 +8,7 @@ import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, pickupMethodLabel, pickupMethodOptions, statusOptions, statusLabel, STATUS_FLOW, webNoOutline } from '../../src/theme';
+import { colors, radius, pickupMethodLabel, pickupMethodOptions, proofOkColor, statusOptions, statusLabel, STATUS_FLOW } from '../../src/theme';
 import { durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
@@ -35,10 +35,14 @@ async function copyText(text: string) {
 export default function Orders() {
   const { user } = useAuth();
   const isAdmin = isAdminLevel(user?.role);
-  // Layar sempit (HP): filter ditumpuk & tabel diganti kartu — 9 kolom + kolom
-  // aksi fixed 158px tidak mungkin muat di lebar HP (sisa ±20px per kolom).
+  // Tiga keadaan, bukan dua: halaman dipakai di HP, tablet, dan desktop.
+  //  < 700  → kartu (9 kolom mustahil muat)
+  //  700-1060 → tabel ringkas: kolom sekunder disembunyikan agar kolom yang
+  //             menentukan tindakan tetap lebar dan terbaca
+  //  > 1060 → tabel penuh
   const { width } = useWindowDimensions();
   const isNarrow = width < 700;
+  const isRingkas = !isNarrow && width < 1060;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
@@ -187,7 +191,10 @@ export default function Orders() {
     return items;
   };
 
-  const columns: DataTableColumn<OrderView>[] = [
+  // Kolom yang menentukan tindakan admin (order mana yang perlu ditangani)
+  // dapat lebar lebih besar dan bertahan di lebar tablet. Metode & Trader
+  // jarang menentukan tindakan, jadi keduanya yang pertama disembunyikan.
+  const semuaKolom: (DataTableColumn<OrderView> & { sekunder?: boolean })[] = [
     {
       // Lebar tetap: nomor pesanan marketplace 18 digit harus terbaca utuh,
       // tidak boleh menyusut karena kolom lain. Angka tabular agar rata.
@@ -208,7 +215,7 @@ export default function Orders() {
       render: (o) => <Text style={dtStyles.cellText} numberOfLines={1}>{o.recipient_name}</Text>,
     },
     {
-      key: 'trader', label: 'Trader', sortKey: 'trader' as keyof OrderView, width: 2,
+      key: 'trader', label: 'Trader', sortKey: 'trader' as keyof OrderView, width: 2, sekunder: true,
       render: (o) => (
         <View style={dtStyles.person}>
           <Avatar name={o.trader_name} size={22} />
@@ -217,11 +224,13 @@ export default function Orders() {
       ),
     },
     {
-      key: 'method', label: 'Metode', sortKey: 'method' as keyof OrderView, width: 2,
+      key: 'method', label: 'Metode', sortKey: 'method' as keyof OrderView, width: 2, sekunder: true,
       render: (o) => <Text style={dtStyles.method} numberOfLines={1}>{pickupMethodLabel[o.pickup_method]}</Text>,
     },
     {
-      key: 'status', label: 'Status', sortKey: 'status' as keyof OrderView, width: 1.5,
+      // Status memimpin keputusan "order mana yang perlu ditangani", jadi
+      // lebarnya di atas kolom informatif seperti Metode.
+      key: 'status', label: 'Status', sortKey: 'status' as keyof OrderView, width: 2.2,
       render: (o) => {
         if (o.is_problem) return <FlagBadge kind="problem" />;
         if (o.is_pending) return <FlagBadge kind="pending" />;
@@ -229,10 +238,10 @@ export default function Orders() {
       },
     },
     {
-      key: 'photo_count', label: 'Bukti', sortKey: 'photo_count' as keyof OrderView, width: 1,
+      key: 'photo_count', label: 'Bukti', sortKey: 'photo_count' as keyof OrderView, width: 1.2,
       render: (o) => (
         <Text style={o.photo_count > 0 ? dtStyles.photoOk : dtStyles.photoEmpty}>
-          {o.photo_count > 0 ? `▣ ${o.photo_count}` : '—'}
+          {o.photo_count > 0 ? `${o.photo_count} foto` : 'Belum ada'}
         </Text>
       ),
     },
@@ -251,6 +260,10 @@ export default function Orders() {
     },
   ];
 
+  // Tablet & laptop kecil: buang kolom sekunder agar sisanya tetap lapang.
+  // Datanya tidak hilang, tetap terbaca di modal detail lewat klik baris.
+  const columns = isRingkas ? semuaKolom.filter((c) => !c.sekunder) : semuaKolom;
+
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={styles.wrapContent}>
       <PageHeader
@@ -265,6 +278,8 @@ export default function Orders() {
         </View>
         <Pressable
           onPress={() => setShowFilters((v) => !v)}
+          // Visual 34px + hitSlop 5 = area sentuh 44px, tinggi baris tetap.
+          hitSlop={5}
           style={[styles.filterBtn, activeFilters > 0 && styles.filterBtnActive]}
           accessibilityLabel={showFilters ? 'Sembunyikan filter' : 'Tampilkan filter'}
         >
@@ -340,7 +355,7 @@ export default function Orders() {
         />
 
         {activeFilters > 0 && (
-          <Pressable onPress={resetFilters} style={[styles.resetBtn, isNarrow && styles.resetBtnNarrow]}>
+          <Pressable onPress={resetFilters} hitSlop={5} style={[styles.resetBtn, isNarrow && styles.resetBtnNarrow]}>
             <Text style={styles.resetIcon}>↻</Text>
             <Text style={styles.resetText}>Reset{activeFilters > 1 ? ` (${activeFilters})` : ''}</Text>
           </Pressable>
@@ -352,7 +367,12 @@ export default function Orders() {
         <View style={[styles.tableIntro, isNarrow && styles.tableIntroNarrow]}>
           <View>
             <Text style={styles.tableTitle}>{isAdmin ? 'Semua order' : 'Order saya'}</Text>
-            {!isNarrow && <Text style={styles.tableHint}>Klik judul kolom untuk mengurutkan data.</Text>}
+            {!isNarrow && (
+              <Text style={styles.tableHint}>
+                Klik judul kolom untuk mengurutkan data.
+                {isRingkas ? ' Trader & metode tersembunyi di lebar ini — buka detail untuk melihatnya.' : ''}
+              </Text>
+            )}
           </View>
           <View style={styles.tableTools}>
             <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {total}</Text>
@@ -383,6 +403,9 @@ export default function Orders() {
                   />
                 ))}
               </View>
+              {/* Jumlah total selalu tampil, juga saat hanya satu halaman:
+                  tanpa ini pengguna HP kehilangan konteks "dari berapa". */}
+              <Text style={styles.cardCount}>{rangeStart}–{rangeEnd} dari {total} order</Text>
               {totalPages > 1 && (
                 <View style={styles.cardPager}>
                   <Button label="‹ Sebelumnya" variant="secondary" size="sm" disabled={visiblePage <= 1} onPress={() => setPage(visiblePage - 1)} />
@@ -559,10 +582,9 @@ const dtStyles = StyleSheet.create({
   person: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   personName: { fontSize: 13, color: colors.muted, flexShrink: 1 },
   method: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.2 },
-  photoOk: { fontSize: 13, fontWeight: '700', color: '#1F7A4D' },
-  photoEmpty: { fontSize: 13, color: colors.faint },
-  timeText: { fontSize: 13, color: colors.faint },
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  photoOk: { fontSize: 13, fontWeight: '700', color: proofOkColor },
+  photoEmpty: { fontSize: 13, color: colors.muted },
+  timeText: { fontSize: 13, color: colors.muted },
 });
 
 
@@ -618,7 +640,8 @@ const styles = StyleSheet.create({
   // Tampilan kartu (layar sempit)
   cardList: { gap: 10 },
   cardActions: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.line },
-  cardPager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12 },
+  cardCount: { fontSize: 11, color: colors.muted, marginTop: 12, textAlign: 'center' },
+  cardPager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 },
   cardPagerText: { fontSize: 12, fontWeight: '700', color: colors.muted },
 
   // Napas di atas (memisahkan dari field terakhir) dan di bawah (sebelum tombol).

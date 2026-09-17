@@ -5,7 +5,7 @@ export const colors = {
   // Brand
   primary: '#1F4B7A',
   primarySoft: '#EAF1F8',
-  primaryMuted: '#52749A',
+  primaryMuted: '#4E6E92',
   onPrimary: '#FFFFFF',
   brand: '#1F4B7A',
   onBrand: '#FFFFFF',
@@ -16,10 +16,10 @@ export const colors = {
   surfaceAlt: '#E9EDF2',
   line: '#D8DEE6',
 
-  // Text
+  // Text — ketiganya lolos WCAG AA (4.5:1) di atas surface putih.
   text: '#17202B',
   muted: '#596675',
-  faint: '#8995A3',
+  faint: '#6B747F',
 
   // Status
   amber: '#7A6540',
@@ -28,13 +28,38 @@ export const colors = {
   red: '#A34848',
 };
 
+// Permukaan gelap: latar panggung pratinjau foto + glyph penggantinya.
+export const previewStage = { bg: '#1B2432', glyph: '#93A3B8' };
+
+// Slot lampiran foto: kotak putus-putus saat kosong, latar biru sangat muda.
+export const slotPalette = { border: '#B9C8DA', bg: '#F4F8FD' };
+
+// Catatan peringatan (bukti belum lengkap) — senada pendingPalette.
+export const notePalette = { fg: '#8A5310', bg: '#FCF3E3', accent: '#A8610F' };
+
+// Tabel data: semua permukaan diturunkan dari palet inti, bukan keluarga abu
+// terpisah. rowAlt sengaja memakai canvas agar baris selang-seling menyatu
+// dengan halaman, bukan memperkenalkan abu kelima.
+export const tablePalette = {
+  headerBg: colors.canvas,
+  headerText: colors.muted,
+  rowAlt: colors.canvas,
+  rowLine: colors.surfaceAlt,
+  footerBg: colors.canvas,
+};
+
+// Penanda bukti foto lengkap pada baris tabel & kartu order.
+export const proofOkColor = colors.green;
+// Chip bukti pada kartu order selesai — teks hijau di atas latar hijau muda.
+export const proofChipPalette = { fg: colors.green, bg: '#E3F5EC' };
+
 export const radius = { sm: 8, md: 12, lg: 16, full: 999 };
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 
 // Palet status khusus (badge Bermasalah/Tertunda) — dipakai lintas layar.
-export const problemPalette = { fg: '#C1433A', bg: '#FCE9E6' };
-export const pendingPalette = { fg: '#A8610F', bg: '#FCF1DE' };
+export const problemPalette = { fg: '#B23E35', bg: '#FCE9E6' };
+export const pendingPalette = { fg: '#9B590E', bg: '#FCF1DE' };
 
 // Backdrop gelap bersama untuk semua modal kustom.
 export const backdropColor = 'rgba(15,22,42,.45)';

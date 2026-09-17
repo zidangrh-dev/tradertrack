@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useOrders } from '../hooks/useOrders';
 import { confirmAsk } from '../lib/notify';
-import { colors, radius } from '../theme';
+import { colors, problemPalette, radius } from '../theme';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { isAdminLevel, roleLabel } from '../lib/roles';
 
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt, color: colors.muted, fontSize: 10, fontWeight: '700',
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full, overflow: 'hidden', minWidth: 22, textAlign: 'center',
   },
-  badgeDanger: { backgroundColor: '#FCE9E6', color: '#C1433A' },
+  badgeDanger: { backgroundColor: problemPalette.bg, color: problemPalette.fg },
   status: {
     flexDirection: 'row', alignItems: 'center', gap: 9,
     borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.line,

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
-import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, radius, space, statusLabel, webNoOutline, type Status } from '../theme';
+import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, proofOkColor, radius, space, statusLabel, tablePalette, webNoOutline, type Status } from '../theme';
 import { durationLabel, statusPalette } from '../lib/format';
 import type { OrderView } from '../lib/api';
 
@@ -237,7 +237,8 @@ export function ActionMenu({ items, label, tone = 'muted' }: {
     <>
       <Pressable
         onPress={openMenu}
-        hitSlop={6}
+        // Visual 30px + hitSlop 7 = area sentuh 44px tanpa menambah tinggi baris.
+        hitSlop={7}
         accessibilityLabel={label}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -799,7 +800,7 @@ export function OrderCard({
           <Text style={styles.personName} numberOfLines={1}>{order.trader_name}</Text>
         </View>
         <View style={styles.orderFootRight}>
-          {order.photo_count > 0 && <Text style={styles.proof}>▣ {order.photo_count}</Text>}
+          {order.photo_count > 0 && <Text style={styles.proof}>{order.photo_count} foto</Text>}
           <Text style={styles.orderTime}>{durationLabel(order.updated_at)}</Text>
         </View>
       </View>
@@ -807,10 +808,6 @@ export function OrderCard({
       {!!actions && <View style={styles.orderActions}>{actions}</View>}
     </Pressable>
   );
-}
-
-function Badge({ label, color, bg }: { label: string; color: string; bg: string }) {
-  return <Text style={[styles.tag, { color, backgroundColor: bg }]}>{label}</Text>;
 }
 
 /* ---------- DataTable ---------- */
@@ -1028,29 +1025,37 @@ const selStyles = StyleSheet.create({
 });
 
 const dtStyles = StyleSheet.create({
-  container: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: '#D8DEE6', overflow: 'hidden' },
+  container: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
   table: { width: '100%' },
-  headerRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#CBD5E1', backgroundColor: '#F1F5F9' },
+  headerRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: tablePalette.headerBg },
   headerCell: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44 },
-  headerText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.55, textTransform: 'uppercase', color: '#475569' },
+  headerText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.55, textTransform: 'uppercase', color: tablePalette.headerText },
   headerTextActive: { color: colors.primary },
   sortArrow: { fontSize: 9, marginLeft: 2 },
   sortArrowActive: { color: colors.primary },
-  sortArrowInactive: { color: '#94A3B8' },
-  dataRow: { flexDirection: 'row', minHeight: 70, borderBottomWidth: 1, borderBottomColor: '#E9EDF2' },
-  dataRowAlt: { backgroundColor: '#FAFBFC' },
+  // Panah nonaktif adalah satu-satunya petunjuk kolom bisa diurutkan, jadi
+  // warnanya harus terbaca (muted 5.41:1), bukan abu samar.
+  sortArrowInactive: { color: colors.muted },
+  dataRow: { flexDirection: 'row', minHeight: 70, borderBottomWidth: 1, borderBottomColor: tablePalette.rowLine },
+  dataRowAlt: { backgroundColor: tablePalette.rowAlt },
   dataCell: { paddingHorizontal: 14, paddingVertical: 10, justifyContent: 'center' },
   emptyWrap: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, paddingVertical: 56, alignItems: 'center' },
   emptyText: { fontSize: 14, color: colors.muted },
-  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#E2E8F0' },
-  pageInfo: { fontSize: 12, color: colors.muted },
-  pageButtons: { flexDirection: 'row', gap: 5 },
-  pageBtn: { width: 34, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  pagination: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: tablePalette.footerBg, borderTopWidth: 1, borderTopColor: colors.line,
+  },
+  pageInfo: { fontSize: 12, color: colors.muted, flexShrink: 1 },
+  // Sasaran sentuh 44px dengan jarak antar tombol: jari menyentuh area ~44px,
+  // tombol berdempetan membuat dua sasaran terbaca sebagai satu.
+  pageButtons: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  pageBtn: { minWidth: 44, height: 44, paddingHorizontal: 6, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   pageBtnActive: { backgroundColor: colors.primary },
   pageBtnDisabled: { opacity: 0.35 },
   pageBtnText: { fontSize: 13, fontWeight: '700', color: colors.muted },
   pageBtnTextActive: { color: colors.onPrimary },
-  pageBtnTextDisabled: { color: colors.faint },
+  pageBtnTextDisabled: { color: colors.muted },
 });
 
 /* ---------- Styles ---------- */
@@ -1146,7 +1151,7 @@ const styles = StyleSheet.create({
   person: { flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 1, minWidth: 0 },
   personName: { fontSize: 11, color: colors.muted, fontWeight: '600', flexShrink: 1 },
   orderFootRight: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
-  proof: { fontSize: 10, fontWeight: '700', color: '#1F7A4D' },
+  proof: { fontSize: 10, fontWeight: '700', color: proofOkColor },
   orderTime: { fontSize: 10, color: colors.faint, fontVariant: ['tabular-nums'] },
   orderActions: { marginTop: 12 },
 });
