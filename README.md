@@ -88,6 +88,25 @@ superadmin (hanya bila belum ada superadmin sama sekali).
 
 Tidak disimpan — dihitung saat render: status `data_masuk`/`proses_pick_up`/`done_pickup` yang `status_changed_at`-nya lebih lama dari `pending_threshold_hours` (default 3 jam, atur di Pengaturan). Acuannya **bukan** `updated_at`, jadi mengunggah foto tidak me-reset jam tertunda. Order bermasalah menampilkan badge "Bermasalah" (menimpa Tertunda).
 
+### Penanda "Sudah disalin" (`copied_at`)
+
+Daftar order dikirim ke user beberapa kali sehari. Tanpa penanda, salinan siang akan mengulang isi salinan pagi.
+
+Dua tombol di Daftar Order, **keduanya menandai** setelah salin berhasil:
+
+| Tombol | Menyalin |
+|---|---|
+| **Copy belum disalin (N)** | hanya baris dengan `copied_at IS NULL` |
+| **Copy halaman ini** | seluruh baris yang tampil |
+
+Yang ditandai hanya baris yang **benar-benar masuk papan klip** — daftar dibatasi 50 baris per halaman, jadi order di halaman berikutnya tidak ikut tertandai. Penandaan menyusul setelah salin berhasil: kalau papan klip gagal, order tidak dianggap terkirim.
+
+`copied_at` **tidak** menyentuh `updated_at` maupun `status_changed_at` — menyalin bukan perubahan data order, jadi urutan kanban dan jam tertunda tidak boleh bergeser karenanya.
+
+Baris yang sudah disalin diberi tanda ✓ di samping nomor order. Filter **Status salin** menyaring belum/sudah, dan aksi **Batal tandai disalin** di menu ⋯ mengembalikannya ke daftar belum disalin bila perlu dikirim ulang.
+
+**Kolom yang disalin bisa dipilih** lewat tombol ⚙ di sebelah tombol Copy: nomor order, produk, toko, penerima, trader, metode, status, nominal, jumlah bukti, waktu input. Bawaannya empat kolom pertama. Urutan kolom mengikuti daftar di `frontend/src/lib/copyColumns.ts`, bukan urutan mencentang, dan pilihannya diingat per perangkat (`AsyncStorage`). Hasil salin **tanpa baris header** supaya langsung bisa ditempel ke chat.
+
 ---
 
 ## 2. Arsitektur
@@ -120,7 +139,7 @@ Kedua repo menghadirkan interface yang sama.
 | `users` | `username`, `password_hash`, `display_name`, `role` (`admin`/`trader`), `is_active` |
 | `products` | `name` (unik, case-insensitive), `quota` (int ≥ 0), `is_active` — **kuota menempel di sini** |
 | `marketplace_stores` | `name` (unik, case-insensitive), `is_active` |
-| `orders` | `order_number` (unik), `product_name`/`store_name` (denormalisasi utk tampilan), `product_id`/`store_id` (FK), `trader_id`, `status`, `order_amount`, `note`, `is_problem`, `barcode_path`, `photo_count`, waktu (`created_at`, `picked_up_at`, `completed_at`, `status_changed_at`, `updated_at`) |
+| `orders` | `order_number` (unik), `product_name`/`store_name` (denormalisasi utk tampilan), `product_id`/`store_id` (FK), `trader_id`, `status`, `order_amount`, `note`, `is_problem`, `barcode_path`, `photo_count`, waktu (`created_at`, `picked_up_at`, `completed_at`, `copied_at`, `status_changed_at`, `updated_at`) |
 | `order_photos` | bukti foto (`file_path`, `source`: `order`/`pickup`/`pickup_evidence`/`transfer_proof`/`kamera`/`berkas`, `uploaded_by`) |
 | `order_events` | riwayat status (actor + note + timestamp) |
 | `app_settings` | `pending_threshold_hours`, `max_photos`, `max_file_mb` (`min_photos` masih ada di tabel tapi tidak lagi dipakai: syarat selesai kini bukti transfer) |
@@ -152,7 +171,7 @@ Autentikasi: `POST /login` → JWT → header `Authorization: Bearer <token>`. F
 | Metode & path | Akses | Fungsi |
 |---|---|---|
 | `POST /login`, `POST /logout`, `GET /session` | publik/auth | sesi & token (di dev: `POST /dev/session` ganti user) |
-| `GET/POST /orders` | auth | daftar (filter `q,status,pickup_method,trader,from,to`) & buat order (`product_id`, `store_id`, `order_number`, `recipient_name`, `pickup_method`, `order_amount?`) |
+| `GET/POST /orders` | auth | daftar (filter `q,status,pickup_method,trader,from,to,copied`) & buat order (`product_id`, `store_id`, `order_number`, `recipient_name`, `pickup_method`, `order_amount?`) |
 | `POST /orders/scan` | admin | cocokkan nomor resi (foto barcode opsional) → `proses_pick_up` |
 | `POST /orders/:id/pickup` | pemilik/admin | proses pick up; butuh bukti bila belum ada |
 | `POST /orders/:id/done-pickup` | admin | tandai sudah diambil; total foto pengambilan wajib **1-3** (field `photo`, 0-3 berkas — yang sudah tersimpan ikut dihitung) |
@@ -163,6 +182,8 @@ Autentikasi: `POST /login` → JWT → header `Authorization: Bearer <token>`. F
 | `POST /orders/:id/complete` | admin | selesaikan order; wajib ada **bukti transfer** (field `photo`, 0-1 berkas — yang sudah tersimpan ikut dihitung) |
 | `PATCH /orders/:id/problem` · `:id/reopen` | admin | tandai masalah (alasan wajib) / buka kembali |
 | `DELETE /orders/:id/problem` | admin | cabut tanda bermasalah (alasan dikosongkan, idempoten) |
+| `POST /orders/mark-copied` | auth | tandai order sudah tersalin (`{ids: [...]}`, maks 200; trader hanya ordernya sendiri) |
+| `DELETE /orders/:id/copied` | pemilik/admin | batal tandai — daftar bisa dikirim ulang |
 | `DELETE /orders/:id` · `PATCH /orders/:id` | pemilik | hapus/edit order sendiri saat `data_masuk` |
 | `GET /reports?range=` | admin | totals, per-trader, rekap per produk, tertunda/bermasalah |
 | `GET/POST /products`, `PATCH/DELETE /products/:id`, `POST /products/:id/quota`, `POST /products/:id/reset-quota` | baca: auth; tulis: admin | katalog produk & kuota |

@@ -8,8 +8,10 @@ import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
+import { useCopyColumns } from '../../src/hooks/useCopyColumns';
+import { COPY_COLUMNS } from '../../src/lib/copyColumns';
 import { colors, radius, pickupMethodLabel, pickupMethodOptions, proofOkColor, statusOptions, statusLabel, STATUS_FLOW } from '../../src/theme';
-import { durationLabel } from '../../src/lib/format';
+import { dateTime, durationLabel } from '../../src/lib/format';
 import { ActionMenu, Avatar, Button, DataTable, EmptyState, Field, FlagBadge, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, StatusTag, type ActionMenuItem, type DataTableColumn, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
@@ -17,14 +19,16 @@ import { OrderDetailModal } from '../../src/components/OrderDetailModal';
 import { isAdminLevel } from '../../src/lib/roles';
 
 const PER_PAGE = 50;
-const COPY_HEADERS = ['Nomor order', 'Produk & toko', 'Penerima'];
+const COPIED_OPTIONS = [
+  { value: 'belum', label: 'Belum disalin' },
+  { value: 'sudah', label: 'Sudah disalin' },
+];
 
-function orderCopyRow(o: OrderView) {
-  return [
-    o.order_number,
-    `${o.product_name} · ${o.store_name}`,
-    o.recipient_name,
-  ];
+/** Satu baris salin dibentuk dari daftar ini, bukan dari dua definisi terpisah
+ *  (header + nilai) yang bisa tidak sinkron. Urutan array = urutan kolom pada
+ *  hasil salin, apa pun urutan admin mencentangnya. */
+function orderCopyRow(o: OrderView, keys: string[]) {
+  return COPY_COLUMNS.filter((c) => keys.includes(c.key)).map((c) => c.value(o));
 }
 
 async function copyText(text: string) {
@@ -47,6 +51,11 @@ export default function Orders() {
   const [status, setStatus] = useState('');
   const [method, setMethod] = useState('');
   const [trader, setTrader] = useState('');
+  // '' = semua, 'belum' / 'sudah' = saring berdasarkan penanda salin.
+  const [copied, setCopied] = useState('');
+  // Kolom yang ikut disalin — diingat antar sesi di perangkat ini.
+  const { keys: copyCols, toggle: toggleCopyCol, reset: resetCopyCols } = useCopyColumns();
+  const [pilihKolom, setPilihKolom] = useState(false);
   const [store, setStore] = useState<string[]>([]);
   const [product, setProduct] = useState<string[]>([]);
   // Rentang tanggal kosong = semua tanggal (tidak ada data yang tersembunyi diam-diam).
@@ -92,13 +101,14 @@ export default function Orders() {
     if (store.length) q.store = store.join(',');
     if (product.length) q.product = product.join(',');
     if (trader) q.trader = trader;
+    if (copied) q.copied = copied;
     q.page = String(page);
     q.per_page = String(PER_PAGE);
     // Batas atas akhir hari agar rentang inklusif sampai tanggal terpilih.
     if (fromKey) q.from = startOfDayISO(fromKey);
     if (toKey) q.to = endOfDayISO(toKey);
     return q;
-  }, [search, status, method, store, product, trader, fromKey, toKey, page]);
+  }, [search, status, method, store, product, trader, copied, fromKey, toKey, page]);
 
   const { orders, total, loading, error, refresh } = useOrders(query);
 
@@ -138,17 +148,52 @@ export default function Orders() {
   };
 
   const resetFilters = () => {
-    setStatus(''); setMethod(''); setStore([]); setProduct([]); setTrader(''); setFromKey(null); setToKey(null); setPage(1);
+    setStatus(''); setMethod(''); setStore([]); setProduct([]); setTrader(''); setCopied(''); setFromKey(null); setToKey(null); setPage(1);
   };
 
-  const activeFilters = [status, method, trader].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (product.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0);
-  const copyFiltered = async () => {
+  const activeFilters = [status, method, trader, copied].filter(Boolean).length + (store.length > 0 ? 1 : 0) + (product.length > 0 ? 1 : 0) + (fromKey && toKey ? 1 : 0);
+  // Hanya halaman yang tampil yang ikut tersalin (PER_PAGE), jadi penandaan
+  // dibatasi ke baris yang benar-benar masuk papan klip — order di halaman
+  // berikutnya tidak boleh ikut tertandai.
+  const belumDisalin = sorted.filter((o) => !o.copied_at);
+
+  const salinDanTandai = async (daftar: OrderView[], label: string) => {
+    if (daftar.length === 0) return;
     try {
-      const text = [COPY_HEADERS, ...sorted.map(orderCopyRow)].map((row) => row.join('\t')).join('\n');
+      // Tanpa baris header: hasil salin langsung tempel ke chat tanpa perlu
+      // menghapus judul kolom lebih dulu.
+      const text = daftar.map((o) => orderCopyRow(o, copyCols).join('\t')).join('\n');
       await copyText(text);
-      notify('Berhasil', `${sorted.length} order pada halaman ini berhasil disalin.`);
+      // Penandaan menyusul setelah salin berhasil: kalau papan klip gagal,
+      // order tidak boleh terlanjur dianggap sudah dikirim.
+      try {
+        await api.markCopied(daftar.map((o) => o.id));
+        refresh();
+      } catch (e) {
+        // Sebutkan sebabnya: tanpa ini admin harus menebak antara server mati,
+        // versi backend lama yang belum punya endpoint, atau jaringan putus.
+        notify(
+          'Tersalin, penanda gagal',
+          `${daftar.length} order sudah masuk papan klip, tetapi penandanya gagal disimpan: ${(e as Error).message}. Salin ulang untuk menandai.`,
+        );
+        return;
+      }
+      notify('Berhasil', `${daftar.length} ${label} berhasil disalin dan ditandai.`);
     } catch (e) {
       notify('Gagal menyalin', (e as Error).message);
+    }
+  };
+
+  const copyFiltered = () => salinDanTandai(sorted, 'order pada halaman ini');
+  const copyBelumDisalin = () => salinDanTandai(belumDisalin, 'order yang belum disalin');
+
+  const batalTandai = async (o: OrderView) => {
+    try {
+      await api.clearCopied(o.id);
+      notify('Berhasil', `${o.order_number} ditandai belum disalin.`);
+      refresh();
+    } catch (e) {
+      notify('Gagal', (e as Error).message);
     }
   };
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
@@ -169,7 +214,7 @@ export default function Orders() {
         icon: 'copy-outline',
         onPress: async () => {
           try {
-            await copyText(orderCopyRow(o).join('\t'));
+            await copyText(orderCopyRow(o, copyCols).join('\t'));
             notify('Berhasil', 'Data order disalin.');
           } catch (e) {
             notify('Gagal menyalin', (e as Error).message);
@@ -181,6 +226,12 @@ export default function Orders() {
       items.push(
         { key: 'pickup', label: 'Proses pick up', icon: 'arrow-forward-circle-outline', onPress: () => processPickup(o, refresh) },
       );
+    }
+    if (o.copied_at) {
+      items.push({
+        key: 'uncopy', label: 'Batal tandai disalin', icon: 'refresh-outline',
+        onPress: () => batalTandai(o),
+      });
     }
     if (bisaUbah) {
       items.push(
@@ -199,7 +250,12 @@ export default function Orders() {
       // Lebar tetap: nomor pesanan marketplace 18 digit harus terbaca utuh,
       // tidak boleh menyusut karena kolom lain. Angka tabular agar rata.
       key: 'order_number', label: 'Nomor order', sortKey: 'order_number' as keyof OrderView, width: 172, fixed: true,
-      render: (o) => <Text style={dtStyles.orderCode}>{o.order_number}</Text>,
+      render: (o) => (
+        <View style={dtStyles.orderCodeWrap}>
+          <Text style={dtStyles.orderCode}>{o.order_number}</Text>
+          <CopiedMark copiedAt={o.copied_at} />
+        </View>
+      ),
     },
     {
       key: 'product', label: 'Produk & toko', sortKey: 'product' as keyof OrderView, width: 2.5,
@@ -315,6 +371,16 @@ export default function Orders() {
           compact
           block={isNarrow}
         />
+        <Select
+          label="Status salin"
+          value={copied}
+          options={COPIED_OPTIONS}
+          onChange={(v) => { setCopied(v); setPage(1); }}
+          placeholder="Semua"
+          clearLabel="Semua"
+          compact
+          block={isNarrow}
+        />
         <MultiSelect
           label="Produk"
           value={product}
@@ -376,7 +442,24 @@ export default function Orders() {
           </View>
           <View style={styles.tableTools}>
             <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {total}</Text>
-            <Button label="Copy hasil filter" icon="⧉" variant="secondary" size="sm" onPress={copyFiltered} disabled={sorted.length === 0} />
+            <Button
+              label={`Copy belum disalin (${belumDisalin.length})`}
+              icon="⧉"
+              size="sm"
+              onPress={copyBelumDisalin}
+              disabled={belumDisalin.length === 0}
+            />
+            <Button label="Copy halaman ini" icon="⧉" variant="secondary" size="sm" onPress={copyFiltered} disabled={sorted.length === 0} />
+            <Pressable
+              onPress={() => setPilihKolom(true)}
+              // Visual 32px + hitSlop 6 = area sentuh 44px.
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Pilih kolom yang disalin"
+              style={({ pressed }) => [styles.kolomBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.kolomIcon}>⚙</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -442,11 +525,49 @@ export default function Orders() {
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); refresh(); }}
       />
+      <Sheet open={pilihKolom} onClose={() => setPilihKolom(false)} title="Kolom yang disalin">
+        <Text style={styles.kolomHint}>
+          Urutan kolom mengikuti daftar ini, bukan urutan Anda mencentang. Pilihan diingat di perangkat ini.
+        </Text>
+        {COPY_COLUMNS.map((c) => {
+          const aktif = copyCols.includes(c.key);
+          return (
+            <Pressable
+              key={c.key}
+              onPress={() => toggleCopyCol(c.key)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: aktif }}
+              style={({ pressed }) => [styles.kolomRow, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={[styles.kolomBox, aktif && styles.kolomBoxAktif]}>{aktif ? '☑' : '☐'}</Text>
+              <Text style={styles.kolomLabel}>{c.label}</Text>
+            </Pressable>
+          );
+        })}
+        <View style={styles.kolomActions}>
+          <Button label="Kembalikan ke bawaan" variant="secondary" size="sm" onPress={resetCopyCols} />
+          <Button label="Selesai" size="sm" onPress={() => setPilihKolom(false)} />
+        </View>
+      </Sheet>
     </ScrollView>
   );
 }
 
 /* ---------- Aksi order ---------- */
+
+/** Penanda order sudah ikut tersalin ke papan klip. Glyph kecil di samping
+ *  nomor order — hemat ruang pada tabel yang sudah padat kolom. */
+function CopiedMark({ copiedAt }: { copiedAt: string | null }) {
+  if (!copiedAt) return null;
+  return (
+    <Text
+      style={dtStyles.copiedMark}
+      accessibilityLabel={`Sudah disalin ${dateTime(copiedAt)}`}
+    >
+      ✓
+    </Text>
+  );
+}
 
 async function processPickup(o: OrderView, refresh: () => void) {
   // Order sudah punya bukti (barcode/foto) → proses langsung; belum → wajib lampirkan foto dulu.
@@ -575,6 +696,10 @@ const dtStyles = StyleSheet.create({
     fontSize: 13, fontWeight: '800', color: colors.primaryMuted,
     fontVariant: ['tabular-nums'], letterSpacing: 0.2,
   },
+  orderCodeWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  // Penanda sudah disalin: glyph kecil, warna hijau bukti agar sejalan dengan
+  // penanda "sudah lengkap" di kolom Bukti.
+  copiedMark: { fontSize: 11, fontWeight: '800', color: proofOkColor },
   actionCell: { alignItems: 'flex-end' },
   productName: { fontSize: 14, fontWeight: '700', color: colors.text },
   storeName: { fontSize: 12, color: colors.muted, marginTop: 3 },
@@ -631,7 +756,19 @@ const styles = StyleSheet.create({
   tableIntroNarrow: { flexWrap: 'wrap', gap: 8 },
   tableTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   tableHint: { fontSize: 11, color: colors.faint, marginTop: 3 },
-  tableTools: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tableTools: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
+  // Pemilih kolom salin
+  kolomBtn: {
+    width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  },
+  kolomIcon: { fontSize: 14, color: colors.muted },
+  kolomHint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginBottom: 10 },
+  kolomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  kolomBox: { fontSize: 16, color: colors.muted },
+  kolomBoxAktif: { color: colors.primary },
+  kolomLabel: { fontSize: 13, color: colors.text },
+  kolomActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14 },
   tableCount: { fontSize: 11, color: colors.muted, fontWeight: '700' },
   errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginTop: 24, alignItems: 'center', gap: 8 },
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
