@@ -28,7 +28,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: {
 }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  if (width >= 900) return null;
 
   const bottom = Math.max(insets.bottom, 8);
   const visible = state.routes.filter(
@@ -63,7 +62,11 @@ export function FloatingTabBar({ state, descriptors, navigation }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dockW, n, focusedIdx]);
 
-  if (!n) return null;
+  // Kedua gerbang keluar HARUS di bawah seluruh hook. Menaruh `width >= 900`
+  // di atas useState membuat jumlah hook berubah saat jendela melewati 900px,
+  // dan React membuang seluruh pohon dengan "Rendered more hooks than during
+  // the previous render".
+  if (width >= 900 || !n) return null;
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom }]}>
