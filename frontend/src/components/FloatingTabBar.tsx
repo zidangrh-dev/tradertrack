@@ -1,19 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../theme';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { colors, shadowColor } from '../theme';
+import { NAV_ICON, NAV_ICON_FALLBACK, type IconName } from '../lib/navIcons';
 
 type Route = { key: string; name: string };
 type Descriptor = { options: Record<string, any> };
-
-const GLYPH: Record<string, string> = {
-  index: '▦',
-  orders: '≡',
-  pickup: '⌗',
-  analytics: '◒',
-  'master-data': '▤',
-  settings: '⚙',
-};
 
 // Kapsul melayang ala Telegram/Instagram: hanya ikon, absolut di atas konten.
 // Tab aktif dianimasikan lewat satu "bubble" yang meluncur antar-ikon (spring)
@@ -87,7 +80,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: {
           return (
             <DockItem
               key={route.key}
-              icon={GLYPH[route.name] ?? '•'}
+              icon={NAV_ICON[route.name] ?? NAV_ICON_FALLBACK}
               label={label}
               focused={focused}
               onPress={onPress}
@@ -102,7 +95,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: {
 // Satu tombol tab: ikon aktif memudar masuk + membesar (cross-fade dua lapis
 // teks agar perubahan warna halus dan tetap memakai native driver).
 function DockItem({ icon, label, focused, onPress }: {
-  icon: string;
+  icon: { on: IconName; off: IconName };
   label: string;
   focused: boolean;
   onPress: () => void;
@@ -130,12 +123,10 @@ function DockItem({ icon, label, focused, onPress }: {
     >
       <Animated.View style={{ transform: [{ scale }] }}>
         <View style={styles.glyphWrap}>
-          <Text style={[styles.glyph, styles.glyphIdle]}>{icon}</Text>
-          <Animated.Text
-            style={[styles.glyph, styles.glyphActive, { opacity: prog, position: 'absolute' }]}
-          >
-            {icon}
-          </Animated.Text>
+          <Ionicons name={icon.off} size={21} color={colors.faint} />
+          <Animated.View style={{ opacity: prog, position: 'absolute' }}>
+            <Ionicons name={icon.on} size={21} color={colors.primary} />
+          </Animated.View>
         </View>
       </Animated.View>
     </Pressable>
@@ -148,7 +139,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', height: 58,
     backgroundColor: colors.surface, borderRadius: 30,
     borderWidth: 1, borderColor: colors.line,
-    shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 14,
+    shadowColor, shadowOpacity: 0.18, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 14,
   },
   bubble: {
     position: 'absolute', top: 9, height: 40,
@@ -156,7 +147,4 @@ const styles = StyleSheet.create({
   },
   btn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   glyphWrap: { width: 40, height: 32, alignItems: 'center', justifyContent: 'center' },
-  glyph: { fontSize: 20, fontWeight: '700' },
-  glyphIdle: { color: colors.faint },
-  glyphActive: { color: colors.primary },
 });

@@ -339,7 +339,7 @@ export default function Orders() {
       <PageHeader
         title="Daftar order"
         subtitle={`${total} order · diperbarui realtime`}
-        action={<Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />}
+        action={<Button label="Order baru" icon="add-outline" onPress={() => setShowNew(true)} />}
       />
 
       {/* Satu baris untuk seluruh alat daftar: cari, filter, salin. Semua
@@ -492,7 +492,7 @@ export default function Orders() {
           </View>
         ) : isNarrow ? (
           sorted.length === 0 ? (
-            <EmptyState icon="≡" text="Tidak ada order yang cocok dengan filter." />
+            <EmptyState icon="list-outline" text="Tidak ada order yang cocok dengan filter." />
           ) : (
             <>
               <View style={styles.cardList}>
@@ -562,7 +562,11 @@ export default function Orders() {
                 accessibilityState={{ checked: aktif }}
                 style={({ pressed }) => [styles.kolomRow, pressed && { opacity: 0.85 }]}
               >
-                <Text style={[styles.kolomBox, aktif && styles.kolomBoxAktif]}>{aktif ? '☑' : '☐'}</Text>
+                <Ionicons
+                  name={aktif ? 'checkbox' : 'square-outline'}
+                  size={18}
+                  color={aktif ? colors.primary : colors.muted}
+                />
                 <Text style={styles.kolomLabel}>{c.label}</Text>
               </Pressable>
             );
@@ -579,17 +583,17 @@ export default function Orders() {
 
 /* ---------- Aksi order ---------- */
 
-/** Penanda order sudah ikut tersalin ke papan klip. Glyph kecil di samping
+/** Penanda order sudah ikut tersalin ke papan klip. Ikon kecil di samping
  *  nomor order — hemat ruang pada tabel yang sudah padat kolom. */
 function CopiedMark({ copiedAt }: { copiedAt: string | null }) {
   if (!copiedAt) return null;
   return (
-    <Text
-      style={dtStyles.copiedMark}
+    <Ionicons
+      name="checkmark-circle"
+      size={12}
+      color={proofOkColor}
       accessibilityLabel={`Sudah disalin ${dateTime(copiedAt)}`}
-    >
-      ✓
-    </Text>
+    />
   );
 }
 
@@ -723,7 +727,6 @@ const dtStyles = StyleSheet.create({
   orderCodeWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   // Penanda sudah disalin: glyph kecil, warna hijau bukti agar sejalan dengan
   // penanda "sudah lengkap" di kolom Bukti.
-  copiedMark: { fontSize: 11, fontWeight: '800', color: proofOkColor },
   actionCell: { alignItems: 'flex-end' },
   productName: { fontSize: 14, fontWeight: '700', color: colors.text },
   storeName: { fontSize: 12, color: colors.muted, marginTop: 3 },
@@ -790,8 +793,6 @@ const styles = StyleSheet.create({
   kolomHint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginBottom: 10 },
   // paddingVertical 12 + teks 16 = tinggi baris 40; dengan hitSlop jadi 44px.
   kolomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  kolomBox: { fontSize: 16, color: colors.muted },
-  kolomBoxAktif: { color: colors.primary },
   kolomLabel: { fontSize: 13, color: colors.text },
   // Jarak lega: "Kembalikan ke bawaan" merusak pilihan kalau salah tekan.
   kolomActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 16 },

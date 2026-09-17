@@ -3,6 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensio
 import { api, type MarketplaceStore, type ProductRow, type SessionUser } from '../lib/api';
 import { notify } from '../lib/notify';
 import { pickPhoto, type PickedPhoto } from '../lib/photo';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, radius, pickupMethodOptions, webNoOutline } from '../theme';
 import { Button, Field, PasswordField, Select, Sheet, type SelectOption } from './ui';
 import { isAdminLevel } from '../lib/roles';
@@ -280,7 +281,7 @@ function AttachSlot({ label, hint, photo, onPick, onClear }: {
             </View>
           </Pressable>
           <Pressable onPress={onClear} hitSlop={8} accessibilityLabel={`Hapus ${label}`}>
-            <Text style={styles.attachRemove}>✕</Text>
+            <Ionicons name="close" size={13} color={colors.red} style={{ paddingHorizontal: 4 }} />
           </Pressable>
         </View>
       ) : (
@@ -373,7 +374,6 @@ const styles = StyleSheet.create({
   attachThumb: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
   attachInfo: { flex: 1, minWidth: 0 },
   attachOk: { fontSize: 11, fontWeight: '800', color: '#1F7A4D' },
-  attachRemove: { fontSize: 13, color: colors.red, fontWeight: '800', paddingHorizontal: 4 },
   attachNote: {
     marginTop: 10, backgroundColor: '#FCF3E3', borderRadius: radius.sm,
     borderLeftWidth: 3, borderLeftColor: '#A8610F', paddingVertical: 9, paddingHorizontal: 11,

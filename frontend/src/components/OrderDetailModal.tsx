@@ -7,6 +7,7 @@ import { notify, confirmAsk } from '../lib/notify';
 import { pickPhoto } from '../lib/photo';
 import { dateTime } from '../lib/format';
 import { useFileUrl } from '../hooks/useFileUrl';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, notePalette, pendingPalette, pickupMethodLabel, previewStage, problemPalette, radius, slotPalette } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import { Button, Sheet, StatusTag } from './ui';
@@ -444,7 +445,7 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
         {isAdmin && detail && (
           <View style={styles.problemBox}>
             <Pressable onPress={toggleProblem} style={styles.problemToggle} disabled={busy}>
-              <Text style={styles.problemCheckbox}>{problem ? '☑' : '☐'}</Text>
+              <Ionicons name={problem ? 'checkbox' : 'square-outline'} size={16} color={colors.red} />
               <Text style={styles.problemLabel}>Tandai order ini bermasalah</Text>
             </Pressable>
             {problem && (
@@ -586,7 +587,7 @@ function EvidenceThumb({ filePath, onPreview, onDelete }: {
       </Pressable>
       {!!onDelete && (
         <Pressable onPress={onDelete} hitSlop={6} style={styles.evidenceDel} accessibilityLabel="Hapus foto pengambilan">
-          <Text style={styles.evidenceDelText}>✕</Text>
+          <Ionicons name="close" size={10} color={colors.onPrimary} />
         </Pressable>
       )}
     </View>
@@ -723,7 +724,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: notePalette.bg,
   },
   problemToggle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  problemCheckbox: { fontSize: 16, color: colors.red },
   problemLabel: { fontSize: 12, color: colors.muted },
   eventRow: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.surfaceAlt },
   // borderRadius 4 = setengah dari 8: lingkaran, bukan radius kotak.
@@ -779,7 +779,6 @@ const styles = StyleSheet.create({
     width: 18, height: 18, borderRadius: radius.full, backgroundColor: 'rgba(15,22,42,.72)',
     alignItems: 'center', justifyContent: 'center',
   },
-  evidenceDelText: { color: colors.onPrimary, fontSize: 9, fontWeight: '800', lineHeight: 11 },
   evidenceAdd: {
     width: 72, height: 72, borderRadius: radius.sm, borderWidth: 1, borderStyle: 'dashed',
     borderColor: colors.line, alignItems: 'center', justifyContent: 'center',

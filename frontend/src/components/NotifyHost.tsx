@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { backdropColor, colors, radius } from '../theme';
+import { backdropColor, colors, radius, shadowColor } from '../theme';
 import { dismissToast, getConfirm, getToasts, resolveConfirm, subscribe, type ConfirmRequest, type Toast } from '../lib/notify';
 
 const kindPalette: Record<string, { bg: string; accent: string }> = {
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: colors.surface, borderRadius: radius.md, padding: 12, overflow: 'hidden',
     borderWidth: 1, borderColor: colors.line,
-    shadowColor: '#0F162A', shadowOpacity: 0.14, shadowOffset: { width: 0, height: 8 }, shadowRadius: 18, elevation: 8,
+    shadowColor, shadowOpacity: 0.14, shadowOffset: { width: 0, height: 8 }, shadowRadius: 18, elevation: 8,
   },
   toastAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   toastTitle: { fontSize: 12, fontWeight: '800', color: colors.text },
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   toastClose: { color: colors.faint, fontSize: 18, paddingHorizontal: 2 },
   dialog: {
     backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 400, padding: 20,
-    shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 16,
+    shadowColor, shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 16,
   },
   dialogIcon: { width: 38, height: 38, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   dialogIconWarn: { backgroundColor: '#FCF3E3' },

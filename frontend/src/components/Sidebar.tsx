@@ -4,13 +4,15 @@ import { usePathname, useRouter } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
 import { useOrders } from '../hooks/useOrders';
 import { confirmAsk } from '../lib/notify';
-import { colors, problemPalette, radius } from '../theme';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { colors, problemPalette, radius, shadowColor } from '../theme';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { isAdminLevel, roleLabel } from '../lib/roles';
+import { NAV_ICON } from '../lib/navIcons';
 
 interface Item {
   href: string;
-  icon: string;
+  route: keyof typeof NAV_ICON;
   label: string;
   badge?: string;
   badgeDanger?: boolean;
@@ -38,15 +40,15 @@ export function Sidebar() {
   const pickupCount = totalPickup;
 
   const MAIN_ITEMS: Item[] = [
-    { href: '/(app)', icon: '▦', label: 'Papan kerja', adminOnly: true },
-    { href: '/(app)/orders', icon: '≡', label: 'Daftar order', badge: String(total) },
-    { href: '/(app)/pickup', icon: '⌗', label: 'Pick up', badge: String(pickupCount), badgeDanger: true, adminOnly: true },
-    { href: '/(app)/analytics', icon: '◒', label: 'Analytics' },
+    { href: '/(app)', route: 'index', label: 'Papan kerja', adminOnly: true },
+    { href: '/(app)/orders', route: 'orders', label: 'Daftar order', badge: String(total) },
+    { href: '/(app)/pickup', route: 'pickup', label: 'Pick up', badge: String(pickupCount), badgeDanger: true, adminOnly: true },
+    { href: '/(app)/analytics', route: 'analytics', label: 'Analytics' },
   ];
 
   const MANAGE_ITEMS: Item[] = [
-    { href: '/(app)/master-data', icon: '▤', label: 'Master data', adminOnly: true },
-    { href: '/(app)/settings', icon: '⚙', label: 'Pengaturan', adminOnly: true },
+    { href: '/(app)/master-data', route: 'master-data', label: 'Master data', adminOnly: true },
+    { href: '/(app)/settings', route: 'settings', label: 'Pengaturan', adminOnly: true },
   ];
 
   const isActive = (item: Item) =>
@@ -60,7 +62,13 @@ export function Sidebar() {
         style={({ pressed }) => [styles.navItem, active && styles.navActive, pressed && { opacity: 0.85 }]}
         onPress={() => router.navigate(item.href as never)}
       >
-        <Text style={[styles.navIcon, active && styles.navIconActive]}>{item.icon}</Text>
+        <View style={styles.navIcon}>
+          <Ionicons
+            name={active ? NAV_ICON[item.route].on : NAV_ICON[item.route].off}
+            size={16}
+            color={active ? colors.primary : colors.faint}
+          />
+        </View>
         <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>
         {!!item.badge && (
           <Text style={[styles.badge, item.badgeDanger && styles.badgeDanger]}>{item.badge}</Text>
@@ -171,8 +179,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11, borderRadius: radius.md,
   },
   navActive: { backgroundColor: colors.primarySoft },
-  navIcon: { color: colors.faint, fontSize: 16, width: 20, textAlign: 'center' },
-  navIconActive: { color: colors.primary },
+  navIcon: { width: 20, alignItems: 'center' },
   navLabel: { color: colors.muted, fontSize: 12, flex: 1 },
   navLabelActive: { color: colors.primary, fontWeight: '700' },
   badge: {
@@ -204,7 +211,7 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 8, right: 8, bottom: '100%', marginBottom: 6,
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line,
     overflow: 'hidden',
-    shadowColor: '#0F162A', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 12,
+    shadowColor, shadowOpacity: 0.16, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 12,
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10 },
   menuItemPressed: { backgroundColor: '#F2F4F9' },

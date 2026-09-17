@@ -198,7 +198,7 @@ export default function MasterData() {
       <PageHeader
         title="Master data"
         subtitle={wide ? 'Katalog resmi produk, toko marketplace, dan kontrol alokasi kuota.' : undefined}
-        action={<Button label="Tambah produk" icon="+" onPress={() => setShowNew(true)} />}
+        action={<Button label="Tambah produk" icon="add-outline" onPress={() => setShowNew(true)} />}
       />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>

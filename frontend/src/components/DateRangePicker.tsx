@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, radius } from '../theme';
 import { Button, Sheet } from './ui';
 
@@ -205,10 +206,10 @@ export function DateRangeField({ fromKey, toKey, onChange, block, compact = true
             hitSlop={8}
             accessibilityLabel="Kosongkan rentang tanggal"
           >
-            <Text style={styles.fieldClear}>✕</Text>
+            <Ionicons name="close" size={11} color={colors.primary} />
           </Pressable>
         ) : (
-          <Text style={styles.fieldCaret}>▾</Text>
+          <Ionicons name="chevron-down" size={9} color={colors.faint} />
         )}
       </Pressable>
 
@@ -238,8 +239,6 @@ const styles = StyleSheet.create({
   fieldActive: { borderColor: '#A8BACD', backgroundColor: colors.primarySoft },
   fieldValue: { flex: 1, fontSize: 11, fontWeight: '600', color: colors.faint },
   fieldValueActive: { color: colors.primary, fontWeight: '700' },
-  fieldCaret: { fontSize: 9, color: colors.faint },
-  fieldClear: { fontSize: 11, color: colors.primary, fontWeight: '800' },
 
   // Pintasan cepat — menggantikan kemudahan dropdown periode lama.
   shortcutRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },

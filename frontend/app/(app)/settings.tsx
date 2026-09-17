@@ -4,7 +4,7 @@ import { api, APP_VERSION, type AppSettings, type Role, type UserRow } from '../
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
 import { useAuth } from '../../src/hooks/useAuth';
-import { colors, radius, space } from '../../src/theme';
+import { colors, radius, shadowColor, space } from '../../src/theme';
 import { ActionMenu, Avatar, Button, Field, PageHeader, SelectField, Sheet, type ActionMenuItem } from '../../src/components/ui';
 import { isSuperadmin, roleLabel } from '../../src/lib/roles';
 
@@ -87,7 +87,7 @@ export default function Settings() {
       )}
 
       <Panel title="Akun pengguna" note="Admin membuat akun trader/admin. Tidak ada registrasi mandiri.">
-        <Button label={`Kelola ${users.length} akun`} icon="→" variant="secondary" onPress={() => setShowUsers(true)} />
+        <Button label={`Kelola ${users.length} akun`} icon="arrow-forward-outline" variant="secondary" onPress={() => setShowUsers(true)} />
       </Panel>
 
       {!!saved && <Text style={styles.saved}>{saved}</Text>}
@@ -144,7 +144,7 @@ function UsersSheet({ open, onClose, users, meId, onChanged, onCreate, viewerIsS
         ))}
       </ScrollView>
       <View style={{ marginTop: space.md }}>
-        <Button label="Buat akun baru" icon="+" variant="secondary" fullWidth onPress={onCreate} />
+        <Button label="Buat akun baru" icon="add-outline" variant="secondary" fullWidth onPress={onCreate} />
       </View>
     </Sheet>
   );
@@ -283,7 +283,7 @@ function CreateUserSheet({ open, onClose, onCreated, viewerIsSuperadmin }: { ope
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  panel: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 18, marginHorizontal: 16, marginBottom: space.lg, shadowColor: '#0F162A', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 1 },
+  panel: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 18, marginHorizontal: 16, marginBottom: space.lg, shadowColor, shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 1 },
   panelTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
   panelNote: { fontSize: 11, color: colors.muted, marginTop: 4, marginBottom: 14, lineHeight: 17 },
   field: { marginBottom: 12 },

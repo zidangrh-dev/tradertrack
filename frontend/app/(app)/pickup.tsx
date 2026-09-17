@@ -5,6 +5,7 @@ import { pickPhoto } from '../../src/lib/photo';
 import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, radius, pickupMethodOptions, space } from '../../src/theme';
 import { Button, EmptyState, Field, MultiSelect, OrderCard, PageHeader, SearchInput, Select, Sheet, type SelectOption } from '../../src/components/ui';
 import { DateRangeField, endOfDayISO, startOfDayISO } from '../../src/components/DateRangePicker';
@@ -146,7 +147,7 @@ export default function Pickup() {
       <PageHeader
         title="Pick up"
         subtitle="Kelola verifikasi paket dan pindahkan order dengan bukti yang tepat."
-        action={<Button label="Scan nomor pesanan" icon="⌗" onPress={openScan} />}
+        action={<Button label="Scan nomor pesanan" icon="scan-outline" onPress={openScan} />}
       />
 
       <View style={styles.filterBar}>
@@ -158,7 +159,11 @@ export default function Pickup() {
           style={[styles.filterBtn, activeFilters > 0 && styles.filterBtnActive]}
           accessibilityLabel={showFilters ? 'Sembunyikan filter' : 'Tampilkan filter'}
         >
-          <Text style={[styles.filterIcon, activeFilters > 0 && styles.filterIconActive]}>⚙</Text>
+          <Ionicons
+            name="options-outline"
+            size={13}
+            color={activeFilters > 0 ? colors.primary : colors.muted}
+          />
           <Text style={[styles.filterText, activeFilters > 0 && styles.filterTextActive]}>Filter</Text>
           {activeFilters > 0 && (
             <View style={styles.filterBadge}>
@@ -217,8 +222,13 @@ export default function Pickup() {
             block={isNarrow}
           />
           <Pressable onPress={() => setFlagged((v) => !v)} style={[styles.flagChip, flagged && styles.flagChipActive, isNarrow && { alignSelf: 'flex-start' }]}>
+            <Ionicons
+              name={flagged ? 'checkbox' : 'square-outline'}
+              size={14}
+              color={flagged ? colors.primary : colors.muted}
+            />
             <Text style={[styles.flagChipText, flagged && styles.flagChipTextActive]}>
-              {flagged ? '☑ Bermasalah & tertunda' : '☐ Bermasalah & tertunda'}
+              Bermasalah &amp; tertunda
             </Text>
           </Pressable>
           {activeFilters > 0 && (
@@ -262,11 +272,11 @@ export default function Pickup() {
           ) : pending.length === 0 ? (
             activeFilters > 0 ? (
               <View style={styles.emptyFiltered}>
-                <EmptyState icon="⌕" text="Tidak ada order pickup yang cocok dengan filter." />
+                <EmptyState icon="search-outline" text="Tidak ada order pickup yang cocok dengan filter." />
                 <Button label="Reset filter" variant="secondary" size="sm" onPress={resetFilters} />
               </View>
             ) : (
-              <EmptyState icon="→" text="Tidak ada order dalam proses." />
+              <EmptyState icon="hourglass-outline" text="Tidak ada order dalam proses." />
             )
           ) : pending.map((o) => (
             <OrderCard
@@ -277,7 +287,7 @@ export default function Pickup() {
               actions={
                 <Button
                   label={busy === o.id ? 'Menandai…' : 'Tandai sudah diambil'}
-                  icon="✓"
+                  icon="checkmark-outline"
                   variant="soft"
                   size="sm"
                   fullWidth
@@ -337,8 +347,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
   },
   filterBtnActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
-  filterIcon: { fontSize: 13, color: colors.muted },
-  filterIconActive: { color: colors.primary },
   filterText: { fontSize: 11, fontWeight: '700', color: colors.muted },
   filterTextActive: { color: colors.primary },
   filterBadge: {
@@ -348,7 +356,7 @@ const styles = StyleSheet.create({
   filterBadgeText: { fontSize: 10, fontWeight: '800', color: colors.onPrimary },
 
   flagChip: {
-    height: 34, justifyContent: 'center', alignItems: 'center',
+    height: 34, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6,
     paddingHorizontal: 12, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
   },

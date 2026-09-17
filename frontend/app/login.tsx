@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../src/hooks/useAuth';
 import { Field, PasswordField } from '../src/components/ui';
-import { colors, radius } from '../src/theme';
+import { colors, radius, shadowColor } from '../src/theme';
 
 export default function Login() {
   const { signIn } = useAuth();
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%', maxWidth: 400, backgroundColor: colors.surface, borderRadius: radius.lg,
     padding: 32, borderWidth: 1, borderColor: colors.line,
-    shadowColor: '#0F162A', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 12 }, shadowRadius: 28, elevation: 6,
+    shadowColor, shadowOpacity: 0.08, shadowOffset: { width: 0, height: 12 }, shadowRadius: 28, elevation: 6,
   },
   // Di layar sempit kartu lebih ramping agar tidak menempel ke tepi layar.
   cardNarrow: { padding: 24 },

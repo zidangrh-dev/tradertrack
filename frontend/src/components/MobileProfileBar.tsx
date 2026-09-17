@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { confirmAsk } from '../lib/notify';
-import { colors, radius } from '../theme';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { colors, radius, shadowColor } from '../theme';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
 // Bilah profil global khusus layar HP (<900): logo kiri, avatar kanan dengan
@@ -38,7 +39,7 @@ export function MobileProfileBar() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{(user?.display_name ?? 'TT').slice(0, 2).toUpperCase()}</Text>
           </View>
-          <Text style={[styles.caret, menuOpen && { color: colors.primary }]}>▾</Text>
+          <Ionicons name="chevron-down" size={9} color={menuOpen ? colors.primary : colors.faint} />
         </Pressable>
 
         {menuOpen && (
@@ -89,12 +90,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: colors.primary, fontWeight: '800', fontSize: 11 },
-  caret: { fontSize: 8, color: colors.faint },
   menu: {
     position: 'absolute', right: 0, top: 40,
     minWidth: 220, backgroundColor: colors.surface, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.line, overflow: 'hidden',
-    shadowColor: '#0F162A', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 24, zIndex: 10,
+    shadowColor, shadowOpacity: 0.16, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20, elevation: 24, zIndex: 10,
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 11 },
   menuLabel: { color: colors.text, fontSize: 12, fontWeight: '600' },

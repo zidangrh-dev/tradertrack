@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { APP_VERSION } from '../lib/api';
 import { notify } from '../lib/notify';
-import { colors, radius } from '../theme';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { colors, radius, shadowColor } from '../theme';
 
 /**
  * Popup pembaruan yang mengunci aplikasi: tanpa tombol tutup, tap di luar dan
@@ -47,7 +48,7 @@ export function UpdateGate({ requiredVersion, updateUrl, onRetry }: {
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconBox}>
-            <Text style={styles.icon}>↓</Text>
+            <Ionicons name="cloud-download-outline" size={22} color={colors.primary} />
           </View>
 
           <Text style={styles.title}>Pembaruan diperlukan</Text>
@@ -105,13 +106,12 @@ const styles = StyleSheet.create({
   card: {
     width: '100%', maxWidth: 380, backgroundColor: colors.surface,
     borderRadius: radius.lg, padding: 22,
-    shadowColor: '#0F162A', shadowOpacity: 0.24, shadowOffset: { width: 0, height: 18 }, shadowRadius: 34, elevation: 18,
+    shadowColor, shadowOpacity: 0.24, shadowOffset: { width: 0, height: 18 }, shadowRadius: 34, elevation: 18,
   },
   iconBox: {
     width: 44, height: 44, borderRadius: radius.full, backgroundColor: colors.primarySoft,
     alignItems: 'center', justifyContent: 'center', marginBottom: 14,
   },
-  icon: { fontSize: 22, color: colors.primary, fontWeight: '800', lineHeight: 26 },
   title: { fontSize: 19, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
   body: { fontSize: 12, color: colors.muted, lineHeight: 18, marginTop: 8 },
   versionBox: {

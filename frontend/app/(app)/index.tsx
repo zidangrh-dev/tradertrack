@@ -5,7 +5,7 @@ import { notify } from '../../src/lib/notify';
 import { useOrders } from '../../src/hooks/useOrders';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useAdminOnly } from '../../src/hooks/useRoleGuard';
-import { colors, pendingPalette, proofChipPalette, radius, statusLabel, STATUS_FLOW, type Status } from '../../src/theme';
+import { colors, pendingPalette, proofChipPalette, radius, shadowColor, statusLabel, STATUS_FLOW, type Status } from '../../src/theme';
 import { durationLabel, isToday, statusColor } from '../../src/lib/format';
 import { Avatar, Button, EmptyState, FlagBadge, PageHeader, SearchInput } from '../../src/components/ui';
 import { NewOrderModal } from '../../src/components/NewOrderModal';
@@ -95,13 +95,13 @@ function DraggableCard({
           </View>
         )}
         {order.status === 'data_masuk' && (
-          <Button label="Proses pick up" icon="→" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'proses_pick_up')} />
+          <Button label="Proses pick up" icon="arrow-forward-outline" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'proses_pick_up')} />
         )}
         {order.status === 'proses_pick_up' && (
-          <Button label="Tandai sudah diambil" icon="→" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'done_pickup')} />
+          <Button label="Tandai sudah diambil" icon="arrow-forward-outline" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'done_pickup')} />
         )}
         {order.status === 'done_pickup' && (
-          <Button label="Selesaikan order" icon="✓" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'selesai')} />
+          <Button label="Selesaikan order" icon="checkmark-outline" variant="soft" size="sm" fullWidth style={{ marginTop: 10 }} onPress={() => onMove(order, 'selesai')} />
         )}
       </Pressable>
     </Animated.View>
@@ -202,7 +202,7 @@ export default function Kanban() {
         subtitle={wide ? 'Seret kartu untuk mengubah status · ketuk untuk buka detail.' : 'Ketuk kartu untuk buka detail.'}
         action={
           isAdminLevel(user?.role) ? (
-            <Button label="Input order baru" icon="+" onPress={() => setShowNew(true)} />
+            <Button label="Input order baru" icon="add-outline" onPress={() => setShowNew(true)} />
           ) : undefined
         }
       />
@@ -214,9 +214,9 @@ export default function Kanban() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} color={colors.primary} />
       ) : orders.length === 0 ? (
-        <EmptyState icon="▦" text="Belum ada order. Trader mulai mencatat order dari Daftar Order." />
+        <EmptyState icon="grid-outline" text="Belum ada order. Trader mulai mencatat order dari Daftar Order." />
       ) : searching && COLUMNS.every((c) => byStatus[c].length === 0) ? (
-        <EmptyState icon="⌕" text={`Tidak ada order yang cocok dengan "${search.trim()}".`} />
+        <EmptyState icon="search-outline" text={`Tidak ada order yang cocok dengan "${search.trim()}".`} />
       ) : (
         <View style={styles.viewport}>
           {/* Layar lebar: flex row murni agar kolom terkunci ke tinggi viewport
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line,
-    padding: 12, shadowColor: '#0F162A', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 3 }, shadowRadius: 10, elevation: 1,
+    padding: 12, shadowColor, shadowOpacity: 0.04, shadowOffset: { width: 0, height: 3 }, shadowRadius: 10, elevation: 1,
   },
   cardProblem: { borderTopWidth: 3, borderTopColor: colors.red },
   // minHeight menyamakan tinggi kartu dalam satu kolom: ruang badge & nama

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type TextInputProps, type StyleProp, type ViewStyle } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
-import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, proofOkColor, radius, space, statusLabel, tablePalette, webNoOutline, type Status } from '../theme';
+import { backdropColor, colors, pendingPalette, pickupMethodLabel, problemPalette, proofOkColor, radius, shadowColor, space, statusLabel, tablePalette, webNoOutline, type Status } from '../theme';
 import { durationLabel, statusPalette } from '../lib/format';
 import type { OrderView } from '../lib/api';
 
@@ -158,7 +158,7 @@ export function PasswordField({ label, hint, style, ...rest }: TextInputProps & 
   );
 }
 
-/** Kotak pencarian dengan ikon ⌕ dan tombol bersih — dipakai semua layar. */
+/** Kotak pencarian dengan ikon cari dan tombol bersih — dipakai semua layar. */
 export function SearchInput({ value, onChangeText, placeholder = 'Cari...', compact = false }: {
   value: string;
   onChangeText: (v: string) => void;
@@ -168,7 +168,7 @@ export function SearchInput({ value, onChangeText, placeholder = 'Cari...', comp
   const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.searchBox, compact && styles.searchBoxCompact, focused && styles.searchBoxFocused]}>
-      <Text style={[styles.searchIcon, compact && styles.searchIconCompact, focused && styles.searchIconFocused]}>⌕</Text>
+      <Ionicons name="search" size={compact ? 13 : 15} color={focused ? colors.primary : colors.faint} />
       <TextInput
         style={[styles.searchInput, compact && styles.searchInputCompact, webNoOutline]}
         placeholder={placeholder}
@@ -180,7 +180,7 @@ export function SearchInput({ value, onChangeText, placeholder = 'Cari...', comp
       />
       {!!value && (
         <Pressable onPress={() => onChangeText('')} hitSlop={8}>
-          <Text style={[styles.searchClear, compact && styles.searchClearCompact]}>✕</Text>
+          <Ionicons name="close" size={compact ? 13 : 14} color={colors.faint} />
         </Pressable>
       )}
     </View>
@@ -311,7 +311,7 @@ const amStyles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: colors.surface, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.line, paddingVertical: 4, overflow: 'hidden',
-    shadowColor: '#0F162A', shadowOpacity: 0.16, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 12,
+    shadowColor, shadowOpacity: 0.16, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 12,
   },
   item: { flexDirection: 'row', alignItems: 'center', height: MENU_ITEM_H, paddingHorizontal: 12, gap: 10 },
   itemHover: { backgroundColor: colors.surfaceAlt },
@@ -476,7 +476,7 @@ export function Select({
         ) : (
           <Text style={[selStyles.placeholder, compact && selStyles.placeholderCompact]} numberOfLines={1}>{placeholder}</Text>
         )}
-        <Text style={[selStyles.caret, compact && selStyles.caretCompact]}>▾</Text>
+        <Ionicons name="chevron-down" size={compact ? 9 : 10} color={colors.faint} />
       </Pressable>
 
       <Modal transparent visible={open} onRequestClose={() => setOpen(false)} animationType="fade">
@@ -485,7 +485,7 @@ export function Select({
           <View style={[selStyles.menu, { left, top, width: menuW }]}>
             {showSearch && (
               <View style={[styles.searchBox, selStyles.searchRow]}>
-                <Text style={styles.searchIcon}>⌕</Text>
+                <Ionicons name="search" size={15} color={colors.faint} />
                 <TextInput
                   style={[styles.searchInput, webNoOutline]}
                   placeholder={`Cari ${label.toLowerCase()}…`}
@@ -497,7 +497,7 @@ export function Select({
                 />
                 {!!query && (
                   <Pressable onPress={() => setQuery('')} hitSlop={8}>
-                    <Text style={styles.searchClear}>✕</Text>
+                    <Ionicons name="close" size={14} color={colors.faint} style={{ paddingHorizontal: 2 }} />
                   </Pressable>
                 )}
               </View>
@@ -505,7 +505,7 @@ export function Select({
             {!!clearLabel && (
               <HoverItem onPress={() => pick('')} style={[selStyles.item, !value && selStyles.itemActive]} hoverStyle={selStyles.itemHover}>
                 <Text style={[selStyles.itemLabel, !value && selStyles.itemLabelActive]} numberOfLines={1}>{clearLabel}</Text>
-                {!value && <Text style={selStyles.check}>✓</Text>}
+                {!value && <Ionicons name="checkmark" size={14} color={colors.primary} />}
               </HoverItem>
             )}
             <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
@@ -530,7 +530,7 @@ export function Select({
                     hoverStyle={sel || opt.disabled ? undefined : selStyles.itemHover}
                   >
                     {labelBlock}
-                    {sel && <Text style={selStyles.check}>✓</Text>}
+                    {sel && <Ionicons name="checkmark" size={14} color={colors.primary} />}
                   </HoverItem>
                   {!!opt.onDelete && (
                     <HoverItem onPress={() => { setOpen(false); opt.onDelete?.(); }} style={selStyles.deleteCell} hoverStyle={selStyles.deleteHover}>
@@ -641,7 +641,7 @@ export function MultiSelect({
         ) : (
           <Text style={[selStyles.placeholder, compact && selStyles.placeholderCompact]} numberOfLines={1}>{placeholder}</Text>
         )}
-        <Text style={[selStyles.caret, compact && selStyles.caretCompact]}>▾</Text>
+        <Ionicons name="chevron-down" size={compact ? 9 : 10} color={colors.faint} />
       </Pressable>
 
       <Modal transparent visible={open} onRequestClose={() => setOpen(false)} animationType="fade">
@@ -650,7 +650,7 @@ export function MultiSelect({
           <View style={[selStyles.menu, { left, top, width: menuW }]}>
             {showSearch && (
               <View style={[styles.searchBox, selStyles.searchRow]}>
-                <Text style={styles.searchIcon}>⌕</Text>
+                <Ionicons name="search" size={15} color={colors.faint} />
                 <TextInput
                   style={[styles.searchInput, webNoOutline]}
                   placeholder={`Cari ${label.toLowerCase()}…`}
@@ -662,7 +662,7 @@ export function MultiSelect({
                 />
                 {!!query && (
                   <Pressable onPress={() => setQuery('')} hitSlop={8}>
-                    <Text style={styles.searchClear}>✕</Text>
+                    <Ionicons name="close" size={14} color={colors.faint} style={{ paddingHorizontal: 2 }} />
                   </Pressable>
                 )}
               </View>
@@ -674,7 +674,7 @@ export function MultiSelect({
                 hoverStyle={selStyles.itemHover}
               >
                 <Text style={[selStyles.itemLabel, value.length === 0 && selStyles.itemLabelActive]} numberOfLines={1}>{clearLabel}</Text>
-                {value.length === 0 && <Text style={selStyles.check}>✓</Text>}
+                {value.length === 0 && <Ionicons name="checkmark" size={14} color={colors.primary} />}
               </HoverItem>
             )}
             <ScrollView style={{ maxHeight: menuMaxH }} bounces={false} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
@@ -696,7 +696,7 @@ export function MultiSelect({
                         <Text style={[selStyles.itemLabel, sel && selStyles.itemLabelActive]} numberOfLines={1}>{opt.label}</Text>
                         {!!opt.sub && <Text style={selStyles.itemSub} numberOfLines={1}>{opt.sub}</Text>}
                       </View>
-                      {sel && <Text style={selStyles.check}>✓</Text>}
+                      {sel && <Ionicons name="checkmark" size={14} color={colors.primary} />}
                     </HoverItem>
                   );
                 })
@@ -750,7 +750,7 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
 }
 
 // `icon` menerima nama Ionicons ATAU satu karakter glyph. Nama Ionicons selalu
-// mengandung tanda hubung, jadi pembedanya tidak perlu prop tambahan dan
+// mengandung tanda hubung, jadi pembedanya tidak perlu prop tambahan dan 15
 // pemakaian glyph di halaman lain tetap jalan tanpa disentuh.
 export function EmptyState({ icon, text }: { icon: string; text: string }) {
   return (
@@ -799,7 +799,7 @@ export function OrderCard({
           <View style={styles.orderNumberRow}>
             <Text style={styles.orderNumber} numberOfLines={1}>{order.order_number}</Text>
             {!!order.copied_at && (
-              <Text style={styles.copiedMark} accessibilityLabel="Sudah disalin">✓</Text>
+              <Ionicons name="checkmark-circle" size={13} color={proofOkColor} accessibilityLabel="Sudah disalin" />
             )}
           </View>
           <Text style={styles.orderMeta} numberOfLines={1}>
@@ -1005,7 +1005,6 @@ const selStyles = StyleSheet.create({
   captionCompact: { fontSize: 8 },
   valueCompact: { fontSize: 11 },
   placeholderCompact: { fontSize: 11 },
-  caretCompact: { fontSize: 9 },
   triggerHover: { backgroundColor: '#F8FAFC', borderColor: '#94A3B8' },
   triggerOpen: { borderColor: colors.primary },
   triggerActive: { borderColor: '#A8BACD', backgroundColor: colors.primarySoft },
@@ -1015,13 +1014,12 @@ const selStyles = StyleSheet.create({
   valueActive: { color: colors.primary },
   placeholder: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.faint },
   
-  caret: { fontSize: 10, color: colors.faint },
   overlay: { flex: 1 },
   menu: {
     position: 'absolute',
     backgroundColor: colors.surface, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.line, overflow: 'hidden',
-    shadowColor: '#0F162A', shadowOpacity: 0.14, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 10,
+    shadowColor, shadowOpacity: 0.14, shadowOffset: { width: 0, height: 10 }, shadowRadius: 22, elevation: 10,
   },
   searchRow: { margin: 8, marginBottom: 4, height: 40 },
   noResult: { paddingVertical: 20, alignItems: 'center' },
@@ -1033,7 +1031,6 @@ const selStyles = StyleSheet.create({
   itemLabel: { fontSize: 13, color: colors.muted, fontWeight: '600' },
   itemLabelActive: { color: colors.primary, fontWeight: '700' },
   itemSub: { fontSize: 10, color: colors.faint, marginTop: 2 },
-  check: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   divider: { height: 1, backgroundColor: colors.line },
   addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, backgroundColor: colors.primarySoft },
   addHover: { backgroundColor: '#DFE4FD' },
@@ -1112,22 +1109,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
     backgroundColor: colors.surface, height: 42, paddingHorizontal: 12,
-    shadowColor: '#0F162A', shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
+    shadowColor, shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
   searchBoxFocused: { borderColor: colors.primary, shadowOpacity: 0.08 },
   searchBoxCompact: { height: 34 },
-  searchIconCompact: { fontSize: 13 },
   searchInputCompact: { fontSize: 12 },
-  searchClearCompact: { fontSize: 13 },
-  searchIcon: { fontSize: 15, color: colors.faint },
-  searchIconFocused: { color: colors.primary },
   searchInput: { flex: 1, fontSize: 13, color: colors.text, paddingVertical: 0 },
-  searchClear: { color: colors.faint, fontSize: 14, paddingHorizontal: 2 },
   flagBadge: { fontSize: 11, lineHeight: 16, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, overflow: 'hidden', alignSelf: 'flex-start' },
   input: {
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.surface,
     height: 42, paddingHorizontal: 12, marginTop: 6, fontSize: 13, color: colors.text,
   },
+  // Penanda fokus pengganti outline browser: garis tepi menebal jadi warna
+  // merek. Tebalnya tidak berubah agar tinggi baris form tidak bergeser.
   inputFocused: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   // Field kata sandi: wrapper + tombol mata di sisi kanan.
   // Margin pindah ke wrapper supaya toggle (top:0/bottom:0) pas di tengah input.
@@ -1138,7 +1132,7 @@ const styles = StyleSheet.create({
   // Sheet
   modalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
   backdrop: { backgroundColor: backdropColor },
-  sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 460, maxHeight: '88%', padding: 20, shadowColor: '#0F162A', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 12 },
+  sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, width: '100%', maxWidth: 460, maxHeight: '88%', padding: 20, shadowColor, shadowOpacity: 0.18, shadowOffset: { width: 0, height: 16 }, shadowRadius: 32, elevation: 12 },
   sheetWide: { maxWidth: 560 },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
@@ -1156,7 +1150,7 @@ const styles = StyleSheet.create({
   // (border 1px + bayangan lembut); lebar dibatasi agar tidak meregang.
   orderCard: {
     backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, borderWidth: 1,
-    borderColor: colors.line, shadowColor: '#0F162A', shadowOpacity: 0.05,
+    borderColor: colors.line, shadowColor, shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 2,
     maxWidth: 720, width: '100%',
   },
@@ -1167,7 +1161,6 @@ const styles = StyleSheet.create({
   // mencocokkan resi fisik. Angka tabular agar berbaris antar-kartu.
   orderNumberRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   // Penanda sudah disalin — senada dengan penanda bukti lengkap.
-  copiedMark: { fontSize: 12, fontWeight: '800', color: proofOkColor },
   orderNumber: {
     fontSize: 15, fontWeight: '800', color: colors.text,
     fontVariant: ['tabular-nums'], letterSpacing: -0.1,
