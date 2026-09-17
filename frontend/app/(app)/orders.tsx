@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { api, type OrderView } from '../../src/lib/api';
 import { notify, confirmAsk } from '../../src/lib/notify';
 import { pickPhoto } from '../../src/lib/photo';
@@ -196,6 +197,19 @@ export default function Orders() {
       notify('Gagal', (e as Error).message);
     }
   };
+  // Aksi salin sekunder — di layar sempit dikumpulkan ke satu menu agar baris
+  // alat muat; di desktop tetap tampil sebagai tombol terpisah.
+  const salinMenuItems: ActionMenuItem[] = [
+    {
+      key: 'copy-page', label: 'Copy halaman ini', icon: 'copy-outline',
+      onPress: copyFiltered,
+    },
+    {
+      key: 'pick-cols', label: 'Pilih kolom disalin', icon: 'options-outline',
+      onPress: () => setPilihKolom(true),
+    },
+  ];
+
   const rangeStart = sorted.length === 0 ? 0 : (visiblePage - 1) * PER_PAGE + 1;
   const rangeEnd = Math.min(visiblePage * PER_PAGE, total);
 
@@ -328,29 +342,52 @@ export default function Orders() {
         action={<Button label="Order baru" icon="+" onPress={() => setShowNew(true)} />}
       />
 
-      <View style={styles.filterBar}>
+      {/* Satu baris untuk seluruh alat daftar: cari, filter, salin. Semua
+          setinggi 34px agar sejajar. Di layar sempit label diringkas supaya
+          kolom cari tetap cukup lebar untuk nomor order 18 digit. */}
+      <View style={[styles.filterBar, isNarrow && styles.filterBarNarrowMargin]}>
         <View style={styles.searchBox}>
-          <SearchInput compact value={search} onChangeText={(t) => { setSearch(t); setPage(1); }} placeholder="Cari nomor order, produk, atau penerima..." />
+          <SearchInput
+            compact
+            value={search}
+            onChangeText={(t) => { setSearch(t); setPage(1); }}
+            placeholder={isNarrow ? 'Cari order...' : 'Cari nomor order, produk, atau penerima...'}
+          />
         </View>
         <Pressable
           onPress={() => setShowFilters((v) => !v)}
           // Visual 34px + hitSlop 5 = area sentuh 44px, tinggi baris tetap.
           hitSlop={5}
+          accessibilityRole="button"
           style={[styles.filterBtn, activeFilters > 0 && styles.filterBtnActive]}
           accessibilityLabel={showFilters ? 'Sembunyikan filter' : 'Tampilkan filter'}
         >
-          <Text style={[styles.filterIcon, activeFilters > 0 && styles.filterIconActive]}>⚙</Text>
-          <Text style={[styles.filterText, activeFilters > 0 && styles.filterTextActive]}>Filter</Text>
+          <Ionicons
+            name="funnel-outline"
+            size={13}
+            color={activeFilters > 0 ? colors.primary : colors.muted}
+          />
+          {!isNarrow && (
+            <Text style={[styles.filterText, activeFilters > 0 && styles.filterTextActive]}>Filter</Text>
+          )}
           {activeFilters > 0 && (
             <View style={styles.filterBadge}>
               <Text style={styles.filterBadgeText}>{activeFilters}</Text>
             </View>
           )}
         </Pressable>
+        <Button
+          label={isNarrow ? `Copy (${belumDisalin.length})` : `Copy belum disalin (${belumDisalin.length})`}
+          size="sm"
+          onPress={copyBelumDisalin}
+          disabled={belumDisalin.length === 0}
+          style={styles.barBtn}
+        />
+        <ActionMenu label="Opsi salin" items={salinMenuItems} />
       </View>
 
       {showFilters && (
-      <View style={[styles.filterBar, styles.filterPanel, isNarrow && styles.filterBarNarrow]}>
+      <View style={[styles.filterBar, styles.filterPanel, isNarrow && styles.filterBarNarrowMargin, isNarrow && styles.filterBarNarrow]}>
         <Select
           label="Status"
           value={status}
@@ -430,38 +467,20 @@ export default function Orders() {
       )}
 
       <View style={[styles.tableSection, isNarrow && styles.tableSectionNarrow]}>
-        <View style={[styles.tableIntro, isNarrow && styles.tableIntroNarrow]}>
-          <View>
-            <Text style={styles.tableTitle}>{isAdmin ? 'Semua order' : 'Order saya'}</Text>
-            {!isNarrow && (
+        {/* Alat daftar sudah menyatu di baris atas; di sini tinggal keterangan
+            jumlah dan petunjuk pengurutan untuk layar lebar. */}
+        {!isNarrow && (
+          <View style={styles.tableIntro}>
+            <View>
+              <Text style={styles.tableTitle}>{isAdmin ? 'Semua order' : 'Order saya'}</Text>
               <Text style={styles.tableHint}>
                 Klik judul kolom untuk mengurutkan data.
                 {isRingkas ? ' Trader & metode tersembunyi di lebar ini — buka detail untuk melihatnya.' : ''}
               </Text>
-            )}
-          </View>
-          <View style={styles.tableTools}>
+            </View>
             <Text style={styles.tableCount}>{rangeStart}–{rangeEnd} dari {total}</Text>
-            <Button
-              label={`Copy belum disalin (${belumDisalin.length})`}
-              icon="⧉"
-              size="sm"
-              onPress={copyBelumDisalin}
-              disabled={belumDisalin.length === 0}
-            />
-            <Button label="Copy halaman ini" icon="⧉" variant="secondary" size="sm" onPress={copyFiltered} disabled={sorted.length === 0} />
-            <Pressable
-              onPress={() => setPilihKolom(true)}
-              // Visual 32px + hitSlop 6 = area sentuh 44px.
-              hitSlop={6}
-              accessibilityRole="button"
-              accessibilityLabel="Pilih kolom yang disalin"
-              style={({ pressed }) => [styles.kolomBtn, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={styles.kolomIcon}>⚙</Text>
-            </Pressable>
           </View>
-        </View>
+        )}
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
@@ -526,27 +545,32 @@ export default function Orders() {
         onSaved={() => { setEditing(null); refresh(); }}
       />
       <Sheet open={pilihKolom} onClose={() => setPilihKolom(false)} title="Kolom yang disalin">
-        <Text style={styles.kolomHint}>
-          Urutan kolom mengikuti daftar ini, bukan urutan Anda mencentang. Pilihan diingat di perangkat ini.
-        </Text>
-        {COPY_COLUMNS.map((c) => {
-          const aktif = copyCols.includes(c.key);
-          return (
-            <Pressable
-              key={c.key}
-              onPress={() => toggleCopyCol(c.key)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: aktif }}
-              style={({ pressed }) => [styles.kolomRow, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={[styles.kolomBox, aktif && styles.kolomBoxAktif]}>{aktif ? '☑' : '☐'}</Text>
-              <Text style={styles.kolomLabel}>{c.label}</Text>
-            </Pressable>
-          );
-        })}
+        {/* Sepuluh baris centang tidak muat di layar HP pendek — daftar digulir,
+            tombol aksi tetap di luar agar selalu terjangkau. */}
+        <ScrollView style={styles.kolomScroll} contentContainerStyle={{ paddingBottom: 4 }}>
+          <Text style={styles.kolomHint}>
+            Urutan kolom mengikuti daftar ini, bukan urutan Anda mencentang. Pilihan diingat di perangkat ini.
+          </Text>
+          {COPY_COLUMNS.map((c) => {
+            const aktif = copyCols.includes(c.key);
+            return (
+              <Pressable
+                key={c.key}
+                onPress={() => toggleCopyCol(c.key)}
+                hitSlop={2}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: aktif }}
+                style={({ pressed }) => [styles.kolomRow, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={[styles.kolomBox, aktif && styles.kolomBoxAktif]}>{aktif ? '☑' : '☐'}</Text>
+                <Text style={styles.kolomLabel}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
         <View style={styles.kolomActions}>
-          <Button label="Kembalikan ke bawaan" variant="secondary" size="sm" onPress={resetCopyCols} />
-          <Button label="Selesai" size="sm" onPress={() => setPilihKolom(false)} />
+          <Button label="Kembalikan ke bawaan" variant="secondary" onPress={resetCopyCols} />
+          <Button label="Selesai" onPress={() => setPilihKolom(false)} />
         </View>
       </Sheet>
     </ScrollView>
@@ -717,14 +741,20 @@ const styles = StyleSheet.create({
   wrap: { flex: 1 },
   wrapContent: { paddingBottom: 120 },
 
-  // Baris filter: kolom cari + tombol Filter (kriteria di panel yang bisa dibuka).
+  // Satu baris alat: cari + filter + salin. Semua kontrol setinggi 34px agar
+  // sejajar; margin disamakan dengan tableSection supaya tepinya lurus.
   filterBar: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6,
-    marginHorizontal: 20, marginBottom: 6,
+    marginHorizontal: 20, marginBottom: 10,
   },
+  filterBarNarrowMargin: { marginHorizontal: 12 },
   filterPanel: { marginBottom: 14 },
   filterBarNarrow: { flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'stretch', gap: 8, marginBottom: 14 },
-  searchBox: { flex: 1, minWidth: 0 },
+  // minWidth menjaga kolom cari tetap terbaca saat berbagi baris dengan
+  // tombol: nomor order 18 digit butuh ±137px.
+  searchBox: { flex: 1, minWidth: 130 },
+  // Button sm setinggi 32; dinaikkan ke 34 agar sebaris dengan cari & filter.
+  barBtn: { height: 34 },
 
   filterBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -732,8 +762,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
   },
   filterBtnActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
-  filterIcon: { fontSize: 13, color: colors.muted },
-  filterIconActive: { color: colors.primary },
   filterText: { fontSize: 11, fontWeight: '700', color: colors.muted },
   filterTextActive: { color: colors.primary },
   filterBadge: {
@@ -753,22 +781,20 @@ const styles = StyleSheet.create({
   tableSection: { marginHorizontal: 20 },
   tableSectionNarrow: { marginHorizontal: 12 },
   tableIntro: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 10, paddingHorizontal: 2 },
-  tableIntroNarrow: { flexWrap: 'wrap', gap: 8 },
+  // Layar sempit: judul dan alat ditumpuk, bukan dipaksa berdampingan lalu
+  // membungkus tak beraturan. Alat rata kiri agar sejajar dengan judul.
   tableTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   tableHint: { fontSize: 11, color: colors.faint, marginTop: 3 },
-  tableTools: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
   // Pemilih kolom salin
-  kolomBtn: {
-    width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
-  },
-  kolomIcon: { fontSize: 14, color: colors.muted },
+  kolomScroll: { flexShrink: 1 },
   kolomHint: { fontSize: 11, color: colors.muted, lineHeight: 16, marginBottom: 10 },
-  kolomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  // paddingVertical 12 + teks 16 = tinggi baris 40; dengan hitSlop jadi 44px.
+  kolomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   kolomBox: { fontSize: 16, color: colors.muted },
   kolomBoxAktif: { color: colors.primary },
   kolomLabel: { fontSize: 13, color: colors.text },
-  kolomActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14 },
+  // Jarak lega: "Kembalikan ke bawaan" merusak pilihan kalau salah tekan.
+  kolomActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 16 },
   tableCount: { fontSize: 11, color: colors.muted, fontWeight: '700' },
   errorBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: 20, marginTop: 24, alignItems: 'center', gap: 8 },
   errorTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },

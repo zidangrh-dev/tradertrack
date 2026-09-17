@@ -40,6 +40,9 @@ export function Button({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      // Tombol sm (32) & md (40) di bawah sasaran sentuh 44px; hitSlop menambal
+      // tanpa mengubah rupa. lg sudah 46 sehingga tidak perlu.
+      hitSlop={Math.max(0, Math.ceil((44 - BTN_HEIGHT[size]) / 2))}
       style={({ pressed }) => [
         styles.button,
         {
