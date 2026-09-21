@@ -96,9 +96,8 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // daftar induk memuat ulang — kalau dipakai, preview telat sampai refresh.
   const barcodePath = detail?.barcode_path ?? order.barcode_path;
   // Foto barcode yang diunggah saat proses pickup disimpan sebagai source
-  // 'pickup' (bukan di barcode_path) — tampilkan agar tidak berubah jadi gembok.
+  // 'pickup' (bukan di barcode_path) — dipakai mengisi slot kalau slotnya ada.
   const barcodeFoto = detail?.photos.find((p) => p.source === 'pickup') ?? null;
-  const barcodeTampil = barcodePath ?? barcodeFoto?.file_path ?? null;
   const hasBarcode = !!barcodePath;
   // Order warisan bisa masuk Proses pick up tanpa barcode dan jadi terkunci.
   // Celah susulan memakai barcodePath (bukan barcodeTampil): order yang hanya
@@ -120,7 +119,12 @@ export function OrderDetailModal({ order, onClose, onChanged }: { order: OrderVi
   // memancing trader mengunggah foto bukti order ke tempat yang salah.
   // Order lama yang terlanjur punya barcode tetap ditampilkan agar buktinya
   // tidak hilang dari layar.
-  const tokoPakaiBarcode = (!!order.requires_dual_evidence && barcodeWajib) || !!barcodeTampil;
+  // Penentunya barcodePath, bukan barcodeTampil: foto 'pickup' ada di semua toko,
+  // jadi kalau dipakai untuk memutuskan, slot barcode muncul sendiri di toko
+  // tanpa barcode dan menampilkan foto bukti order di sana.
+  const tokoPakaiBarcode = (!!order.requires_dual_evidence && barcodeWajib) || !!barcodePath;
+  // Fallback foto 'pickup' hanya berlaku kalau slot barcode memang ada.
+  const barcodeTampil = tokoPakaiBarcode ? (barcodePath ?? barcodeFoto?.file_path ?? null) : null;
   const pickupEvidences = detail?.photos.filter((p) => p.source === 'pickup_evidence') ?? [];
   // Foto pengambilan berkuota sendiri (maks 3), lepas dari max_photos yang
   // mengatur foto penyelesaian — samakan dengan MAX_PICKUP_EVIDENCE di server
