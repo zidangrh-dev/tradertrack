@@ -561,7 +561,7 @@ export function Select({
 // Dropdown multi-pilih: item dicentang/dicentang-ulang tanpa menu tertutup
 // (dipakai filter Toko — beberapa toko bisa dipilih sekaligus).
 export function MultiSelect({
-  label, value, options, onChange, placeholder = 'Pilih…', clearLabel = 'Semua', block = false, compact = false,
+  label, value, options, onChange, placeholder = 'Pilih…', clearLabel = 'Semua', selectAllLabel, block = false, compact = false,
 }: {
   label: string;
   value: string[];
@@ -569,6 +569,7 @@ export function MultiSelect({
   onChange: (v: string[]) => void;
   placeholder?: string;
   clearLabel?: string;
+  selectAllLabel?: string;
   block?: boolean;
   compact?: boolean;
 }) {
@@ -611,6 +612,21 @@ export function MultiSelect({
   const showSearch = options.length >= 8;
   const q = query.trim().toLowerCase();
   const filtered = showSearch && q ? options.filter((o) => `${o.label} ${o.sub ?? ''}`.toLowerCase().includes(q)) : options;
+
+  // Pilih-semua sengaja bekerja pada opsi yang SEDANG TAMPIL, bukan seluruh katalog.
+  // Kalau user sedang mencari kata kunci, yang dicentang hanya hasil pencarian itu —
+  // mencentang toko yang tidak terlihat akan terasa seperti tombol yang salah.
+  const pickable = filtered.filter((o) => !o.disabled);
+  const allPicked = pickable.length > 0 && pickable.every((o) => value.includes(o.value));
+  const toggleAll = () => {
+    if (allPicked) {
+      const tampil = new Set(pickable.map((o) => o.value));
+      onChange(value.filter((v) => !tampil.has(v)));
+    } else {
+      onChange([...new Set([...value, ...pickable.map((o) => o.value)])]);
+    }
+  };
+
   const searchH = showSearch ? 50 : 0;
   const menuMaxH = Math.min(320, Math.round(winH * 0.55));
   const top = Math.min(anchor.y, Math.max(12, winH - menuMaxH - searchH - 24));
@@ -666,6 +682,19 @@ export function MultiSelect({
                   </Pressable>
                 )}
               </View>
+            )}
+            {!!selectAllLabel && pickable.length > 0 && (
+              <HoverItem
+                onPress={toggleAll}
+                style={[selStyles.item, selStyles.selectAll]}
+                hoverStyle={selStyles.itemHover}
+              >
+                <Text style={[selStyles.itemLabel, allPicked && selStyles.itemLabelActive]} numberOfLines={1}>
+                  {allPicked ? `Batal ${selectAllLabel.toLowerCase()}` : selectAllLabel}
+                  {q ? ` (${pickable.length})` : ''}
+                </Text>
+                <Ionicons name={allPicked ? 'checkbox' : 'square-outline'} size={16} color={allPicked ? colors.primary : colors.faint} />
+              </HoverItem>
             )}
             {!!clearLabel && (
               <HoverItem
@@ -1039,6 +1068,10 @@ const selStyles = StyleSheet.create({
   addText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
   optionRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 0 },
   itemPick: { flex: 1, minWidth: 0 },
+  // Baris bulk-action "Pilih semua": kotak centang di kanan supaya sejajar dengan
+  // centang opsinya, dan garis pemisah di bawah agar terbaca sebagai aksi atas
+  // daftar — bukan salah satu toko yang bisa dicentang satu-satu.
+  selectAll: { backgroundColor: colors.surfaceAlt, borderBottomWidth: 1, borderBottomColor: colors.line },
   deleteCell: {
     justifyContent: 'center', alignItems: 'center', marginRight: 10,
     backgroundColor: '#FBECEC', borderRadius: radius.sm, paddingHorizontal: 10, height: 26,

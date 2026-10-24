@@ -238,7 +238,7 @@ Peringatan penting:
 
 ```bash
 cd backend
-npm test        # 87 uji API (node --test) + smoke test jalur PostgreSQL (PGlite)
+npm test        # 173 uji API (node --test) + smoke test jalur PostgreSQL (PGlite)
 ```
 
 Frontend: `cd frontend && npx tsc --noEmit`. Tidak ada framework test frontend; verifikasi visual lewat `npm run web`.
@@ -268,9 +268,9 @@ Gotcha untuk yang mengubah test: file `test/api.test.mjs` **harus memakai satu h
 - `src/schema.sql` — skema (migrasi idempoten via `CREATE TABLE IF NOT EXISTS`).
 - `src/seed.mjs` — seed demo idempoten (dilewati bila users sudah ada).
 - `src/repo.mjs` — pemilih repo berdasarkan `DATABASE_URL`.
-- `test/api.test.mjs` (87 uji end-to-end API), `test/pg.smoke.mjs` (jalur SQL asli PGlite).
+- `test/api.test.mjs` (173 uji end-to-end API), `test/pg.smoke.mjs` (jalur SQL asli PGlite).
 
-**Dokumen** — `PRODUCT.md` (konteks terverifikasi), `PRD_TraderTrack.md` (spesifikasi sumber, nama historis).
+**Dokumen** — `PRD.md` (PRD berjalan, rujukan produk), `PRODUCT.md` (konteks terverifikasi untuk agen), `PRD_TraderTrack.md` (spesifikasi sumber, nama historis), `DESIGN.md` (arah visual), `anti-slop/` (hasil audit desain).
 
 ---
 

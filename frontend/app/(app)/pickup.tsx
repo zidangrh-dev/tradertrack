@@ -201,7 +201,10 @@ export default function Pickup() {
             options={stores}
             onChange={setStore}
             placeholder="Semua toko"
-            clearLabel="Semua"
+            // Baris "Semua" dimatikan: "Pilih semua toko" sudah jadi toggle yang juga
+            // melepas centang semuanya, jadi dua baris reset hanya menduplikasi aksi.
+            clearLabel=""
+            selectAllLabel="Pilih semua toko"
             compact
             block={isNarrow}
           />

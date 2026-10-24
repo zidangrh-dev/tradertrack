@@ -434,7 +434,10 @@ export default function Orders() {
           options={stores}
           onChange={(v) => { setStore(v); setPage(1); }}
           placeholder="Semua toko"
-          clearLabel="Semua"
+          // Baris "Semua" dimatikan: "Pilih semua toko" sudah jadi toggle yang juga
+          // melepas centang semuanya, jadi dua baris reset hanya menduplikasi aksi.
+          clearLabel=""
+          selectAllLabel="Pilih semua toko"
           compact
           block={isNarrow}
         />

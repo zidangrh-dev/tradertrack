@@ -81,7 +81,7 @@ ALTER TABLE marketplace_stores ADD COLUMN IF NOT EXISTS has_barcode boolean NOT 
 -- Dibatasi pada baris yang belum pernah ditandai agar perubahan manual admin
 -- tidak tertimpa setiap kali migrasi dijalankan ulang.
 UPDATE marketplace_stores SET has_barcode = true
-  WHERE has_barcode = false AND name ILIKE '%roxy%'
+  WHERE has_barcode = false AND name ILIKE '%kantor%'
     AND NOT EXISTS (SELECT 1 FROM marketplace_stores WHERE has_barcode = true);
 
 -- Penanda kapan kuota produk terakhir dikosongkan. Jumlah terpakai tidak
